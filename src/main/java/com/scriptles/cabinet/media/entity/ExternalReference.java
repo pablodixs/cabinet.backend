@@ -24,6 +24,15 @@ import java.util.UUID;
             name = "uk_external_reference_media_source",
             columnNames = {"media_id", "source"}
         )
+    }, indexes = {
+        @Index(
+            name = "idx_external_reference_media_id",
+            columnList = "media_id"
+        ),
+        @Index(
+            name = "idx_external_reference_source_external_id",
+            columnList = "source, external_id"
+        )
     })
 @Getter
 @Setter
@@ -42,14 +51,13 @@ public class ExternalReference {
     @Column(nullable = false)
     private ExternalSource source;
 
-    @Column(unique = true)
     private String externalId;
 
     @Column(columnDefinition = "TEXT")
     private String externalUrl;
 
      @Column(nullable = false)
-    private Boolean primaryReference;
+    private boolean primaryReference;
 
     private Instant lastSyncedAt;
 
