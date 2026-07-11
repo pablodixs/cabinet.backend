@@ -52,4 +52,13 @@ public class User {
 
     @UpdateTimestamp
     private Instant updatedAt;
+
+    public static User create(String email, String username, String displayName, String passwordHash) {
+        User user = new User();
+        user.setEmail(email);
+        user.setUsername(username);
+        user.setDisplayName(displayName);
+        user.setPasswordHash(passwordHash);
+        return user;
+    }
 }
