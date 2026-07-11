@@ -1,10 +1,17 @@
 spring:
   application:
     name: cabinet
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
   jpa:
-    hibernate:
-      ddl-auto: update
     open-in-view: false
     properties:
       hibernate:
         format_sql: true
+    hibernate:
+      ddl-auto: update
+  flyway:
+    enabled: false

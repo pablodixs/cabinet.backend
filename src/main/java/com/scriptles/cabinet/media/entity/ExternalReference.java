@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.media.entity;
 
+import com.scriptles.cabinet.media.enums.ExternalSource;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -39,7 +40,7 @@ public class ExternalReference {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String source;
+    private ExternalSource source;
 
     @Column(unique = true)
     private String externalId;
@@ -47,7 +48,7 @@ public class ExternalReference {
     @Column(columnDefinition = "TEXT")
     private String externalUrl;
 
-     @Column(name = "is_primary", nullable = false)
+     @Column(nullable = false)
     private Boolean primaryReference;
 
     private Instant lastSyncedAt;

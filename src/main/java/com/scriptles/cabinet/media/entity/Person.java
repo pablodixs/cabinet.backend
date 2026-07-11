@@ -25,7 +25,7 @@ public class Person {
     private String imageUrl;
 
     @Enumerated(EnumType.STRING)
-    @Column(, length = 30)
+    @Column(length = 30)
     private ExternalSource externalSource;
 
     @Column(length = 200)

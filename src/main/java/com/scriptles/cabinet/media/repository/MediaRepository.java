@@ -11,11 +11,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface MediaRepository extends JpaRepository<Media, UUID> {
-    Optional<Media> findByExternalSourceAndExternalId(
-            ExternalSource externalSource,
-            String externalId
-    );
-
     Page<Media> findByTitleContainingIgnoreCase(
             String title,
             Pageable pageable
