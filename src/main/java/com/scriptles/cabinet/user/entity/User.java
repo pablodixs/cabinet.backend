@@ -1,6 +1,6 @@
 package com.scriptles.cabinet.user.entity;
 
-import com.scriptles.cabinet.user.enums.ProfileVisibility;
+import com.scriptles.cabinet.user.enums.Visibility;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -42,7 +42,7 @@ public class User {
     private String avatarUlr;
 
     @Enumerated(EnumType.STRING)
-    private ProfileVisibility profileVisibility = ProfileVisibility.PUBLIC;
+    private Visibility profileVisibility = Visibility.PUBLIC;
 
     @Column(nullable = false)
     private Boolean active = true;
