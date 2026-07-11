@@ -14,7 +14,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "ratings", indexes = {
+@Table(name = "reviews", indexes = {
         @Index(
                 name = "idx_reviews_media_created",
                 columnList = "media_id, created_at"
@@ -24,7 +24,7 @@ import java.util.UUID;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-public class Rating {
+public class Review {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
