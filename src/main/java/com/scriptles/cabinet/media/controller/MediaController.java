@@ -6,6 +6,9 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ExternalMediaService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
@@ -28,10 +31,13 @@ public class MediaController {
 
     @GetMapping("/search")
     public List<ExternalMediaResponse> search(
-            @RequestParam MediaType type,
-            @RequestParam @NotBlank String query
+            @RequestParam(required = false) MediaType type,
+            @RequestParam @NotBlank String query,
+            @RequestParam(defaultValue = "pt-BR") @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
+            @RequestParam(defaultValue = "0") @Min(0) int startIndex,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int maxResults
     ) {
-        return externalMediaService.search(type, query);
+        return externalMediaService.search(type, query, language, startIndex, maxResults);
     }
 
     @PostMapping("/import")

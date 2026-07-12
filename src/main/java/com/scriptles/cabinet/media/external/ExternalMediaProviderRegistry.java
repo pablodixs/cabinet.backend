@@ -17,7 +17,7 @@ public class ExternalMediaProviderRegistry {
                 .filter(provider -> provider.source() == source && provider.supports(mediaType))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "Fonte %s nao suporta o tipo %s".formatted(source, mediaType)
+                        "Source %s does not support media type %s".formatted(source, mediaType)
                 ));
     }
 }

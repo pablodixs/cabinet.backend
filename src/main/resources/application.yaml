@@ -20,5 +20,13 @@ external:
   tmdb:
     base-url: https://api.themoviedb.org/3
     api-key: ${TMDB_API_KEY:}
+    access-token: ${TMDB_ACCESS_TOKEN:}
   google-books:
     base-url: https://www.googleapis.com/books/v1
+    api-key: ${GOOGLE_BOOKS_API_KEY:}
+  musicbrainz:
+    base-url: https://musicbrainz.org/ws/2
+    user-agent: ${MUSICBRAINZ_USER_AGENT:cabinet/1.0 (https://github.com/scriptles/cabinet)}
+  the-audio-db:
+    base-url: https://www.theaudiodb.com/api/v1/json
+    api-key: ${THEAUDIODB_API_KEY:123}

@@ -13,5 +13,21 @@ public interface ExternalMediaProvider {
 
     List<ExternalMedia> search(MediaType mediaType, String query);
 
+    default List<ExternalMedia> search(MediaType mediaType, String query, String language) {
+        return search(mediaType, query);
+    }
+
+    default List<ExternalMedia> search(MediaType mediaType, String query, String language, int offset, int limit) {
+        return search(mediaType, query, language);
+    }
+
+    default List<ExternalMedia> searchAll(String query, String language) {
+        throw new UnsupportedOperationException("Global search is unavailable for " + source());
+    }
+
+    default List<ExternalMedia> searchAll(String query, String language, int offset, int limit) {
+        return searchAll(query, language);
+    }
+
     Optional<ExternalMedia> findById(MediaType mediaType, String externalId);
 }

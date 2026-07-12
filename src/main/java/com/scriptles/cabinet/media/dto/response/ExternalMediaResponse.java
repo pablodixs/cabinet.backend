@@ -12,6 +12,7 @@ public record ExternalMediaResponse(
         ExternalSource source,
         MediaType type,
         String title,
+        String creator,
         String description,
         String coverUrl,
         LocalDate releaseDate,

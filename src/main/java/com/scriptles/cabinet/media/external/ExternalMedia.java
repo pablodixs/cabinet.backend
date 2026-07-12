@@ -27,6 +27,17 @@ public record ExternalMedia(
         String seriesStatus,
         Integer numberOfSeasons,
         Integer numberOfEpisodes,
-        LocalDate lastAirDate
+        LocalDate lastAirDate,
+        String albumType,
+        Integer numberOfTracks,
+        String creator
 ) {
+    public ExternalMedia withCreator(String value) {
+        return new ExternalMedia(
+                source, externalId, type, title, originalTitle, description, coverUrl, externalUrl,
+                releaseDate, originalLanguage, countryCode, isbn10, isbn13, pageCount, publisher,
+                runtimeMinutes, budget, revenue, seriesStatus, numberOfSeasons, numberOfEpisodes,
+                lastAirDate, albumType, numberOfTracks, value
+        );
+    }
 }
