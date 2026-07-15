@@ -4,17 +4,36 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.user.enums.ProgressUnit;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "user_media", indexes = {
+@Table(name = "user_media", uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uk_user_media_user_media",
+                columnNames = {"user_id", "media_id"}
+        )
+}, indexes = {
         @Index(
             name = "idx_user_media_user_status",
             columnList = "user_id, status"
+        ),
+        @Index(
+            name = "idx_user_media_media_id",
+            columnList = "media_id"
         )
     })
+@Getter
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class UserMedia {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -29,6 +48,7 @@ public class UserMedia {
     private Media media;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     private UserMediaStatus status = UserMediaStatus.PLANNED;
 
     private Integer progress;
@@ -42,8 +62,14 @@ public class UserMedia {
     private Instant lastInteractionAt;
 
     @Column(nullable = false)
-    private Boolean favorite;
+    private Boolean favorite = false;
 
     @Column(nullable = false)
-    private Boolean privateEntry;
+    private Boolean privateEntry = false;
+
+    @CreationTimestamp
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    private Instant updatedAt;
 }

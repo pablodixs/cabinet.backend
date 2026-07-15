@@ -11,7 +11,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -47,8 +48,26 @@ public class Media {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(length = 500)
+    private String tagline;
+
     @Column(columnDefinition = "TEXT")
     private String coverUrl;
+
+    @Column(columnDefinition = "TEXT")
+    private String backdropUrl;
+
+    @Column(columnDefinition = "TEXT")
+    private String logoUrl;
+
+    @Column(length = 30)
+    private String wikidataId;
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "media_genres", joinColumns = @JoinColumn(name = "media_id"),
+            indexes = @Index(name = "idx_media_genres_media_id", columnList = "media_id"))
+    @Column(name = "genre", length = 100, nullable = false)
+    private Set<String> genres = new LinkedHashSet<>();
 
     private LocalDate releaseDate;
 

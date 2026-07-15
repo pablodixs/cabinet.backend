@@ -13,8 +13,10 @@ public record AuthenticatedUser(
         UUID id,
         String email,
         String username,
+        String displayName,
         String passwordHash,
-        Collection<? extends GrantedAuthority> authorities
+        Collection<? extends GrantedAuthority> authorities,
+        boolean active
 ) implements UserDetails {
 
     public static AuthenticatedUser from(User user) {
@@ -22,14 +24,16 @@ public record AuthenticatedUser(
                 user.getId(),
                 user.getEmail(),
                 user.getUsername(),
+                user.getDisplayName(),
                 user.getPasswordHash(),
-                List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                List.of(new SimpleGrantedAuthority("ROLE_USER")),
+                Boolean.TRUE.equals(user.getActive())
         );
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of();
+        return authorities;
     }
 
     @Override
@@ -40,5 +44,10 @@ public record AuthenticatedUser(
     @Override
     public String getUsername() {
         return email;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return active;
     }
 }

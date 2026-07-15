@@ -3,10 +3,10 @@ package com.scriptles.cabinet.auth.dto.request;
 import jakarta.validation.constraints.NotBlank;
 
 public record LoginRequest(
-        @NotBlank(message = "Username or email is required")
+        @NotBlank(message = "Informe seu e-mail ou nome de usuário")
         String identifier,
 
-        @NotBlank(message = "Password is required")
+        @NotBlank(message = "Informe sua senha")
         String password
 ) {
 }

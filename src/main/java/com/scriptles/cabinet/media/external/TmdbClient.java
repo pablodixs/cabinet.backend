@@ -14,18 +14,19 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @RequiredArgsConstructor
 public class TmdbClient implements ExternalMediaProvider {
-    private static final String IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500";
+    private static final String IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
+    private static final String POSTER_SIZE = "w500";
+    private static final String BACKDROP_SIZE = "original";
+    private static final String LOGO_SIZE = "original";
+    private static final String STILL_SIZE = "w780";
 
     private final RestClient.Builder restClientBuilder;
     private final ExternalApiProperties properties;
-    private final Map<String, Optional<String>> creators = new ConcurrentHashMap<>();
 
     @Override
     public ExternalSource source() {
@@ -51,8 +52,7 @@ public class TmdbClient implements ExternalMediaProvider {
     public List<ExternalMedia> search(MediaType mediaType, String query, String language, int offset, int limit) {
         List<ExternalMedia> results = new ArrayList<>();
         for (JsonNode item : searchItems(searchPath(mediaType), query, language, offset, limit)) {
-            results.add(toMedia(item, mediaType, false)
-                    .withCreator(creatorFor(mediaType, text(item, "id"), language)));
+            results.add(toMedia(item, mediaType, false));
         }
         return results;
     }
@@ -68,8 +68,7 @@ public class TmdbClient implements ExternalMediaProvider {
         for (JsonNode item : searchItems("/search/multi", query, language, offset, limit)) {
             MediaType type = mediaType(text(item, "media_type"));
             if (type != null) {
-                results.add(toMedia(item, type, false)
-                        .withCreator(creatorFor(type, text(item, "id"), language)));
+                results.add(toMedia(item, type, false));
             }
         }
         return results;
@@ -77,7 +76,12 @@ public class TmdbClient implements ExternalMediaProvider {
 
     @Override
     public Optional<ExternalMedia> findById(MediaType mediaType, String externalId) {
-        JsonNode body = get(detailPath(mediaType, externalId), null, null, true, null);
+        return findById(mediaType, externalId, null);
+    }
+
+    @Override
+    public Optional<ExternalMedia> findById(MediaType mediaType, String externalId, String language) {
+        JsonNode body = get(detailPath(mediaType, externalId), null, language, true, null);
         return body.isMissingNode() || body.isEmpty() ? Optional.empty() : Optional.of(toMedia(body, mediaType, true));
     }
 
@@ -98,12 +102,13 @@ public class TmdbClient implements ExternalMediaProvider {
                             uriBuilder.queryParam("query", query);
                             uriBuilder.queryParam("include_adult", false);
                             uriBuilder.queryParam("page", page == null ? 1 : page);
-                            if (language != null) {
-                                uriBuilder.queryParam("language", language);
-                            }
+                        }
+                        if (language != null) {
+                            uriBuilder.queryParam("language", language);
                         }
                         if (includeCredits) {
-                            uriBuilder.queryParam("append_to_response", "credits");
+                            uriBuilder.queryParam("append_to_response", "credits,images");
+                            uriBuilder.queryParam("include_image_language", imageLanguages(language));
                         }
                         return uriBuilder.build();
                     });
@@ -157,9 +162,11 @@ public class TmdbClient implements ExternalMediaProvider {
 
         return new ExternalMedia(
                 ExternalSource.TMDB, id, type, title, originalTitle, text(node, "overview"),
-                imageUrl(text(node, "poster_path")),
+                detailed ? text(node, "tagline") : null,
+                imageUrl(text(node, "poster_path"), POSTER_SIZE),
                 "https://www.themoviedb.org/%s/%s".formatted(movie ? "movie" : "tv", id),
-                releaseDate, text(node, "original_language"), countryCode(node), null, null, null, null,
+                null, releaseDate, text(node, "original_language"), countryCode(node), null, null, null, null,
+                null, null,
                 detailed && movie ? integer(node, "runtime") : null,
                 detailed && movie ? longValue(node, "budget") : null,
                 detailed && movie ? longValue(node, "revenue") : null,
@@ -167,8 +174,55 @@ public class TmdbClient implements ExternalMediaProvider {
                 detailed && !movie ? integer(node, "number_of_seasons") : null,
                 detailed && !movie ? integer(node, "number_of_episodes") : null,
                 detailed && !movie ? date(text(node, "last_air_date")) : null,
-                null, null, creator(node, type, detailed)
+                null, null, creator(node, type, detailed),
+                imageUrl(text(node, "backdrop_path"), BACKDROP_SIZE), detailed ? logoUrl(node) : null,
+                detailed ? genres(node) : List.of(), List.of(), detailed && !movie ? seasons(node) : List.of()
         );
+    }
+
+    public List<ExternalMedia.ExternalEpisode> findSeasonEpisodes(String seriesId, int seasonNumber, String language) {
+        JsonNode body = get("/tv/%s/season/%d".formatted(seriesId, seasonNumber), null, language, false, null);
+        List<ExternalMedia.ExternalEpisode> episodes = new ArrayList<>();
+        for (JsonNode episode : body.path("episodes")) {
+            episodes.add(new ExternalMedia.ExternalEpisode(
+                    text(episode, "id"), integer(episode, "episode_number"), text(episode, "name"),
+                    text(episode, "overview"), imageUrl(text(episode, "still_path"), STILL_SIZE),
+                    date(text(episode, "air_date")), integer(episode, "runtime")
+            ));
+        }
+        return episodes;
+    }
+
+    private List<ExternalMedia.ExternalGenre> genres(JsonNode node) {
+        List<ExternalMedia.ExternalGenre> result = new ArrayList<>();
+        for (JsonNode genre : node.path("genres")) {
+            result.add(new ExternalMedia.ExternalGenre(text(genre, "id"), text(genre, "name"), ExternalSource.TMDB));
+        }
+        return result;
+    }
+
+    private List<ExternalMedia.ExternalSeason> seasons(JsonNode node) {
+        List<ExternalMedia.ExternalSeason> result = new ArrayList<>();
+        for (JsonNode season : node.path("seasons")) {
+            result.add(new ExternalMedia.ExternalSeason(
+                    text(season, "id"), integer(season, "season_number"), text(season, "name"),
+                    text(season, "overview"), imageUrl(text(season, "poster_path"), POSTER_SIZE),
+                    integer(season, "episode_count"), date(text(season, "air_date"))
+            ));
+        }
+        return result;
+    }
+
+    private String logoUrl(JsonNode node) {
+        JsonNode logos = node.path("images").path("logos");
+        return logos.isArray() && !logos.isEmpty()
+                ? imageUrl(text(logos.get(0), "file_path"), LOGO_SIZE)
+                : null;
+    }
+
+    private String imageLanguages(String language) {
+        String code = language == null ? null : language.substring(0, 2);
+        return code == null ? "en,null" : code + ",en,null";
     }
 
     private String searchPath(MediaType type) {
@@ -184,8 +238,8 @@ public class TmdbClient implements ExternalMediaProvider {
         return countries.isArray() && !countries.isEmpty() ? text(countries.get(0), "iso_3166_1") : null;
     }
 
-    private String imageUrl(String path) {
-        return path == null ? null : IMAGE_BASE_URL + path;
+    private String imageUrl(String path, String size) {
+        return path == null ? null : IMAGE_BASE_URL + "/" + size + path;
     }
 
     private String creator(JsonNode node, MediaType type, boolean detailed) {
@@ -201,25 +255,6 @@ public class TmdbClient implements ExternalMediaProvider {
             }
         }
         return null;
-    }
-
-    private String creatorFor(MediaType type, String externalId, String language) {
-        if (externalId == null) {
-            return null;
-        }
-        String key = type + ":" + externalId;
-        return creators.computeIfAbsent(key, ignored -> fetchCreator(type, externalId, language)).orElse(null);
-    }
-
-    private Optional<String> fetchCreator(MediaType type, String externalId, String language) {
-        try {
-            JsonNode details = get(detailPath(type, externalId), null, language, true, null);
-            return Optional.ofNullable(creator(details, type, true));
-        } catch (ExternalMediaRateLimitException exception) {
-            throw exception;
-        } catch (ExternalMediaException exception) {
-            return Optional.empty();
-        }
     }
 
     private String names(JsonNode values, String field) {

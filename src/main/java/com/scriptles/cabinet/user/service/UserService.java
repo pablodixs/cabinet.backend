@@ -8,6 +8,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -15,23 +17,27 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
 
     @Transactional
-    public void createUser(CreateUserRequest request) {
-        if (userRepository.existsByUsernameIgnoreCase(request.username())) {
-            throw new IllegalArgumentException("Username already exists");
+    public User createUser(CreateUserRequest request) {
+        String username = request.username().trim();
+        String email = request.email().trim().toLowerCase(Locale.ROOT);
+        String displayName = request.displayName().trim();
+
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
+            throw new RegistrationConflictException("username", "Este nome de usuário já está em uso");
         }
-        if (userRepository.existsByEmailIgnoreCase(request.email())) {
-            throw new IllegalArgumentException("Email already exists");
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new RegistrationConflictException("email", "Este e-mail já está cadastrado");
         }
 
         String passwordHash = passwordEncoder.encode(request.password());
 
         User newUser = User.create(
-                request.email(),
-                request.username(),
-                request.displayName(),
+                email,
+                username,
+                displayName,
                 passwordHash
         );
 
-        userRepository.save(newUser);
+        return userRepository.save(newUser);
     }
 }

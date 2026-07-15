@@ -16,6 +16,8 @@ public record ExternalMediaResponse(
         String description,
         String coverUrl,
         LocalDate releaseDate,
+        Integer durationSeconds,
+        String wikidataId,
         boolean imported
 ) {
 }

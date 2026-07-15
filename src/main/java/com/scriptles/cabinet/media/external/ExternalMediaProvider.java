@@ -30,4 +30,8 @@ public interface ExternalMediaProvider {
     }
 
     Optional<ExternalMedia> findById(MediaType mediaType, String externalId);
+
+    default Optional<ExternalMedia> findById(MediaType mediaType, String externalId, String language) {
+        return findById(mediaType, externalId);
+    }
 }

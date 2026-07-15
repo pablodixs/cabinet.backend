@@ -16,6 +16,20 @@ spring:
   flyway:
     enabled: false
 
+server:
+  servlet:
+    session:
+      timeout: 7d
+      cookie:
+        name: CABINET_SESSION
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: lax
+
+app:
+  cors:
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
+
 external:
   tmdb:
     base-url: https://api.themoviedb.org/3
@@ -30,3 +44,6 @@ external:
   the-audio-db:
     base-url: https://www.theaudiodb.com/api/v1/json
     api-key: ${THEAUDIODB_API_KEY:123}
+  wikidata:
+    sparql-url: https://query.wikidata.org/sparql
+    user-agent: ${WIKIDATA_USER_AGENT:cabinet/1.0 (https://github.com/scriptles/cabinet)}

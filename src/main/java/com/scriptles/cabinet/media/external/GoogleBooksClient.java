@@ -102,11 +102,11 @@ public class GoogleBooksClient implements ExternalMediaProvider {
         String id = text(node, "id");
         return new ExternalMedia(
                 ExternalSource.GOOGLE_BOOKS, id, MediaType.BOOK, text(volume, "title"), null,
-                text(volume, "description"), thumbnail(volume), text(volume, "infoLink"),
-                publicationDate(text(volume, "publishedDate")), text(volume, "language"), null,
+                text(volume, "description"), null, thumbnail(volume), text(volume, "infoLink"),
+                null, publicationDate(text(volume, "publishedDate")), text(volume, "language"), null,
                 isbn(volume, "ISBN_10"), isbn(volume, "ISBN_13"), integer(volume, "pageCount"),
-                text(volume, "publisher"), null, null, null, null, null, null, null, null, null,
-                names(volume.path("authors"))
+                text(volume, "publisher"), null, null, null, null, null, null, null, null, null, null, null,
+                names(volume.path("authors")), null, null, List.of(), List.of(), List.of()
         );
     }
 

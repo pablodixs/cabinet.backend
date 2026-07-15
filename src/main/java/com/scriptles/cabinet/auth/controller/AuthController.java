@@ -1,19 +1,27 @@
 package com.scriptles.cabinet.auth.controller;
 
 import com.scriptles.cabinet.auth.dto.request.LoginRequest;
+import com.scriptles.cabinet.auth.dto.response.AuthUserResponse;
+import com.scriptles.cabinet.auth.dto.response.CsrfTokenResponse;
 import com.scriptles.cabinet.auth.service.AuthService;
+import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.dto.request.CreateUserRequest;
 import com.scriptles.cabinet.user.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-@Controller
+@RestController
 @RequestMapping("/v1/auth")
 @RequiredArgsConstructor
 public class AuthController {
@@ -21,16 +29,48 @@ public class AuthController {
     private final UserService userService;
 
     @PostMapping("/login")
-    public ResponseEntity<Void> login(@RequestBody @Valid LoginRequest request) {
-        authService.login(request);
+    public ResponseEntity<AuthUserResponse> login(
+            @RequestBody @Valid LoginRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
+    ) {
+        AuthenticatedUser user = authService.login(request, httpRequest, httpResponse);
 
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(AuthUserResponse.from(user));
     }
 
-    @PostMapping("/create")
-    public ResponseEntity<Void> createUser(@RequestBody @Valid CreateUserRequest request) {
+    @PostMapping({"/register", "/create"})
+    public ResponseEntity<AuthUserResponse> createUser(
+            @RequestBody @Valid CreateUserRequest request,
+            HttpServletRequest httpRequest,
+            HttpServletResponse httpResponse
+    ) {
         userService.createUser(request);
+        AuthenticatedUser user = authService.login(
+                new LoginRequest(request.email(), request.password()),
+                httpRequest,
+                httpResponse
+        );
 
-        return ResponseEntity.status(HttpStatus.CREATED).build();
+        return ResponseEntity.status(HttpStatus.CREATED).body(AuthUserResponse.from(user));
+    }
+
+    @GetMapping("/me")
+    public AuthUserResponse currentUser(@AuthenticationPrincipal AuthenticatedUser user) {
+        return AuthUserResponse.from(user);
+    }
+
+    @GetMapping("/csrf")
+    public CsrfTokenResponse csrfToken(CsrfToken csrfToken) {
+        return CsrfTokenResponse.from(csrfToken);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            HttpServletRequest request,
+            HttpServletResponse response
+    ) {
+        authService.logout(request, response);
+        return ResponseEntity.noContent().build();
     }
 }

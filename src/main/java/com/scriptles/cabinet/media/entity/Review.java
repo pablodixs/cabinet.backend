@@ -8,13 +8,19 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "reviews", indexes = {
+@Table(name = "reviews", uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uk_reviews_user_media",
+                columnNames = {"user_id", "media_id"}
+        )
+}, indexes = {
         @Index(
                 name = "idx_reviews_media_created",
                 columnList = "media_id, created_at"
@@ -44,7 +50,7 @@ public class Review {
     private String content;
 
     @Column(nullable = false)
-    private Boolean containsSpoilers;
+    private Boolean containsSpoilers = false;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -52,4 +58,7 @@ public class Review {
 
     @CreationTimestamp
     private Instant createdAt;
+
+    @UpdateTimestamp
+    private Instant updatedAt;
 }

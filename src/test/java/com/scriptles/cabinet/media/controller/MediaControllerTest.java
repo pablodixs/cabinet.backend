@@ -1,0 +1,107 @@
+package com.scriptles.cabinet.media.controller;
+
+import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.response.RelatedMediaResponse;
+import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.service.ExternalMediaService;
+import com.scriptles.cabinet.security.SecurityConfig;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@WebMvcTest(MediaController.class)
+@Import(SecurityConfig.class)
+class MediaControllerTest {
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private ExternalMediaService externalMediaService;
+
+    @Test
+    void returnsCommunityStatsInMediaDetails() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(externalMediaService.findDetails(
+                ExternalSource.TMDB, MediaType.MOVIE, "550", "pt-BR"))
+                .thenReturn(new ExternalMediaDetailsResponse(
+                        mediaId,
+                        "550",
+                        ExternalSource.TMDB,
+                        MediaType.MOVIE,
+                        "Fight Club",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        Map.of(),
+                        List.of(),
+                        true,
+                        12,
+                        4.25,
+                        List.of(
+                                new ExternalMediaDetailsResponse.RatingDistributionBucket(4.0, 1),
+                                new ExternalMediaDetailsResponse.RatingDistributionBucket(5.0, 3)
+                        ),
+                        7,
+                        31,
+                        new ExternalMediaDetailsResponse.MovieDetails(null, null, null, null)
+                ));
+
+        mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/550"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.likeCount").value(12))
+                .andExpect(jsonPath("$.averageRating").value(4.25))
+                .andExpect(jsonPath("$.ratingDistribution[0].rating").value(4.0))
+                .andExpect(jsonPath("$.ratingDistribution[0].count").value(1))
+                .andExpect(jsonPath("$.ratingDistribution[1].rating").value(5.0))
+                .andExpect(jsonPath("$.ratingDistribution[1].count").value(3))
+                .andExpect(jsonPath("$.listCount").value(7))
+                .andExpect(jsonPath("$.completedCount").value(31));
+    }
+
+    @Test
+    void returnsRelatedMediaWithDefaults() throws Exception {
+        when(externalMediaService.findRelations(
+                ExternalSource.TMDB, MediaType.MOVIE, "34584", "pt-BR", 12))
+                .thenReturn(new RelatedMediaResponse(ExternalSource.WIKIDATA, false, List.of()));
+
+        mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/34584/relations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.source").value("WIKIDATA"))
+                .andExpect(jsonPath("$.incomplete").value(false))
+                .andExpect(jsonPath("$.items").isArray());
+
+        verify(externalMediaService).findRelations(
+                ExternalSource.TMDB, MediaType.MOVIE, "34584", "pt-BR", 12);
+    }
+
+    @Test
+    void validatesRelationLanguageAndLimit() throws Exception {
+        mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/34584/relations")
+                        .param("language", "portuguese")
+                        .param("maxResults", "41"))
+                .andExpect(status().isBadRequest());
+    }
+}

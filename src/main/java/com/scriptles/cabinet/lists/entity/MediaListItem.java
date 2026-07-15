@@ -5,16 +5,24 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
-import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "media_list_items", indexes = {
+@Table(name = "media_list_items", uniqueConstraints = {
+        @UniqueConstraint(
+                name = "uk_media_list_items_list_media",
+                columnNames = {"list_id", "media_id"}
+        )
+}, indexes = {
         @Index(
             name = "idx_list_items_position",
             columnList = "list_id, position"
+        ),
+        @Index(
+            name = "idx_media_list_items_media_id",
+            columnList = "media_id"
         )
     })
 @Getter

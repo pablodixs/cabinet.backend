@@ -7,7 +7,8 @@ public record ExternalApiProperties(
         Tmdb tmdb,
         GoogleBooks googleBooks,
         MusicBrainz musicbrainz,
-        TheAudioDb theAudioDb
+        TheAudioDb theAudioDb,
+        Wikidata wikidata
 ) {
 
     public record Tmdb(String baseUrl, String apiKey, String accessToken) {
@@ -20,5 +21,8 @@ public record ExternalApiProperties(
     }
 
     public record TheAudioDb(String baseUrl, String apiKey) {
+    }
+
+    public record Wikidata(String sparqlUrl, String userAgent) {
     }
 }

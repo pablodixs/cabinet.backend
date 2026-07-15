@@ -13,7 +13,13 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
-@Table(name = "book_details")
+@Table(
+        name = "book_details",
+        indexes = @Index(
+                name = "idx_book_details_canonical_work_wikidata_id",
+                columnList = "canonical_work_wikidata_id"
+        )
+)
 @Setter
 @Getter
 @AllArgsConstructor
@@ -39,6 +45,9 @@ public class BookDetails {
     private String publisher;
 
     private LocalDate publicationDate;
+
+    @Column(length = 30)
+    private String canonicalWorkWikidataId;
 
     @CreationTimestamp
     private Instant createdAt;

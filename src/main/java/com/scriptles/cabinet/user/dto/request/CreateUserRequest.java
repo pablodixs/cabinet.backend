@@ -6,24 +6,24 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record CreateUserRequest(
-        @NotBlank(message = "Username is required")
-        @Size(min = 3, max = 30, message = "Username must be between 3 and 30 characters")
+        @NotBlank(message = "Informe um nome de usuário")
+        @Size(min = 3, max = 30, message = "O usuário deve ter entre 3 e 30 caracteres")
         @Pattern(
                 regexp = "^[a-zA-Z0-9._]+$",
-                message = "The username can only contain letters, numbers, dots, and underscores"
+                message = "Use apenas letras, números, pontos e underscores"
         )
         String username,
 
-        @NotBlank(message = "Display name is required")
-        @Size(min = 3, max = 80, message = "Display name must be between 3 and 80 characters")
+        @NotBlank(message = "Informe seu nome")
+        @Size(min = 3, max = 80, message = "O nome deve ter entre 3 e 80 caracteres")
         String displayName,
 
-        @NotBlank(message = "Email is required")
-        @Email(message = "Email should be valid")
+        @NotBlank(message = "Informe seu e-mail")
+        @Email(message = "Informe um e-mail válido")
         String email,
 
-        @NotBlank(message = "Password is required")
-        @Size(min = 8, max = 100, message = "Password must be between 8 and 100 characters")
+        @NotBlank(message = "Informe uma senha")
+        @Size(min = 8, max = 100, message = "A senha deve ter entre 8 e 100 caracteres")
         String password
         ) {
 }
