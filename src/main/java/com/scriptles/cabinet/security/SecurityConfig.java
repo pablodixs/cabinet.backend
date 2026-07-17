@@ -82,6 +82,7 @@ public class SecurityConfig {
                                 "/v1/media/*/reviews",
                                 "/v1/media/*/reviews/**",
                                 "/v1/lists/*",
+                                "/v1/lists/search",
                                 "/v1/lists/*/comments",
                                 "/v1/reviews/*",
                                 "/v1/reviews/*/comments",

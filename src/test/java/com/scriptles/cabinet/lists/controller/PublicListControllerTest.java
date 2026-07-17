@@ -1,7 +1,9 @@
 package com.scriptles.cabinet.lists.controller;
 
+import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
+import com.scriptles.cabinet.lists.dto.response.PublicListSearchResponse;
 import com.scriptles.cabinet.lists.service.MediaListService;
 import com.scriptles.cabinet.security.SecurityConfig;
 import com.scriptles.cabinet.user.enums.Visibility;
@@ -30,6 +32,39 @@ class PublicListControllerTest {
 
     @MockitoBean
     private MediaListService mediaListService;
+
+    @Test
+    void searchesPublicListsWithoutAuthentication() throws Exception {
+        PublicListSearchResponse response = new PublicListSearchResponse(
+                UUID.randomUUID(),
+                "Cinema de estrada",
+                "Filmes atravessados por paisagens.",
+                true,
+                null,
+                List.of(),
+                12,
+                8,
+                Instant.parse("2026-07-15T12:00:00Z"),
+                new PublicMediaListResponse.AuthorResponse(
+                        UUID.randomUUID(),
+                        "maria",
+                        "Maria",
+                        null
+                )
+        );
+        when(mediaListService.searchPublic("cinema", 0, 20))
+                .thenReturn(new PageResponse<>(List.of(response), 0, 20, 1, 1));
+
+        mockMvc.perform(get("/v1/lists/search").param("query", "cinema"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].name").value("Cinema de estrada"))
+                .andExpect(jsonPath("$.items[0].itemCount").value(12))
+                .andExpect(jsonPath("$.items[0].likeCount").value(8))
+                .andExpect(jsonPath("$.items[0].owner.username").value("maria"))
+                .andExpect(jsonPath("$.totalElements").value(1));
+
+        verify(mediaListService).searchPublic("cinema", 0, 20);
+    }
 
     @Test
     void returnsPublicListDetailsWithoutAuthentication() throws Exception {

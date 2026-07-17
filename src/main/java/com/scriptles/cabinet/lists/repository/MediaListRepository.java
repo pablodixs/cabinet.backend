@@ -1,6 +1,9 @@
 package com.scriptles.cabinet.lists.repository;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
+import com.scriptles.cabinet.user.enums.Visibility;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -30,4 +33,36 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
             where list.id in :listIds
             """)
     List<MediaList> findAllWithOwnerByIdIn(@Param("listIds") Collection<UUID> listIds);
+
+    @Query(value = """
+            select list
+            from MediaList list
+            join fetch list.owner
+            where list.visibility = :visibility
+              and (
+                lower(list.name) like lower(concat('%', :query, '%'))
+                or lower(coalesce(list.description, '')) like lower(concat('%', :query, '%'))
+              )
+            order by
+              case
+                when lower(list.name) = lower(:query) then 0
+                when lower(list.name) like lower(concat(:query, '%')) then 1
+                else 2
+              end,
+              list.updatedAt desc,
+              list.name asc
+            """, countQuery = """
+            select count(list)
+            from MediaList list
+            where list.visibility = :visibility
+              and (
+                lower(list.name) like lower(concat('%', :query, '%'))
+                or lower(coalesce(list.description, '')) like lower(concat('%', :query, '%'))
+              )
+            """)
+    Page<MediaList> searchPublicLists(
+            @Param("query") String query,
+            @Param("visibility") Visibility visibility,
+            Pageable pageable
+    );
 }

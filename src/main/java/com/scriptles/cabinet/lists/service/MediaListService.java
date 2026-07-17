@@ -11,6 +11,7 @@ import com.scriptles.cabinet.lists.dto.response.MediaListPreviewResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListDetailsResponse;
+import com.scriptles.cabinet.lists.dto.response.PublicListSearchResponse;
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListItem;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
@@ -128,6 +129,49 @@ public class MediaListService {
     @Transactional(readOnly = true)
     public List<PublicMediaListResponse> findPopularByMedia(UUID mediaId) {
         return findPublicByMedia(mediaId, 0, POPULAR_LIST_LIMIT).items();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PublicListSearchResponse> searchPublic(
+            String query,
+            int page,
+            int size
+    ) {
+        Page<MediaList> lists = mediaListRepository.searchPublicLists(
+                query.trim(),
+                Visibility.PUBLIC,
+                PageRequest.of(page, size)
+        );
+        if (lists.isEmpty()) {
+            return PageResponse.from(lists.map(list -> PublicListSearchResponse.from(
+                    list,
+                    0,
+                    0,
+                    List.of()
+            )));
+        }
+
+        List<UUID> listIds = lists.stream().map(MediaList::getId).toList();
+        Map<UUID, Long> itemCounts = mediaListItemRepository.countByListIds(listIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        MediaListItemRepository.MediaListItemCount::getListId,
+                        MediaListItemRepository.MediaListItemCount::getItemCount
+                ));
+        Map<UUID, Long> likeCounts = mediaListLikeRepository.countByListIds(listIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        MediaListLikeRepository.MediaListLikeCount::getListId,
+                        MediaListLikeRepository.MediaListLikeCount::getLikeCount
+                ));
+        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(listIds);
+
+        return PageResponse.from(lists.map(list -> PublicListSearchResponse.from(
+                list,
+                itemCounts.getOrDefault(list.getId(), 0L),
+                likeCounts.getOrDefault(list.getId(), 0L),
+                previewItems.getOrDefault(list.getId(), List.of())
+        )));
     }
 
     @Transactional(readOnly = true)

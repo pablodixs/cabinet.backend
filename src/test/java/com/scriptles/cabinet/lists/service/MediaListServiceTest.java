@@ -230,6 +230,57 @@ class MediaListServiceTest {
     }
 
     @Test
+    void searchesOnlyPublicListsAndAggregatesTheirCommunityData() {
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        owner.setUsername("maria");
+        owner.setDisplayName("Maria");
+        MediaList list = mediaList("Cinema de estrada");
+        list.setOwner(owner);
+
+        MediaListItemRepository.MediaListItemCount itemCount =
+                org.mockito.Mockito.mock(MediaListItemRepository.MediaListItemCount.class);
+        MediaListLikeRepository.MediaListLikeCount likeCount =
+                org.mockito.Mockito.mock(MediaListLikeRepository.MediaListLikeCount.class);
+        MediaListItemRepository.MediaListCover cover =
+                org.mockito.Mockito.mock(MediaListItemRepository.MediaListCover.class);
+
+        when(mediaListRepository.searchPublicLists(
+                "cinema",
+                Visibility.PUBLIC,
+                PageRequest.of(0, 20)
+        )).thenReturn(new PageImpl<>(List.of(list), PageRequest.of(0, 20), 1));
+        when(mediaListItemRepository.countByListIds(List.of(list.getId())))
+                .thenReturn(List.of(itemCount));
+        when(itemCount.getListId()).thenReturn(list.getId());
+        when(itemCount.getItemCount()).thenReturn(12L);
+        when(mediaListLikeRepository.countByListIds(List.of(list.getId())))
+                .thenReturn(List.of(likeCount));
+        when(likeCount.getListId()).thenReturn(list.getId());
+        when(likeCount.getLikeCount()).thenReturn(8L);
+        when(mediaListItemRepository.findRecentCoversByListIds(List.of(list.getId())))
+                .thenReturn(List.of(cover));
+        when(cover.getListId()).thenReturn(list.getId());
+        when(cover.getCoverUrl()).thenReturn("https://example.com/cinema.jpg");
+        when(cover.getType()).thenReturn(MediaType.MOVIE);
+
+        var response = mediaListService.searchPublic("  cinema  ", 0, 20);
+
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.items().getFirst().name()).isEqualTo("Cinema de estrada");
+        assertThat(response.items().getFirst().itemCount()).isEqualTo(12);
+        assertThat(response.items().getFirst().likeCount()).isEqualTo(8);
+        assertThat(response.items().getFirst().owner().username()).isEqualTo("maria");
+        assertThat(response.items().getFirst().previewItems().getFirst().coverUrl())
+                .isEqualTo("https://example.com/cinema.jpg");
+        verify(mediaListRepository).searchPublicLists(
+                "cinema",
+                Visibility.PUBLIC,
+                PageRequest.of(0, 20)
+        );
+    }
+
+    @Test
     void returnsPublicDetailsToAnonymousVisitor() {
         UUID listId = UUID.randomUUID();
         User owner = new User();
