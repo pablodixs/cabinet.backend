@@ -2,9 +2,11 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.request.ImportExternalMediaRequest;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.ExternalMediaProvider;
@@ -39,6 +41,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -79,6 +84,8 @@ class ExternalMediaServiceTest {
     private TmdbClient tmdbClient;
     @Mock
     private MediaQueryService mediaQueryService;
+    @Mock
+    private MediaCreditService mediaCreditService;
     @Mock
     private ExternalMediaProvider provider;
 
@@ -148,6 +155,11 @@ class ExternalMediaServiceTest {
                 );
         assertThat(response.listCount()).isEqualTo(7);
         assertThat(response.completedCount()).isEqualTo(31);
+        assertThat(response.credits()).singleElement().satisfies(credit -> {
+            assertThat(credit.personId()).isNull();
+            assertThat(credit.name()).isEqualTo("David Fincher");
+            assertThat(credit.role()).isEqualTo(CreditRole.DIRECTOR);
+        });
     }
 
     @Test
@@ -177,6 +189,7 @@ class ExternalMediaServiceTest {
                 null,
                 Map.of(),
                 List.of(),
+                List.of(),
                 true,
                 0,
                 null,
@@ -202,12 +215,67 @@ class ExternalMediaServiceTest {
         verifyNoInteractions(providerRegistry);
     }
 
+    @Test
+    void persistsExternalCreditsWhenImportingMedia() {
+        ExternalMedia external = movie();
+        UUID mediaId = UUID.randomUUID();
+        when(externalReferenceRepository.findBySourceAndExternalId(ExternalSource.TMDB, "550"))
+                .thenReturn(Optional.empty());
+        when(providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)).thenReturn(provider);
+        when(provider.findById(MediaType.MOVIE, "550", "pt-BR")).thenReturn(Optional.of(external));
+        when(wikidataClient.find(ExternalSource.TMDB, MediaType.MOVIE, "550", "pt-BR"))
+                .thenReturn(Optional.empty());
+        when(mediaRepository.save(any(Media.class))).thenAnswer(invocation -> {
+            Media media = invocation.getArgument(0);
+            media.setId(mediaId);
+            return media;
+        });
+
+        var response = externalMediaService.importMedia(new ImportExternalMediaRequest(
+                ExternalSource.TMDB, "550", MediaType.MOVIE));
+
+        assertThat(response.id()).isEqualTo(mediaId);
+        assertThat(response.creator()).isEqualTo("David Fincher");
+        verify(mediaCreditService).save(argThat(media -> mediaId.equals(media.getId())), eq(external.credits()));
+    }
+
+    @Test
+    void backfillsCreditsWhenImportingAnExistingMediaWithoutCredits() {
+        UUID mediaId = UUID.randomUUID();
+        Media media = new Media();
+        media.setId(mediaId);
+        media.setType(MediaType.MOVIE);
+        media.setTitle("Fight Club");
+        ExternalReference reference = new ExternalReference();
+        reference.setMedia(media);
+        reference.setSource(ExternalSource.TMDB);
+        reference.setExternalId("550");
+        ExternalMedia external = movie();
+
+        when(externalReferenceRepository.findBySourceAndExternalId(ExternalSource.TMDB, "550"))
+                .thenReturn(Optional.of(reference));
+        when(mediaCreditService.summary(media)).thenReturn(MediaCreditService.CreditSummary.empty());
+        when(providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)).thenReturn(provider);
+        when(provider.findById(MediaType.MOVIE, "550", "pt-BR")).thenReturn(Optional.of(external));
+
+        var response = externalMediaService.importMedia(new ImportExternalMediaRequest(
+                ExternalSource.TMDB, "550", MediaType.MOVIE));
+
+        assertThat(response.id()).isEqualTo(mediaId);
+        assertThat(response.creator()).isEqualTo("David Fincher");
+        verify(mediaCreditService).save(media, external.credits());
+    }
+
     private ExternalMedia movie() {
         return new ExternalMedia(
                 ExternalSource.TMDB, "550", MediaType.MOVIE, "Fight Club", "Fight Club", null, null,
                 null, null, null, null, "en", "US", null, null, null, null, null, null, 139, null, null,
                 null, null, null, null, null, null, "David Fincher", null, null,
-                List.of(), List.of(), List.of()
+                List.of(), List.of(), List.of(), List.of(
+                        new ExternalMedia.ExternalCredit(
+                                "7467", "David Fincher", CreditRole.DIRECTOR, null, 0,
+                                "https://image.tmdb.org/t/p/w500/profile.jpg", ExternalSource.TMDB)
+                )
         );
     }
 }

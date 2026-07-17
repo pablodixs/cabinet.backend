@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.RelatedMediaResponse;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ExternalMediaService;
@@ -57,6 +58,16 @@ class MediaControllerTest {
                         null,
                         Map.of(),
                         List.of(),
+                        List.of(new ExternalMediaDetailsResponse.CreditResponse(
+                                UUID.randomUUID(),
+                                "David Fincher",
+                                CreditRole.DIRECTOR,
+                                null,
+                                0,
+                                null,
+                                ExternalSource.TMDB,
+                                "7467"
+                        )),
                         true,
                         12,
                         4.25,
@@ -77,6 +88,8 @@ class MediaControllerTest {
                 .andExpect(jsonPath("$.ratingDistribution[0].count").value(1))
                 .andExpect(jsonPath("$.ratingDistribution[1].rating").value(5.0))
                 .andExpect(jsonPath("$.ratingDistribution[1].count").value(3))
+                .andExpect(jsonPath("$.credits[0].name").value("David Fincher"))
+                .andExpect(jsonPath("$.credits[0].role").value("DIRECTOR"))
                 .andExpect(jsonPath("$.listCount").value(7))
                 .andExpect(jsonPath("$.completedCount").value(31));
     }

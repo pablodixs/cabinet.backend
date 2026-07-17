@@ -71,6 +71,7 @@ class MediaListControllerTest {
                 Visibility.PRIVATE,
                 true,
                 null,
+                List.of(),
                 0,
                 now,
                 now

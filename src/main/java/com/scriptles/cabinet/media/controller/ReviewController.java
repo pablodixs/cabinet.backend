@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -28,13 +29,38 @@ import java.util.UUID;
 public class ReviewController {
     private final ReviewService reviewService;
 
+    @GetMapping("/v1/reviews/{reviewId}")
+    public ReviewResponse findPublicById(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID reviewId
+    ) {
+        return reviewService.findPublicById(user == null ? null : user.id(), reviewId);
+    }
+
     @GetMapping("/v1/media/{mediaId}/reviews")
     public PageResponse<ReviewResponse> findPublic(
+            @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable UUID mediaId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "10") @Min(1) @Max(50) int size
     ) {
-        return reviewService.findPublic(mediaId, page, size);
+        return reviewService.findPublic(user == null ? null : user.id(), mediaId, page, size);
+    }
+
+    @GetMapping("/v1/media/{mediaId}/reviews/popular")
+    public List<ReviewResponse> findPopular(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID mediaId
+    ) {
+        return reviewService.findPopular(user == null ? null : user.id(), mediaId);
+    }
+
+    @GetMapping("/v1/media/{mediaId}/reviews/recent")
+    public List<ReviewResponse> findRecent(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID mediaId
+    ) {
+        return reviewService.findRecent(user == null ? null : user.id(), mediaId);
     }
 
     @GetMapping("/v1/me/reviews/{mediaId}")

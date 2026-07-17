@@ -5,6 +5,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record ReviewResponse(
@@ -16,9 +17,21 @@ public record ReviewResponse(
         Visibility visibility,
         Instant createdAt,
         Instant updatedAt,
+        long likeCount,
+        boolean liked,
+        List<ReviewLikerResponse> recentLikers,
         AuthorResponse author
 ) {
     public static ReviewResponse from(Review review) {
+        return from(review, 0, false, List.of());
+    }
+
+    public static ReviewResponse from(
+            Review review,
+            long likeCount,
+            boolean liked,
+            List<ReviewLikerResponse> recentLikers
+    ) {
         return new ReviewResponse(
                 review.getId(),
                 review.getMedia().getId(),
@@ -28,6 +41,9 @@ public record ReviewResponse(
                 review.getVisibility(),
                 review.getCreatedAt(),
                 review.getUpdatedAt(),
+                likeCount,
+                liked,
+                recentLikers,
                 new AuthorResponse(
                         review.getUser().getId(),
                         review.getUser().getUsername(),

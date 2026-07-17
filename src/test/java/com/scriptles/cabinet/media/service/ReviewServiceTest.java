@@ -8,6 +8,7 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
@@ -39,6 +40,8 @@ import static org.mockito.Mockito.when;
 class ReviewServiceTest {
     @Mock
     private ReviewRepository reviewRepository;
+    @Mock
+    private ReviewLikeRepository reviewLikeRepository;
     @Mock
     private UserRepository userRepository;
     @Mock
@@ -160,6 +163,7 @@ class ReviewServiceTest {
     void returnsOnlyPublicReviewsThroughPublicQuery() {
         UUID mediaId = UUID.randomUUID();
         Review review = new Review();
+        review.setId(UUID.randomUUID());
         review.setMedia(media(mediaId));
         review.setUser(user(UUID.randomUUID()));
         review.setRating(new BigDecimal("5.0"));
@@ -171,7 +175,7 @@ class ReviewServiceTest {
                 any(Pageable.class)
         )).thenReturn(new PageImpl<>(List.of(review)));
 
-        PageResponse<ReviewResponse> response = reviewService.findPublic(mediaId, 0, 10);
+        PageResponse<ReviewResponse> response = reviewService.findPublic(null, mediaId, 0, 10);
 
         assertThat(response.items()).hasSize(1);
         verify(reviewRepository).findByMediaIdAndVisibility(
@@ -187,6 +191,70 @@ class ReviewServiceTest {
     }
 
     @Test
+    void returnsTheThreeMostLikedPublicReviewsAsPopular() {
+        UUID mediaId = UUID.randomUUID();
+        List<Review> reviews = List.of(
+                review(mediaId, "5.0"),
+                review(mediaId, "4.5"),
+                review(mediaId, "4.0")
+        );
+        when(mediaRepository.existsById(mediaId)).thenReturn(true);
+        List<UUID> reviewIds = reviews.stream().map(Review::getId).toList();
+        when(reviewRepository.findPopularIds(
+                mediaId,
+                Visibility.PUBLIC,
+                PageRequest.of(0, 3)
+        )).thenReturn(reviewIds);
+        when(reviewRepository.findAllByIdIn(reviewIds)).thenReturn(reviews);
+
+        List<ReviewResponse> response = reviewService.findPopular(null, mediaId);
+
+        assertThat(response).extracting(ReviewResponse::rating)
+                .containsExactly(
+                        new BigDecimal("5.0"),
+                        new BigDecimal("4.5"),
+                        new BigDecimal("4.0")
+                );
+    }
+
+    @Test
+    void returnsTheThreeMostRecentPublicReviews() {
+        UUID mediaId = UUID.randomUUID();
+        List<Review> reviews = List.of(
+                review(mediaId, "3.0"),
+                review(mediaId, "4.0"),
+                review(mediaId, "5.0")
+        );
+        when(mediaRepository.existsById(mediaId)).thenReturn(true);
+        when(reviewRepository.findTop3ByMediaIdAndVisibilityOrderByCreatedAtDescIdDesc(
+                mediaId,
+                Visibility.PUBLIC
+        )).thenReturn(reviews);
+
+        List<ReviewResponse> response = reviewService.findRecent(null, mediaId);
+
+        assertThat(response).extracting(ReviewResponse::rating)
+                .containsExactly(
+                        new BigDecimal("3.0"),
+                        new BigDecimal("4.0"),
+                        new BigDecimal("5.0")
+                );
+    }
+
+    @Test
+    void rejectsReviewHighlightsForMissingMedia() {
+        UUID mediaId = UUID.randomUUID();
+        when(mediaRepository.existsById(mediaId)).thenReturn(false);
+
+        assertThatThrownBy(() -> reviewService.findPopular(null, mediaId))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("Mídia não encontrada");
+
+        verify(reviewRepository, never())
+                .findPopularIds(any(), any(), any());
+    }
+
+    @Test
     void deletesOnlyTheReviewOwnedByTheUser() {
         UUID userId = UUID.randomUUID();
         UUID mediaId = UUID.randomUUID();
@@ -196,6 +264,7 @@ class ReviewServiceTest {
 
         reviewService.delete(userId, mediaId);
 
+        verify(reviewLikeRepository).deleteByReviewId(review.getId());
         verify(reviewRepository).delete(review);
     }
 
@@ -224,5 +293,15 @@ class ReviewServiceTest {
         media.setId(id);
         media.setType(MediaType.MOVIE);
         return media;
+    }
+
+    private Review review(UUID mediaId, String rating) {
+        Review review = new Review();
+        review.setId(UUID.randomUUID());
+        review.setMedia(media(mediaId));
+        review.setUser(user(UUID.randomUUID()));
+        review.setRating(new BigDecimal(rating));
+        review.setVisibility(Visibility.PUBLIC);
+        return review;
     }
 }

@@ -7,6 +7,7 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
+import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
@@ -21,7 +22,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
@@ -53,6 +56,27 @@ class UserProfileServiceTest {
 
     @InjectMocks
     private UserProfileService userProfileService;
+
+    @Test
+    void searchesOnlyVisibleActiveProfilesByName() {
+        User profileUser = user(Visibility.PUBLIC);
+        PageRequest pageable = PageRequest.of(
+                0,
+                20,
+                Sort.by(Sort.Order.asc("displayName"), Sort.Order.asc("username"))
+        );
+        when(userRepository.searchVisibleProfiles("maria", Visibility.PUBLIC, pageable))
+                .thenReturn(new PageImpl<>(List.of(profileUser), pageable, 1));
+
+        UserSearchResponse result = userProfileService.search(" @maria ", 0, 20)
+                .items()
+                .getFirst();
+
+        assertThat(result.username()).isEqualTo("maria");
+        assertThat(result.displayName()).isEqualTo("Maria Cabinet");
+        assertThat(result.avatarUrl()).isNull();
+        verify(userRepository).searchVisibleProfiles("maria", Visibility.PUBLIC, pageable);
+    }
 
     @Test
     void returnsOnlyPublicProfileDataToOtherUsers() {

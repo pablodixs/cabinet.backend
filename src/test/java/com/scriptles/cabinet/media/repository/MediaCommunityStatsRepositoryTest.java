@@ -131,10 +131,51 @@ class MediaCommunityStatsRepositoryTest {
                 .containsExactly(2L, 1L);
     }
 
+    @Test
+    void returnsOnlyTheFourMostRecentlyAddedAvailableCoversPerList() {
+        User owner = user("cover-owner");
+        MediaList firstList = mediaList(owner, "Primeira", Visibility.PUBLIC);
+        MediaList secondList = mediaList(owner, "Segunda", Visibility.PUBLIC);
+
+        for (int position = 1; position <= 5; position++) {
+            Media media = media("Obra " + position, "https://example.com/" + position + ".jpg");
+            listItem(media, firstList, position);
+        }
+        listItem(media("Sem capa", null), firstList, 6);
+        listItem(media("Outra lista", "https://example.com/other.jpg"), secondList, 1);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        var covers = mediaListItemRepository.findRecentCoversByListIds(
+                List.of(firstList.getId(), secondList.getId())
+        );
+
+        assertThat(covers).filteredOn(cover -> cover.getListId().equals(firstList.getId()))
+                .extracting(MediaListItemRepository.MediaListCover::getCoverUrl)
+                .containsExactly(
+                        "https://example.com/5.jpg",
+                        "https://example.com/4.jpg",
+                        "https://example.com/3.jpg",
+                        "https://example.com/2.jpg"
+                );
+        assertThat(covers).filteredOn(cover -> cover.getListId().equals(firstList.getId()))
+                .extracting(MediaListItemRepository.MediaListCover::getType)
+                .containsOnly(MediaType.MOVIE);
+        assertThat(covers).filteredOn(cover -> cover.getListId().equals(secondList.getId()))
+                .extracting(MediaListItemRepository.MediaListCover::getCoverUrl)
+                .containsExactly("https://example.com/other.jpg");
+    }
+
     private Media media() {
+        return media("Fight Club", null);
+    }
+
+    private Media media(String title, String coverUrl) {
         Media media = new Media();
         media.setType(MediaType.MOVIE);
-        media.setTitle("Fight Club");
+        media.setTitle(title);
+        media.setCoverUrl(coverUrl);
         return entityManager.persist(media);
     }
 
@@ -188,10 +229,14 @@ class MediaCommunityStatsRepositoryTest {
     }
 
     private void listItem(Media media, MediaList list) {
+        listItem(media, list, 1);
+    }
+
+    private void listItem(Media media, MediaList list, int position) {
         MediaListItem item = new MediaListItem();
         item.setMedia(media);
         item.setList(list);
-        item.setPosition(1);
+        item.setPosition(position);
         entityManager.persist(item);
     }
 

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
+import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
@@ -9,6 +10,7 @@ import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
 import com.scriptles.cabinet.media.repository.BookDetailsRepository;
@@ -53,6 +55,7 @@ public class MediaQueryService {
     private final MediaLikeRepository mediaLikeRepository;
     private final MediaListItemRepository mediaListItemRepository;
     private final UserMediaRepository userMediaRepository;
+    private final MediaCreditService mediaCreditService;
 
     public ExternalMediaDetailsResponse findDetails(UUID mediaId) {
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
@@ -86,6 +89,7 @@ public class MediaQueryService {
         List<ExternalMediaDetailsResponse.GenreResponse> genres = media.getGenres().stream()
                 .map(name -> new ExternalMediaDetailsResponse.GenreResponse(null, name, ExternalSource.MANUAL))
                 .toList();
+        MediaCreditService.CreditSummary creditSummary = mediaCreditService.summary(media);
 
         return new ExternalMediaDetailsResponse(
                 media.getId(),
@@ -94,7 +98,7 @@ public class MediaQueryService {
                 media.getType(),
                 media.getTitle(),
                 media.getOriginalTitle(),
-                null,
+                creditSummary.creator(),
                 media.getDescription(),
                 media.getTagline(),
                 media.getCoverUrl(),
@@ -107,26 +111,41 @@ public class MediaQueryService {
                 media.getWikidataId(),
                 externalReferences,
                 genres,
+                creditSummary.credits().stream().map(this::toCreditResponse).toList(),
                 true,
                 community.likeCount(),
                 community.averageRating(),
                 community.ratingDistribution(),
                 community.listCount(),
                 community.completedCount(),
-                details(media)
+                details(media, creditSummary)
         );
     }
 
-    private Object details(Media media) {
+    public PageResponse<ExternalMediaDetailsResponse.CreditResponse> findCredits(
+            UUID mediaId,
+            CreditRole role,
+            int page,
+            int limit
+    ) {
+        if (!mediaRepository.existsById(mediaId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada");
+        }
+        return PageResponse.from(mediaCreditService.findByRole(mediaId, role, page, limit)
+                .map(this::toCreditResponse));
+    }
+
+    private Object details(Media media, MediaCreditService.CreditSummary creditSummary) {
         return switch (media.getType()) {
             case MOVIE -> movieDetailsRepository.findById(media.getId())
                     .map(details -> new ExternalMediaDetailsResponse.MovieDetails(
                             details.getRuntimeMinutes(),
                             details.getBudget(),
                             details.getRevenue(),
-                            null
+                            creditSummary.director()
                     ))
-                    .orElseGet(() -> new ExternalMediaDetailsResponse.MovieDetails(null, null, null, null));
+                    .orElseGet(() -> new ExternalMediaDetailsResponse.MovieDetails(
+                            null, null, null, creditSummary.director()));
             case TRACK -> trackDetailsRepository.findById(media.getId())
                     .map(details -> new ExternalMediaDetailsResponse.TrackDetails(
                             details.getDurationSeconds(),
@@ -171,6 +190,19 @@ public class MediaQueryService {
                 track.getTrackNumber(),
                 track.getDurationSeconds(),
                 track.getExplicit()
+        );
+    }
+
+    private ExternalMediaDetailsResponse.CreditResponse toCreditResponse(MediaCreditService.CreditView credit) {
+        return new ExternalMediaDetailsResponse.CreditResponse(
+                credit.personId(),
+                credit.name(),
+                credit.role(),
+                credit.characterName(),
+                credit.position(),
+                credit.imageUrl(),
+                credit.source(),
+                credit.externalId()
         );
     }
 

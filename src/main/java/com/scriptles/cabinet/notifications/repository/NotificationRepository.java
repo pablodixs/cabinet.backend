@@ -1,0 +1,45 @@
+package com.scriptles.cabinet.notifications.repository;
+
+import com.scriptles.cabinet.notifications.entity.Notification;
+import com.scriptles.cabinet.notifications.enums.NotificationType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface NotificationRepository extends JpaRepository<Notification, UUID> {
+    @EntityGraph(attributePaths = {"actor", "mediaList", "review", "review.media", "comment", "report", "report.media"})
+    Page<Notification> findByRecipientIdOrderByActivityAtDescIdDesc(UUID recipientId, Pageable pageable);
+
+    long countByRecipientIdAndReadAtIsNull(UUID recipientId);
+
+    List<Notification> findByRecipientIdAndIdInAndReadAtIsNull(UUID recipientId, Collection<UUID> ids);
+
+    Optional<Notification> findByRecipientIdAndTypeAndMediaListId(
+            UUID recipientId, NotificationType type, UUID listId);
+
+    Optional<Notification> findByRecipientIdAndTypeAndReviewId(
+            UUID recipientId, NotificationType type, UUID reviewId);
+
+    boolean existsByRecipientIdAndCommentId(UUID recipientId, UUID commentId);
+
+    boolean existsByRecipientIdAndReportId(UUID recipientId, UUID reportId);
+
+    List<Notification> findByCommentId(UUID commentId);
+
+    @Modifying
+    long deleteByCommentId(UUID commentId);
+
+    @Modifying
+    @Query("delete from Notification notification where notification.activityAt < :cutoff")
+    int deleteOlderThan(@Param("cutoff") Instant cutoff);
+}

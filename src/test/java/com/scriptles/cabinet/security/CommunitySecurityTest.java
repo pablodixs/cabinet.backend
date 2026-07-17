@@ -87,12 +87,26 @@ class CommunitySecurityTest {
     @Test
     void allowsAnonymousUsersToReadPublicReviews() throws Exception {
         UUID mediaId = UUID.randomUUID();
-        when(reviewService.findPublic(mediaId, 0, 10))
+        when(reviewService.findPublic(null, mediaId, 0, 10))
                 .thenReturn(new PageResponse<>(List.of(), 0, 10, 0, 0));
 
         mockMvc.perform(get("/v1/media/{mediaId}/reviews", mediaId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items").isArray());
+    }
+
+    @Test
+    void allowsAnonymousUsersToReadPopularAndRecentReviews() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(reviewService.findPopular(null, mediaId)).thenReturn(List.of());
+        when(reviewService.findRecent(null, mediaId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/v1/media/{mediaId}/reviews/popular", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+        mockMvc.perform(get("/v1/media/{mediaId}/reviews/recent", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
     }
 
     @Test
@@ -137,6 +151,9 @@ class CommunitySecurityTest {
                 Visibility.PUBLIC,
                 Instant.parse("2026-07-14T12:00:00Z"),
                 Instant.parse("2026-07-14T12:00:00Z"),
+                0,
+                false,
+                List.of(),
                 new ReviewResponse.AuthorResponse(
                         principal.id(),
                         "maria",

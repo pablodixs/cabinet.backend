@@ -13,14 +13,15 @@ import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.enums.Visibility;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.SliceImpl;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,8 +43,24 @@ class MediaSearchServiceTest {
     private ExternalReferenceRepository externalReferenceRepository;
     @Mock
     private ReviewRepository reviewRepository;
-    @InjectMocks
+    @Mock
+    private MediaCreditService mediaCreditService;
     private MediaSearchService mediaSearchService;
+
+    @BeforeEach
+    void setUp() {
+        mediaSearchService = new MediaSearchService(
+                providerRegistry,
+                externalReferenceRepository,
+                reviewRepository,
+                mediaCreditService,
+                new MediaSearchItemAssembler(
+                        externalReferenceRepository,
+                        reviewRepository,
+                        mediaCreditService
+                )
+        );
+    }
 
     @Test
     void searchesAProviderOnceAndEnrichesImportedMediaInBatches() {
@@ -63,6 +80,10 @@ class MediaSearchServiceTest {
         when(rating.getRatingCount()).thenReturn(8L);
         when(reviewRepository.summarizeRatings(List.of(imported.getId()), Visibility.PUBLIC))
                 .thenReturn(List.of(rating));
+        when(mediaCreditService.summaries(List.of(imported))).thenReturn(Map.of(
+                imported.getId(),
+                new MediaCreditService.CreditSummary("Lana Wachowski, Lilly Wachowski", null, List.of())
+        ));
 
         MediaSearchPageResponse response = mediaSearchService.search(
                 " matrix ", MediaType.MOVIE, MediaSearchSort.RELEVANCE, null, 20);
@@ -71,6 +92,7 @@ class MediaSearchServiceTest {
             assertThat(item.id()).isEqualTo(imported.getId());
             assertThat(item.averageRating()).isEqualTo(4.5);
             assertThat(item.ratingCount()).isEqualTo(8);
+            assertThat(item.creator()).isEqualTo("Lana Wachowski, Lilly Wachowski");
         });
         assertThat(response.nextCursor()).isNull();
         verify(tmdb).search(MediaType.MOVIE, "matrix", "pt-BR", 0, 21);
@@ -216,7 +238,7 @@ class MediaSearchServiceTest {
                 source, externalId, type, title, title, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of()
+                List.of(), List.of(), List.of(), List.of()
         );
     }
 }

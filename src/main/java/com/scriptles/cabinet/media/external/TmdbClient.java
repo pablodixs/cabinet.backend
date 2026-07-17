@@ -1,6 +1,8 @@
 package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.config.ExternalApiProperties;
+import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.ExternalOfferType;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import lombok.RequiredArgsConstructor;
@@ -13,17 +15,20 @@ import tools.jackson.databind.JsonNode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
-public class TmdbClient implements ExternalMediaProvider {
+public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksProvider {
     private static final String IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
     private static final String POSTER_SIZE = "w500";
     private static final String BACKDROP_SIZE = "original";
     private static final String LOGO_SIZE = "original";
     private static final String STILL_SIZE = "w780";
+    private static final String PROFILE_SIZE = "w500";
 
     private final RestClient.Builder restClientBuilder;
     private final ExternalApiProperties properties;
@@ -83,6 +88,88 @@ public class TmdbClient implements ExternalMediaProvider {
     public Optional<ExternalMedia> findById(MediaType mediaType, String externalId, String language) {
         JsonNode body = get(detailPath(mediaType, externalId), null, language, true, null);
         return body.isMissingNode() || body.isEmpty() ? Optional.empty() : Optional.of(toMedia(body, mediaType, true));
+    }
+
+    public Optional<String> findPersonWikidataId(String personId) {
+        JsonNode body = get("/person/" + personId + "/external_ids", null, null, false, null);
+        return Optional.ofNullable(text(body, "wikidata_id"));
+    }
+
+    @Override
+    public PersonWorks findPersonWorks(String personExternalId, String language) {
+        JsonNode body = get("/person/" + personExternalId + "/movie_credits", null, language, false, null);
+        List<Work> works = new ArrayList<>();
+        for (JsonNode credit : body.path("crew")) {
+            if (!"Director".equalsIgnoreCase(text(credit, "job"))
+                    || credit.path("adult").asBoolean(false)
+                    || text(credit, "id") == null) {
+                continue;
+            }
+            works.add(new Work(
+                    toMedia(credit, MediaType.MOVIE, false),
+                    credit.path("popularity").asDouble(0)
+            ));
+        }
+        works.sort(java.util.Comparator
+                .comparingDouble(Work::relevance).reversed()
+                .thenComparing(
+                        work -> work.media().releaseDate(),
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                .thenComparing(work -> work.media().externalId()));
+        java.util.LinkedHashMap<String, Work> distinct = new java.util.LinkedHashMap<>();
+        works.forEach(work -> distinct.putIfAbsent(work.media().externalId(), work));
+        return new PersonWorks(List.copyOf(distinct.values()), false);
+    }
+
+    public Optional<String> findImdbId(MediaType mediaType, String externalId) {
+        if (!supports(mediaType)) {
+            return Optional.empty();
+        }
+        JsonNode body = get(detailPath(mediaType, externalId) + "/external_ids", null, null, false, null);
+        return Optional.ofNullable(text(body, "imdb_id"));
+    }
+
+    public ExternalAvailability findWatchProviders(MediaType mediaType, String externalId, String countryCode) {
+        if (!supports(mediaType)) {
+            throw new IllegalArgumentException("TMDB watch providers only support movies and series");
+        }
+
+        JsonNode body = get(detailPath(mediaType, externalId) + "/watch/providers", null, null, false, null);
+        JsonNode country = body.path("results").path(countryCode);
+        String sourceUrl = text(country, "link");
+        List<ExternalAvailability.Offer> offers = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        addWatchOffers(offers, seen, country.path("flatrate"), ExternalOfferType.SUBSCRIPTION, sourceUrl);
+        addWatchOffers(offers, seen, country.path("free"), ExternalOfferType.FREE, sourceUrl);
+        addWatchOffers(offers, seen, country.path("ads"), ExternalOfferType.ADS, sourceUrl);
+        addWatchOffers(offers, seen, country.path("rent"), ExternalOfferType.RENT, sourceUrl);
+        addWatchOffers(offers, seen, country.path("buy"), ExternalOfferType.BUY, sourceUrl);
+        return new ExternalAvailability(ExternalSource.JUSTWATCH, "JustWatch", sourceUrl, offers);
+    }
+
+    private void addWatchOffers(
+            List<ExternalAvailability.Offer> result,
+            Set<String> seen,
+            JsonNode providers,
+            ExternalOfferType type,
+            String sourceUrl
+    ) {
+        for (JsonNode provider : providers) {
+            String providerId = text(provider, "provider_id");
+            String name = text(provider, "provider_name");
+            String key = providerId + ':' + type;
+            if (name == null || !seen.add(key)) {
+                continue;
+            }
+            result.add(new ExternalAvailability.Offer(
+                    providerId,
+                    name,
+                    imageUrl(text(provider, "logo_path"), "w92"),
+                    type,
+                    sourceUrl,
+                    integer(provider, "display_priority")
+            ));
+        }
     }
 
     private JsonNode get(String path, String query, String language, boolean includeCredits, Integer page) {
@@ -159,6 +246,7 @@ public class TmdbClient implements ExternalMediaProvider {
         String originalTitle = text(node, movie ? "original_title" : "original_name");
         LocalDate releaseDate = date(text(node, movie ? "release_date" : "first_air_date"));
         String id = text(node, "id");
+        List<ExternalMedia.ExternalCredit> credits = credits(node, type, detailed);
 
         return new ExternalMedia(
                 ExternalSource.TMDB, id, type, title, originalTitle, text(node, "overview"),
@@ -176,7 +264,8 @@ public class TmdbClient implements ExternalMediaProvider {
                 detailed && !movie ? date(text(node, "last_air_date")) : null,
                 null, null, creator(node, type, detailed),
                 imageUrl(text(node, "backdrop_path"), BACKDROP_SIZE), detailed ? logoUrl(node) : null,
-                detailed ? genres(node) : List.of(), List.of(), detailed && !movie ? seasons(node) : List.of()
+                detailed ? genres(node) : List.of(), List.of(), detailed && !movie ? seasons(node) : List.of(),
+                credits
         );
     }
 
@@ -249,12 +338,79 @@ public class TmdbClient implements ExternalMediaProvider {
         if (type == MediaType.SERIES) {
             return names(node.path("created_by"), "name");
         }
+        List<String> directors = new ArrayList<>();
         for (JsonNode crewMember : node.path("credits").path("crew")) {
             if ("Director".equals(text(crewMember, "job"))) {
-                return text(crewMember, "name");
+                String name = text(crewMember, "name");
+                if (name != null) {
+                    directors.add(name);
+                }
             }
         }
-        return null;
+        return directors.isEmpty() ? null : String.join(", ", directors);
+    }
+
+    private List<ExternalMedia.ExternalCredit> credits(JsonNode node, MediaType type, boolean detailed) {
+        if (!detailed) {
+            return List.of();
+        }
+
+        List<ExternalMedia.ExternalCredit> result = new ArrayList<>();
+        if (type == MediaType.SERIES) {
+            int position = 0;
+            for (JsonNode creator : node.path("created_by")) {
+                addCredit(result, creator, CreditRole.CREATOR, null, position++);
+            }
+        }
+
+        int crewPosition = 0;
+        for (JsonNode crewMember : node.path("credits").path("crew")) {
+            CreditRole role = crewRole(text(crewMember, "job"));
+            if (role != null) {
+                addCredit(result, crewMember, role, null, crewPosition++);
+            }
+        }
+
+        for (JsonNode castMember : node.path("credits").path("cast")) {
+            addCredit(result, castMember, CreditRole.ACTOR, text(castMember, "character"),
+                    integer(castMember, "order"));
+        }
+        return List.copyOf(result);
+    }
+
+    private CreditRole crewRole(String job) {
+        if (job == null) {
+            return null;
+        }
+        return switch (job) {
+            case "Director" -> CreditRole.DIRECTOR;
+            case "Producer", "Executive Producer" -> CreditRole.PRODUCER;
+            case "Screenplay", "Writer", "Story", "Teleplay" -> CreditRole.SCREENWRITER;
+            case "Original Music Composer", "Composer", "Music" -> CreditRole.COMPOSER;
+            default -> null;
+        };
+    }
+
+    private void addCredit(
+            List<ExternalMedia.ExternalCredit> credits,
+            JsonNode person,
+            CreditRole role,
+            String characterName,
+            Integer position
+    ) {
+        String name = text(person, "name");
+        if (name == null) {
+            return;
+        }
+        credits.add(new ExternalMedia.ExternalCredit(
+                text(person, "id"),
+                name,
+                role,
+                characterName,
+                position,
+                imageUrl(text(person, "profile_path"), PROFILE_SIZE),
+                ExternalSource.TMDB
+        ));
     }
 
     private String names(JsonNode values, String field) {

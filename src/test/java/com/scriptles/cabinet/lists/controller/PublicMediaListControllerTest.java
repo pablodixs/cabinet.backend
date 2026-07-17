@@ -2,6 +2,8 @@ package com.scriptles.cabinet.lists.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListPreviewResponse;
+import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.lists.service.MediaListService;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,16 @@ class PublicMediaListControllerTest {
                 "Filmes que atravessam paisagens e afetos.",
                 true,
                 null,
+                List.of(
+                        new MediaListPreviewResponse(
+                                "https://example.com/recent.jpg",
+                                MediaType.MOVIE
+                        ),
+                        new MediaListPreviewResponse(
+                                "https://example.com/older.jpg",
+                                MediaType.BOOK
+                        )
+                ),
                 12,
                 8,
                 4,
@@ -58,10 +70,45 @@ class PublicMediaListControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value(listId.toString()))
                 .andExpect(jsonPath("$.items[0].name").value("Cinema de estrada"))
+                .andExpect(jsonPath("$.items[0].previewItems[0].coverUrl")
+                        .value("https://example.com/recent.jpg"))
+                .andExpect(jsonPath("$.items[0].previewItems[0].type").value("MOVIE"))
                 .andExpect(jsonPath("$.items[0].mediaPosition").value(4))
                 .andExpect(jsonPath("$.items[0].owner.username").value("maria"))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         verify(mediaListService).findPublicByMedia(mediaId, 0, 20);
+    }
+
+    @Test
+    void returnsUpToThreePopularListsWithoutAuthentication() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        PublicMediaListResponse response = new PublicMediaListResponse(
+                UUID.randomUUID(),
+                "Mais curtidas",
+                null,
+                true,
+                null,
+                List.of(),
+                5,
+                20,
+                1,
+                Instant.parse("2026-07-15T12:00:00Z"),
+                new PublicMediaListResponse.AuthorResponse(
+                        UUID.randomUUID(),
+                        "maria",
+                        "Maria",
+                        null
+                )
+        );
+        when(mediaListService.findPopularByMedia(mediaId)).thenReturn(List.of(response));
+
+        mockMvc.perform(get("/v1/media/{mediaId}/lists/popular", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].name").value("Mais curtidas"))
+                .andExpect(jsonPath("$[0].likeCount").value(20));
+
+        verify(mediaListService).findPopularByMedia(mediaId);
     }
 }

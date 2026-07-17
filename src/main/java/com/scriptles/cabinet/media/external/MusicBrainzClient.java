@@ -1,6 +1,8 @@
 package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.config.ExternalApiProperties;
+import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.ExternalOfferType;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import lombok.RequiredArgsConstructor;
@@ -10,17 +12,21 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
+import java.net.URI;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
 @RequiredArgsConstructor
-public class MusicBrainzClient implements ExternalMediaProvider {
+public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonWorksProvider {
     private static final Pattern WIKIDATA_QID = Pattern.compile("(?:^|/)(Q[1-9]\\d*)(?=$|[/?#])", Pattern.CASE_INSENSITIVE);
 
     private final RestClient.Builder restClientBuilder;
@@ -49,7 +55,7 @@ public class MusicBrainzClient implements ExternalMediaProvider {
         JsonNode body = get(track ? "/recording" : "/release-group", query, offset, limit);
         List<ExternalMedia> results = new ArrayList<>();
         for (JsonNode item : body.path(track ? "recordings" : "release-groups")) {
-            results.add(track ? toTrack(item) : toAlbum(item, List.of(), false));
+            results.add(track ? toTrack(item) : toAlbum(item, List.of(), true));
         }
         return results;
     }
@@ -69,6 +75,158 @@ public class MusicBrainzClient implements ExternalMediaProvider {
         }
         List<ExternalMedia.ExternalTrack> tracks = findTracks(body);
         return Optional.of(toAlbum(body, tracks, true));
+    }
+
+    public Optional<String> findArtistWikidataId(String artistId) {
+        JsonNode body = get("/artist/" + artistId, null, 0, 0, "url-rels");
+        return Optional.ofNullable(wikidataId(body));
+    }
+
+    @Override
+    public PersonWorks findPersonWorks(String personExternalId, String language) {
+        JsonNode body = browseReleaseGroups(personExternalId);
+        List<Work> works = new ArrayList<>();
+        for (JsonNode item : body.path("release-groups")) {
+            ExternalMedia album = toAlbum(item, List.of(), false);
+            if (album.externalId() != null) {
+                works.add(new Work(album, 0));
+            }
+        }
+        works.sort(java.util.Comparator
+                .comparing(
+                        (Work work) -> work.media().releaseDate(),
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
+                .thenComparing(work -> work.media().title(), java.util.Comparator.nullsLast(String::compareToIgnoreCase))
+                .thenComparing(work -> work.media().externalId()));
+        Integer total = integer(body, "release-group-count");
+        return new PersonWorks(List.copyOf(works), total != null && total > works.size());
+    }
+
+    private JsonNode browseReleaseGroups(String artistId) {
+        waitForRateLimit();
+        try {
+            return restClientBuilder.baseUrl(properties.musicbrainz().baseUrl()).build().get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/release-group")
+                            .queryParam("fmt", "json")
+                            .queryParam("artist", artistId)
+                            .queryParam("inc", "artist-credits")
+                            .queryParam("release-group-status", "website-default")
+                            .queryParam("offset", 0)
+                            .queryParam("limit", 100)
+                            .build())
+                    .header("User-Agent", properties.musicbrainz().userAgent())
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 503) {
+                throw new ExternalMediaRateLimitException("MusicBrainz rate limit exceeded", exception);
+            }
+            throw new ExternalMediaException(
+                    "MusicBrainz responded with HTTP " + exception.getStatusCode().value(), exception
+            );
+        } catch (RestClientException exception) {
+            throw new ExternalMediaException("Unable to communicate with MusicBrainz", exception);
+        }
+    }
+
+    public ExternalAvailability findListenAndBuyLinks(MediaType mediaType, String externalId) {
+        if (!supports(mediaType)) {
+            throw new IllegalArgumentException("MusicBrainz links only support albums and tracks");
+        }
+        if (mediaType == MediaType.TRACK) {
+            JsonNode recording = get("/recording/" + externalId, null, 0, 0, "releases+url-rels");
+            String sourceUrl = "https://musicbrainz.org/recording/" + externalId;
+            List<JsonNode> relationSets = new ArrayList<>();
+            relationSets.add(recording.path("relations"));
+            addReleaseRelations(recording.path("releases"), relationSets);
+            return availabilityFromRelations(sourceUrl, relationSets);
+        }
+
+        JsonNode releaseGroup = get("/release-group/" + externalId, null, 0, 0,
+                "releases+media+url-rels");
+        String sourceUrl = "https://musicbrainz.org/release-group/" + externalId;
+        List<JsonNode> relationSets = new ArrayList<>();
+        relationSets.add(releaseGroup.path("relations"));
+        addReleaseRelations(releaseGroup.path("releases"), relationSets);
+        return availabilityFromRelations(sourceUrl, relationSets);
+    }
+
+    private void addReleaseRelations(JsonNode releases, List<JsonNode> relationSets) {
+        JsonNode releaseSummary = selectRelease(releases);
+        String releaseId = releaseSummary == null ? null : text(releaseSummary, "id");
+        if (releaseId == null) {
+            return;
+        }
+        JsonNode release = get("/release/" + releaseId, null, 0, 0, "url-rels");
+        relationSets.add(release.path("relations"));
+    }
+
+    private ExternalAvailability availabilityFromRelations(String sourceUrl, List<JsonNode> relationSets) {
+        Map<String, ExternalAvailability.Offer> offers = new LinkedHashMap<>();
+        for (JsonNode relations : relationSets) {
+            for (JsonNode relation : relations) {
+                ExternalOfferType offerType = offerType(text(relation, "type"));
+                String url = text(relation.path("url"), "resource");
+                if (offerType == null || url == null) {
+                    continue;
+                }
+                String providerId = providerId(url);
+                String key = offerType + ":" + url;
+                offers.putIfAbsent(key, new ExternalAvailability.Offer(
+                        providerId,
+                        providerName(providerId),
+                        null,
+                        offerType,
+                        url,
+                        offers.size()
+                ));
+            }
+        }
+        return new ExternalAvailability(
+                ExternalSource.MUSICBRAINZ,
+                "MusicBrainz",
+                sourceUrl,
+                List.copyOf(offers.values())
+        );
+    }
+
+    private ExternalOfferType offerType(String relationType) {
+        if (relationType == null) {
+            return null;
+        }
+        return switch (relationType.toLowerCase(Locale.ROOT)) {
+            case "streaming", "free streaming", "stream for free", "streaming page", "stream video for free" ->
+                    ExternalOfferType.STREAM;
+            case "purchase for download", "purchase music for download" -> ExternalOfferType.BUY_DOWNLOAD;
+            case "purchase for mail-order", "purchase for mail order" -> ExternalOfferType.BUY_PHYSICAL;
+            case "download for free", "free download" -> ExternalOfferType.FREE_DOWNLOAD;
+            default -> null;
+        };
+    }
+
+    private String providerId(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            return host == null ? url : host.toLowerCase(Locale.ROOT).replaceFirst("^www\\.", "");
+        } catch (IllegalArgumentException exception) {
+            return url;
+        }
+    }
+
+    private String providerName(String providerId) {
+        String normalized = providerId.toLowerCase(Locale.ROOT);
+        if (normalized.contains("spotify")) return "Spotify";
+        if (normalized.contains("music.apple") || normalized.contains("itunes.apple")) return "Apple Music";
+        if (normalized.contains("deezer")) return "Deezer";
+        if (normalized.contains("bandcamp")) return "Bandcamp";
+        if (normalized.contains("tidal")) return "TIDAL";
+        if (normalized.contains("soundcloud")) return "SoundCloud";
+        if (normalized.contains("youtube")) return "YouTube Music";
+        if (normalized.contains("amazon")) return "Amazon Music";
+
+        String name = normalized.split("\\.")[0].replace('-', ' ');
+        return name.isBlank() ? providerId : Character.toUpperCase(name.charAt(0)) + name.substring(1);
     }
 
     private JsonNode get(String path, String query, int offset, int limit) {
@@ -125,28 +283,30 @@ public class MusicBrainzClient implements ExternalMediaProvider {
             boolean includeCover
     ) {
         String id = text(node, "id");
+        List<ExternalMedia.ExternalCredit> credits = artistCredits(node.path("artist-credit"));
         return new ExternalMedia(
                 ExternalSource.MUSICBRAINZ, id, MediaType.ALBUM, text(node, "title"), null,
                 text(node, "disambiguation"), null, includeCover ? albumCoverService.findCoverUrl(id) : null,
                 "https://musicbrainz.org/release-group/" + id, wikidataId(node),
                 date(text(node, "first-release-date")), null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                albumType(node), tracks.isEmpty() ? null : tracks.size(), artistNames(node.path("artist-credit")),
-                null, null, genres(node), tracks, List.of()
+                albumType(node), tracks.isEmpty() ? null : tracks.size(), creditNames(credits),
+                null, null, genres(node), tracks, List.of(), credits
         );
     }
 
     private ExternalMedia toTrack(JsonNode node) {
         String id = text(node, "id");
         Integer length = integer(node, "length");
+        List<ExternalMedia.ExternalCredit> credits = artistCredits(node.path("artist-credit"));
         return new ExternalMedia(
                 ExternalSource.MUSICBRAINZ, id, MediaType.TRACK, text(node, "title"), null,
                 text(node, "disambiguation"), null, null,
                 "https://musicbrainz.org/recording/" + id, wikidataId(node),
                 recordingReleaseDate(node), null, null, null, null, null, null,
                 millisecondsToSeconds(length), null, null, null, null, null, null, null, null,
-                null, null, artistNames(node.path("artist-credit")), null, null,
-                genres(node), List.of(), List.of()
+                null, null, creditNames(credits), null, null,
+                genres(node), List.of(), List.of(), credits
         );
     }
 
@@ -302,18 +462,34 @@ public class MusicBrainzClient implements ExternalMediaProvider {
         return node.path(field).isNumber() ? node.path(field).asInt() : null;
     }
 
-    private String artistNames(JsonNode credits) {
-        List<String> names = new ArrayList<>();
-        for (JsonNode credit : credits) {
+    private List<ExternalMedia.ExternalCredit> artistCredits(JsonNode values) {
+        List<ExternalMedia.ExternalCredit> credits = new ArrayList<>();
+        int position = 0;
+        for (JsonNode credit : values) {
             String name = text(credit, "name");
             if (name == null) {
                 name = text(credit.path("artist"), "name");
             }
             if (name != null) {
-                names.add(name);
+                credits.add(new ExternalMedia.ExternalCredit(
+                        text(credit.path("artist"), "id"),
+                        name,
+                        CreditRole.ARTIST,
+                        null,
+                        position++,
+                        null,
+                        ExternalSource.MUSICBRAINZ
+                ));
             }
         }
-        return names.isEmpty() ? null : String.join(", ", names);
+        return List.copyOf(credits);
+    }
+
+    private String creditNames(List<ExternalMedia.ExternalCredit> credits) {
+        return credits.isEmpty()
+                ? null
+                : credits.stream().map(ExternalMedia.ExternalCredit::name)
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     private LocalDate date(String value) {

@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
+import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
@@ -35,6 +36,25 @@ public class UserProfileService {
     private final UserRepository userRepository;
     private final UserMediaRepository userMediaRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
+
+    @Transactional(readOnly = true)
+    public PageResponse<UserSearchResponse> search(String query, int page, int size) {
+        String normalizedQuery = query.trim();
+        if (normalizedQuery.startsWith("@")) {
+            normalizedQuery = normalizedQuery.substring(1).trim();
+        }
+        PageRequest pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Order.asc("displayName"), Sort.Order.asc("username"))
+        );
+        Page<User> users = userRepository.searchVisibleProfiles(
+                normalizedQuery,
+                Visibility.PUBLIC,
+                pageable
+        );
+        return PageResponse.from(users.map(UserSearchResponse::from));
+    }
 
     @Transactional(readOnly = true)
     public UserProfileResponse findByUsername(String username, UUID viewerId) {

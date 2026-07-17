@@ -11,6 +11,7 @@ import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.MediaRelation;
 import com.scriptles.cabinet.media.entity.MovieDetails;
 import com.scriptles.cabinet.media.entity.SeriesDetails;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
@@ -31,6 +32,7 @@ import com.scriptles.cabinet.media.repository.BookDetailsRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.MediaRelationRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
@@ -40,6 +42,7 @@ import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,9 +59,11 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ExternalMediaService {
     private final ExternalMediaProviderRegistry providerRegistry;
     private final MediaRepository mediaRepository;
+    private final MediaRelationRepository mediaRelationRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final AlbumDetailsRepository albumDetailsRepository;
     private final BookDetailsRepository bookDetailsRepository;
@@ -74,6 +79,7 @@ public class ExternalMediaService {
     private final WikidataClient wikidataClient;
     private final TmdbClient tmdbClient;
     private final MediaQueryService mediaQueryService;
+    private final MediaCreditService mediaCreditService;
 
     @Transactional(readOnly = true)
     public List<ExternalMediaResponse> search(MediaType mediaType, String query, String language, int offset, int limit) {
@@ -142,6 +148,7 @@ public class ExternalMediaService {
                 references,
                 external.genres().stream().map(genre -> new ExternalMediaDetailsResponse.GenreResponse(
                         genre.id(), genre.name(), genre.source())).toList(),
+                toCreditResponses(external.credits()),
                 importedId != null,
                 communityStats.likeCount(),
                 communityStats.averageRating(),
@@ -216,8 +223,14 @@ public class ExternalMediaService {
                 )
         );
 
+        List<RelatedMediaResponse.Item> manualItems = manualRelations(source, externalId);
+
         if (relations.items().isEmpty()) {
-            return new RelatedMediaResponse(ExternalSource.WIKIDATA, relations.incomplete(), List.of());
+            return new RelatedMediaResponse(
+                    manualItems.isEmpty() ? ExternalSource.WIKIDATA : ExternalSource.MANUAL,
+                    relations.incomplete(),
+                    manualItems
+            );
         }
 
         Set<ExternalSource> sources = relations.items().stream()
@@ -251,7 +264,7 @@ public class ExternalMediaService {
                         (first, ignored) -> first
                 ));
 
-        List<RelatedMediaResponse.Item> items = relations.items().stream()
+        List<RelatedMediaResponse.Item> items = new ArrayList<>(relations.items().stream()
                 .map(item -> {
                     UUID importedId = importedId(item, importedReferences, importedBookWorkIds);
                     return new RelatedMediaResponse.Item(
@@ -268,8 +281,48 @@ public class ExternalMediaService {
                             importedId != null
                     );
                 })
-                .toList();
+                .toList());
+        Set<String> automaticKeys = items.stream()
+                .map(item -> item.relationType() + ":" + (item.id() != null ? item.id() : item.wikidataId()))
+                .collect(Collectors.toSet());
+        manualItems.stream()
+                .filter(item -> automaticKeys.add(item.relationType() + ":" + item.id()))
+                .forEach(items::add);
         return new RelatedMediaResponse(ExternalSource.WIKIDATA, relations.incomplete(), items);
+    }
+
+    private List<RelatedMediaResponse.Item> manualRelations(ExternalSource source, String externalId) {
+        UUID mediaId = externalReferenceRepository.findBySourceAndExternalId(source, externalId)
+                .map(reference -> reference.getMedia().getId())
+                .orElse(null);
+        if (mediaId == null) {
+            return List.of();
+        }
+
+        return mediaRelationRepository.findAllBySourceMediaIdOrderByCreatedAtAsc(mediaId).stream()
+                .map(this::manualRelationItem)
+                .toList();
+    }
+
+    private RelatedMediaResponse.Item manualRelationItem(MediaRelation relation) {
+        Media target = relation.getTargetMedia();
+        ExternalReference reference = externalReferenceRepository.findAllByMediaId(target.getId()).stream()
+                .filter(ExternalReference::isPrimaryReference)
+                .findFirst()
+                .orElse(null);
+        return new RelatedMediaResponse.Item(
+                target.getId(),
+                relation.getRelationType(),
+                target.getType(),
+                target.getTitle(),
+                target.getReleaseDate(),
+                target.getCoverUrl(),
+                target.getWikidataId(),
+                reference == null ? ExternalSource.MANUAL : reference.getSource(),
+                reference == null ? target.getId().toString() : reference.getExternalId(),
+                reference == null ? null : reference.getExternalUrl(),
+                true
+        );
     }
 
     public SeasonEpisodesResponse findSeasonEpisodes(String seriesId, int seasonNumber, String language) {
@@ -345,7 +398,13 @@ public class ExternalMediaService {
                 .findBySourceAndExternalId(request.source(), request.externalId())
                 .orElse(null);
         if (existing != null) {
-            return toImportedResponse(existing.getMedia(), existing, null, null, existing.getMedia().getWikidataId());
+            return toImportedResponse(
+                    existing.getMedia(),
+                    existing,
+                    storedCreatorOrBackfill(existing.getMedia(), request),
+                    null,
+                    existing.getMedia().getWikidataId()
+            );
         }
 
         ExternalMediaProvider provider = providerRegistry.get(request.source(), request.mediaType());
@@ -368,6 +427,7 @@ public class ExternalMediaService {
         unsavedMedia.setWikidataId(wikidataId);
         Media media = mediaRepository.save(unsavedMedia);
         saveDetails(media, external, canonicalWorkWikidataId);
+        mediaCreditService.save(media, external.credits());
 
         ExternalReference reference = new ExternalReference();
         reference.setMedia(media);
@@ -393,6 +453,26 @@ public class ExternalMediaService {
                 media, reference, external.creator(), external.durationSeconds(), wikidataId);
     }
 
+    private String storedCreatorOrBackfill(Media media, ImportExternalMediaRequest request) {
+        MediaCreditService.CreditSummary stored = mediaCreditService.summary(media);
+        if (!stored.credits().isEmpty()) {
+            mediaCreditService.reconcile(media);
+            return mediaCreditService.summary(media).creator();
+        }
+
+        try {
+            Optional<ExternalMedia> external = providerRegistry.get(request.source(), request.mediaType())
+                    .findById(request.mediaType(), request.externalId(), "pt-BR");
+            if (external.isPresent()) {
+                mediaCreditService.save(media, external.get().credits());
+                return external.get().creator();
+            }
+        } catch (ExternalMediaException | IllegalArgumentException exception) {
+            log.warn("Unable to backfill credits for imported media {}", media.getId(), exception);
+        }
+        return stored.creator();
+    }
+
     private ExternalSource defaultSource(MediaType mediaType) {
         return switch (mediaType) {
             case BOOK -> ExternalSource.GOOGLE_BOOKS;
@@ -416,6 +496,9 @@ public class ExternalMediaService {
                         reference -> reference,
                         (first, ignored) -> first
                 ));
+        Map<UUID, MediaCreditService.CreditSummary> creditSummaries = mediaCreditService.summaries(
+                references.values().stream().map(ExternalReference::getMedia).distinct().toList()
+        );
 
         return results.stream().map(external -> {
             ExternalReference reference = references.get(new ExternalKey(external.source(), external.externalId()));
@@ -424,7 +507,10 @@ public class ExternalMediaService {
                 return toImportedResponse(
                         media,
                         reference,
-                        external.creator(),
+                        external.creator() != null
+                                ? external.creator()
+                                : creditSummaries.getOrDefault(
+                                        media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
                         external.durationSeconds(),
                         media.getWikidataId() != null ? media.getWikidataId() : external.wikidataId()
                 );
@@ -633,6 +719,24 @@ public class ExternalMediaService {
                 creator, media.getDescription(), media.getCoverUrl(), media.getReleaseDate(),
                 durationSeconds, wikidataId, true
         );
+    }
+
+    private List<ExternalMediaDetailsResponse.CreditResponse> toCreditResponses(
+            List<ExternalMedia.ExternalCredit> credits
+    ) {
+        if (credits == null || credits.isEmpty()) {
+            return List.of();
+        }
+        return credits.stream().map(credit -> new ExternalMediaDetailsResponse.CreditResponse(
+                null,
+                credit.name(),
+                credit.role(),
+                credit.characterName(),
+                credit.position(),
+                credit.imageUrl(),
+                credit.source(),
+                credit.externalId()
+        )).toList();
     }
 
     private record ExternalKey(ExternalSource source, String externalId) {

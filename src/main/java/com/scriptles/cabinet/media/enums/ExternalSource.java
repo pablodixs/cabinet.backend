@@ -12,5 +12,8 @@ public enum ExternalSource {
     LAST_FM,
     WIKIDATA,
     JUSTWATCH,
+    OMDB,
+    ROTTEN_TOMATOES,
+    METACRITIC,
     MANUAL
 }

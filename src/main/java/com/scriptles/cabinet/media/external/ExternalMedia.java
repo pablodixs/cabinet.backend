@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 
 import java.time.LocalDate;
@@ -43,7 +44,8 @@ public record ExternalMedia(
         String logoUrl,
         List<ExternalGenre> genres,
         List<ExternalTrack> tracks,
-        List<ExternalSeason> seasons
+        List<ExternalSeason> seasons,
+        List<ExternalCredit> credits
 ) {
     public ExternalMedia withCreator(String value) {
         return new ExternalMedia(
@@ -51,7 +53,17 @@ public record ExternalMedia(
                 wikidataId, releaseDate, originalLanguage, countryCode, isbn10, isbn13, pageCount, publisher,
                 durationSeconds, explicit,
                 runtimeMinutes, budget, revenue, seriesStatus, numberOfSeasons, numberOfEpisodes,
-                lastAirDate, albumType, numberOfTracks, value, backdropUrl, logoUrl, genres, tracks, seasons
+                lastAirDate, albumType, numberOfTracks, value, backdropUrl, logoUrl, genres, tracks, seasons, credits
+        );
+    }
+
+    public ExternalMedia withCoverUrl(String value) {
+        return new ExternalMedia(
+                source, externalId, type, title, originalTitle, description, tagline, value, externalUrl,
+                wikidataId, releaseDate, originalLanguage, countryCode, isbn10, isbn13, pageCount, publisher,
+                durationSeconds, explicit,
+                runtimeMinutes, budget, revenue, seriesStatus, numberOfSeasons, numberOfEpisodes,
+                lastAirDate, albumType, numberOfTracks, creator, backdropUrl, logoUrl, genres, tracks, seasons, credits
         );
     }
 
@@ -63,7 +75,7 @@ public record ExternalMedia(
                 runtimeMinutes, budget, revenue, seriesStatus, numberOfSeasons, numberOfEpisodes,
                 lastAirDate, albumType, numberOfTracks, creator, backdropUrl,
                 logoUrl != null ? logoUrl : enrichedLogoUrl,
-                mergeGenres(genres, enrichedGenres), tracks, seasons
+                mergeGenres(genres, enrichedGenres), tracks, seasons, credits
         );
     }
 
@@ -91,5 +103,16 @@ public record ExternalMedia(
 
     public record ExternalEpisode(String externalId, Integer episodeNumber, String title, String description,
                                   String stillUrl, LocalDate airDate, Integer runtimeMinutes) {
+    }
+
+    public record ExternalCredit(
+            String externalId,
+            String name,
+            CreditRole role,
+            String characterName,
+            Integer position,
+            String imageUrl,
+            ExternalSource source
+    ) {
     }
 }

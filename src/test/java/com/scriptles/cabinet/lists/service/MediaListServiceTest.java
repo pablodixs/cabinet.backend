@@ -100,6 +100,10 @@ class MediaListServiceTest {
         MediaList second = mediaList("Segunda");
         MediaListItemRepository.MediaListItemCount count =
                 org.mockito.Mockito.mock(MediaListItemRepository.MediaListItemCount.class);
+        MediaListItemRepository.MediaListCover recentCover =
+                org.mockito.Mockito.mock(MediaListItemRepository.MediaListCover.class);
+        MediaListItemRepository.MediaListCover olderCover =
+                org.mockito.Mockito.mock(MediaListItemRepository.MediaListCover.class);
 
         when(mediaListRepository.findAllByOwnerIdOrderByUpdatedAtDesc(userId))
                 .thenReturn(List.of(first, second));
@@ -107,6 +111,15 @@ class MediaListServiceTest {
                 .thenReturn(List.of(count));
         when(count.getListId()).thenReturn(first.getId());
         when(count.getItemCount()).thenReturn(3L);
+        when(mediaListItemRepository.findRecentCoversByListIds(
+                List.of(first.getId(), second.getId())
+        )).thenReturn(List.of(recentCover, olderCover));
+        when(recentCover.getListId()).thenReturn(first.getId());
+        when(recentCover.getCoverUrl()).thenReturn("https://example.com/recent.jpg");
+        when(recentCover.getType()).thenReturn(MediaType.MOVIE);
+        when(olderCover.getListId()).thenReturn(first.getId());
+        when(olderCover.getCoverUrl()).thenReturn("https://example.com/older.jpg");
+        when(olderCover.getType()).thenReturn(MediaType.BOOK);
 
         List<MediaListResponse> response = mediaListService.findMine(userId);
 
@@ -114,6 +127,15 @@ class MediaListServiceTest {
                 .containsExactly("Primeira", "Segunda");
         assertThat(response).extracting(MediaListResponse::itemCount)
                 .containsExactly(3L, 0L);
+        assertThat(response.getFirst().previewItems())
+                .extracting(item -> item.coverUrl(), item -> item.type())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "https://example.com/recent.jpg", MediaType.MOVIE),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "https://example.com/older.jpg", MediaType.BOOK)
+                );
+        assertThat(response.get(1).previewItems()).isEmpty();
         verify(mediaListRepository).findAllByOwnerIdOrderByUpdatedAtDesc(userId);
     }
 
@@ -160,6 +182,13 @@ class MediaListServiceTest {
                 .thenReturn(List.of(count));
         when(count.getListId()).thenReturn(list.getId());
         when(count.getItemCount()).thenReturn(12L);
+        MediaListItemRepository.MediaListCover cover =
+                org.mockito.Mockito.mock(MediaListItemRepository.MediaListCover.class);
+        when(mediaListItemRepository.findRecentCoversByListIds(List.of(list.getId())))
+                .thenReturn(List.of(cover));
+        when(cover.getListId()).thenReturn(list.getId());
+        when(cover.getCoverUrl()).thenReturn("https://example.com/latest.jpg");
+        when(cover.getType()).thenReturn(MediaType.MOVIE);
 
         var response = mediaListService.findPublicByMedia(mediaId, 0, 20);
 
@@ -170,11 +199,33 @@ class MediaListServiceTest {
         assertThat(response.items().getFirst().itemCount()).isEqualTo(12);
         assertThat(response.items().getFirst().likeCount()).isEqualTo(8);
         assertThat(response.items().getFirst().mediaPosition()).isEqualTo(4);
+        assertThat(response.items().getFirst().previewItems().getFirst().coverUrl())
+                .isEqualTo("https://example.com/latest.jpg");
+        assertThat(response.items().getFirst().previewItems().getFirst().type())
+                .isEqualTo(MediaType.MOVIE);
         assertThat(response.items().getFirst().owner().username()).isEqualTo("maria");
         verify(mediaListItemRepository).findAllByMediaIdAndListVisibility(
                 mediaId,
                 Visibility.PUBLIC,
                 PageRequest.of(0, 20)
+        );
+    }
+
+    @Test
+    void limitsPopularListsForMediaToThree() {
+        UUID mediaId = UUID.randomUUID();
+        when(mediaListItemRepository.findAllByMediaIdAndListVisibility(
+                mediaId,
+                Visibility.PUBLIC,
+                PageRequest.of(0, 3)
+        )).thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 3), 0));
+
+        assertThat(mediaListService.findPopularByMedia(mediaId)).isEmpty();
+
+        verify(mediaListItemRepository).findAllByMediaIdAndListVisibility(
+                mediaId,
+                Visibility.PUBLIC,
+                PageRequest.of(0, 3)
         );
     }
 

@@ -1,15 +1,82 @@
 export type ExternalSource =
   | "TMDB" | "IMDB" | "GOOGLE_BOOKS" | "OPEN_LIBRARY"
   | "MUSICBRAINZ" | "SPOTIFY" | "APPLE_MUSIC" | "DEEZER"
-  | "LAST_FM" | "WIKIDATA" | "JUSTWATCH" | "MANUAL";
+  | "LAST_FM" | "WIKIDATA" | "JUSTWATCH" | "OMDB"
+  | "ROTTEN_TOMATOES" | "METACRITIC" | "MANUAL";
 
 export type MediaType = "BOOK" | "MOVIE" | "SERIES" | "TRACK" | "ALBUM";
+
+export type CreditRole =
+  | "AUTHOR" | "CREATOR" | "DIRECTOR" | "ACTOR"
+  | "ARTIST" | "COMPOSER" | "PRODUCER" | "SCREENWRITER";
 
 export interface Genre {
   id: string | null;
   name: string;
   source: ExternalSource;
 }
+
+export interface MediaCredit {
+  personId: string | null;
+  name: string;
+  role: CreditRole;
+  characterName: string | null;
+  position: number | null;
+  imageUrl: string | null;
+  source: ExternalSource;
+  externalId: string | null;
+}
+
+export interface Artist {
+  id: string;
+  name: string;
+  biography: string | null;
+  imageUrl: string | null;
+  source: ExternalSource;
+  externalId: string | null;
+  workCount: number;
+  roles: CreditRole[];
+}
+
+export interface ArtistWorkCredit {
+  role: CreditRole;
+  characterName: string | null;
+}
+
+export interface ArtistWork {
+  mediaId: string;
+  type: MediaType;
+  title: string;
+  coverUrl: string | null;
+  releaseDate: string | null;
+  credits: ArtistWorkCredit[];
+}
+
+export type MoreByState = "READY" | "EMPTY" | "UNSUPPORTED";
+
+export interface MoreByPerson {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+}
+
+export interface MoreByResponse {
+  state: MoreByState;
+  role: Extract<CreditRole, "DIRECTOR" | "ARTIST"> | null;
+  person: MoreByPerson | null;
+  incomplete: boolean;
+  items: MediaSearchResult[];
+}
+
+export interface PageResponse<T> {
+  items: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export type MediaCreditsPage = PageResponse<MediaCredit>;
 
 export interface ExternalMediaSearchResult {
   id: string | null;
@@ -32,7 +99,7 @@ export interface MediaSearchResult {
   id: string | null;
   externalId: string;
   source: ExternalSource;
-  type: Extract<MediaType, "MOVIE" | "SERIES" | "ALBUM">;
+  type: Extract<MediaType, "MOVIE" | "SERIES" | "ALBUM" | "BOOK">;
   title: string;
   creator: string | null;
   description: string | null;
@@ -46,6 +113,54 @@ export interface MediaSearchResult {
 export interface MediaSearchPage {
   items: MediaSearchResult[];
   nextCursor: string | null;
+}
+
+export type ExternalInfoSectionState =
+  | "READY" | "EMPTY" | "PENDING" | "STALE"
+  | "ERROR" | "NOT_CONFIGURED" | "NOT_SUPPORTED";
+
+export type ExternalOfferType =
+  | "SUBSCRIPTION" | "FREE" | "ADS" | "RENT" | "BUY"
+  | "STREAM" | "BUY_DOWNLOAD" | "BUY_PHYSICAL" | "FREE_DOWNLOAD";
+
+export type ExternalRatingMetric = "IMDB_RATING" | "TOMATOMETER" | "METASCORE";
+
+export interface MediaExternalOffer {
+  dataSource: ExternalSource;
+  providerId: string | null;
+  providerName: string;
+  logoUrl: string | null;
+  type: ExternalOfferType;
+  url: string | null;
+  sourceUrl: string | null;
+}
+
+export interface MediaExternalRating {
+  provider: "OMDB";
+  source: Extract<ExternalSource, "IMDB" | "ROTTEN_TOMATOES" | "METACRITIC">;
+  metric: ExternalRatingMetric;
+  value: number;
+  scale: number;
+  displayValue: string | null;
+  externalId: string | null;
+}
+
+export interface MediaExternalInfoResponse {
+  mediaId: string;
+  countryCode: string;
+  availability: {
+    state: ExternalInfoSectionState;
+    fetchedAt: string | null;
+    expiresAt: string | null;
+    attributions: string[];
+    offers: MediaExternalOffer[];
+  };
+  ratings: {
+    state: ExternalInfoSectionState;
+    fetchedAt: string | null;
+    expiresAt: string | null;
+    items: MediaExternalRating[];
+  };
 }
 
 interface MediaDetailsBase<T extends MediaType, D> {
@@ -68,6 +183,7 @@ interface MediaDetailsBase<T extends MediaType, D> {
   wikidataId: string | null;
   externalReferences: Record<string, string>;
   genres: Genre[];
+  credits: MediaCredit[];
   imported: boolean;
   likeCount: number;
   averageRating: number | null;
@@ -130,7 +246,8 @@ export interface BookSpecificDetails {
 }
 
 export type MediaRelationType =
-  | "ADAPTATION_OF" | "ADAPTED_AS" | "SOUNDTRACK" | "SOUNDTRACK_OF";
+  | "ADAPTATION_OF" | "ADAPTED_AS" | "SOUNDTRACK" | "SOUNDTRACK_OF"
+  | "RE_RECORDING_OF" | "RE_RECORDED_AS";
 
 export interface RelatedMedia {
   id: string | null;
@@ -183,6 +300,40 @@ export interface SeasonEpisodesResponse {
 
 export interface MediaLikeResponse {
   liked: boolean;
+}
+
+export type ReviewVisibility = "PUBLIC" | "PRIVATE";
+
+export interface ReviewLikerResponse {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+}
+
+export interface ReviewResponse {
+  id: string;
+  mediaId: string;
+  rating: number;
+  content: string | null;
+  containsSpoilers: boolean;
+  visibility: ReviewVisibility;
+  createdAt: string;
+  updatedAt: string;
+  likeCount: number;
+  liked: boolean;
+  recentLikers: ReviewLikerResponse[];
+  author: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+}
+
+export interface ReviewLikeResponse {
+  liked: boolean;
+  likeCount: number;
+  recentLikers: ReviewLikerResponse[];
 }
 
 export interface LinkWikidataRequest {

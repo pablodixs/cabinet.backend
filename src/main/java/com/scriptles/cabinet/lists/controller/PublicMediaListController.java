@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -29,5 +30,10 @@ public class PublicMediaListController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
     ) {
         return mediaListService.findPublicByMedia(mediaId, page, size);
+    }
+
+    @GetMapping("/{mediaId}/lists/popular")
+    public List<PublicMediaListResponse> findPopularLists(@PathVariable UUID mediaId) {
+        return mediaListService.findPopularByMedia(mediaId);
     }
 }

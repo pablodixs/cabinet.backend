@@ -81,4 +81,8 @@ public class Media {
     private Instant createdAt;
     @UpdateTimestamp
     private Instant updatedAt;
+
+    @Version
+    @Column(nullable = false, columnDefinition = "bigint default 0")
+    private long version;
 }

@@ -342,7 +342,7 @@ public class WikidataClient {
                     bookId == null ? null : ExternalSource.GOOGLE_BOOKS,
                     bookId
             );
-            case SOUNDTRACK -> new ProviderIdentity(
+            case SOUNDTRACK, RE_RECORDING_OF, RE_RECORDED_AS -> new ProviderIdentity(
                     MediaType.ALBUM,
                     albumId == null ? null : ExternalSource.MUSICBRAINZ,
                     albumId

@@ -24,6 +24,10 @@ import java.util.UUID;
         @Index(
                 name = "idx_reviews_media_created",
                 columnList = "media_id, created_at"
+        ),
+        @Index(
+                name = "idx_reviews_media_popular",
+                columnList = "media_id, visibility, rating, created_at"
         )
 })
 @Getter

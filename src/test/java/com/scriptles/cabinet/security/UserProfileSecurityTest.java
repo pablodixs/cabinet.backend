@@ -3,6 +3,7 @@ package com.scriptles.cabinet.security;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.user.controller.UserController;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
+import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.service.UserProfileService;
 import com.scriptles.cabinet.user.service.UserService;
@@ -56,6 +57,25 @@ class UserProfileSecurityTest {
                 .andExpect(jsonPath("$.username").value("maria"))
                 .andExpect(jsonPath("$.email").doesNotExist())
                 .andExpect(jsonPath("$.libraryCount").value(12));
+    }
+
+    @Test
+    void allowsAnonymousUsersToSearchPublicProfiles() throws Exception {
+        UserSearchResponse response = new UserSearchResponse(
+                UUID.randomUUID(),
+                "maria",
+                "Maria Cabinet",
+                "Livros, discos e filmes.",
+                null
+        );
+        when(userProfileService.search("maria", 0, 20)).thenReturn(
+                new PageResponse<>(List.of(response), 0, 20, 1, 1)
+        );
+
+        mockMvc.perform(get("/v1/users/search").param("query", "maria"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].username").value("maria"))
+                .andExpect(jsonPath("$.items[0].displayName").value("Maria Cabinet"));
     }
 
     @Test

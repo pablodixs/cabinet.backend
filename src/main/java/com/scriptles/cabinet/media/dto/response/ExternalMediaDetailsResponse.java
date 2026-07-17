@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.dto.response;
 
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ public record ExternalMediaDetailsResponse(
         String wikidataId,
         Map<String, String> externalReferences,
         List<GenreResponse> genres,
+        List<CreditResponse> credits,
         boolean imported,
         long likeCount,
         Double averageRating,
@@ -37,6 +39,16 @@ public record ExternalMediaDetailsResponse(
         Object details
 ) {
     public record GenreResponse(String id, String name, ExternalSource source) {}
+    public record CreditResponse(
+            UUID personId,
+            String name,
+            CreditRole role,
+            String characterName,
+            Integer position,
+            String imageUrl,
+            ExternalSource source,
+            String externalId
+    ) {}
     public record RatingDistributionBucket(double rating, long count) {}
     public record MovieDetails(Integer runtimeMinutes, Long budget, Long revenue, String director) {}
     public record TrackDetails(Integer durationSeconds, Boolean explicit) {}

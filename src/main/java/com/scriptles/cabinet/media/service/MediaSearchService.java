@@ -46,6 +46,8 @@ public class MediaSearchService {
     private final ExternalMediaProviderRegistry providerRegistry;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final ReviewRepository reviewRepository;
+    private final MediaCreditService mediaCreditService;
+    private final MediaSearchItemAssembler mediaSearchItemAssembler;
 
     @Transactional(readOnly = true)
     public MediaSearchPageResponse search(
@@ -83,7 +85,7 @@ public class MediaSearchService {
                 ? encode("s:%d".formatted(state.offset() + consumed))
                 : null;
 
-        return new MediaSearchPageResponse(toResponses(page), nextCursor);
+        return new MediaSearchPageResponse(mediaSearchItemAssembler.fromExternal(page), nextCursor);
     }
 
     private MediaSearchPageResponse searchAllByRelevance(String query, String cursor, int limit) {
@@ -144,7 +146,7 @@ public class MediaSearchService {
                 interleaved.nextSource().name()
         ));
 
-        return new MediaSearchPageResponse(toResponses(interleaved.items()), nextCursor);
+        return new MediaSearchPageResponse(mediaSearchItemAssembler.fromExternal(interleaved.items()), nextCursor);
     }
 
     private MediaSearchPageResponse searchByRating(
@@ -174,11 +176,16 @@ public class MediaSearchService {
                         (first, ignored) -> first,
                         LinkedHashMap::new
                 ));
+        Map<UUID, MediaCreditService.CreditSummary> creditSummaries = mediaCreditService.summaries(
+                ratings.getContent().stream().map(ReviewRepository.RatedMediaProjection::getMedia).toList()
+        );
 
         List<MediaSearchItemResponse> items = ratings.getContent().stream()
                 .map(projection -> toRatedResponse(
                         projection,
-                        references.get(projection.getMedia().getId())
+                        references.get(projection.getMedia().getId()),
+                        creditSummaries.getOrDefault(
+                                projection.getMedia().getId(), MediaCreditService.CreditSummary.empty())
                 ))
                 .filter(java.util.Objects::nonNull)
                 .toList();
@@ -189,61 +196,10 @@ public class MediaSearchService {
         return new MediaSearchPageResponse(items, nextCursor);
     }
 
-    private List<MediaSearchItemResponse> toResponses(List<ExternalMedia> results) {
-        if (results.isEmpty()) {
-            return List.of();
-        }
-
-        Set<ExternalSource> sources = results.stream().map(ExternalMedia::source).collect(Collectors.toSet());
-        Set<String> externalIds = results.stream().map(ExternalMedia::externalId).collect(Collectors.toSet());
-        Map<ExternalKey, ExternalReference> references = externalReferenceRepository
-                .findAllBySourceInAndExternalIdIn(sources, externalIds)
-                .stream()
-                .collect(Collectors.toMap(
-                        reference -> new ExternalKey(reference.getSource(), reference.getExternalId()),
-                        reference -> reference,
-                        (first, ignored) -> first
-                ));
-
-        List<UUID> importedIds = references.values().stream()
-                .map(reference -> reference.getMedia().getId())
-                .distinct()
-                .toList();
-        Map<UUID, RatingSummary> ratings = importedIds.isEmpty()
-                ? Map.of()
-                : reviewRepository.summarizeRatings(importedIds, Visibility.PUBLIC).stream()
-                .collect(Collectors.toMap(
-                        ReviewRepository.MediaRatingProjection::getMediaId,
-                        projection -> new RatingSummary(
-                                projection.getAverageRating(),
-                                projection.getRatingCount()
-                        )
-                ));
-
-        return results.stream().map(result -> {
-            ExternalReference reference = references.get(new ExternalKey(result.source(), result.externalId()));
-            Media imported = reference == null ? null : reference.getMedia();
-            RatingSummary rating = imported == null ? null : ratings.get(imported.getId());
-            return new MediaSearchItemResponse(
-                    imported == null ? null : imported.getId(),
-                    result.externalId(),
-                    result.source(),
-                    result.type(),
-                    result.title(),
-                    result.creator(),
-                    result.description(),
-                    result.coverUrl() != null || imported == null ? result.coverUrl() : imported.getCoverUrl(),
-                    result.releaseDate(),
-                    imported != null,
-                    rating == null ? null : rating.average(),
-                    rating == null ? 0 : rating.count()
-            );
-        }).toList();
-    }
-
     private MediaSearchItemResponse toRatedResponse(
             ReviewRepository.RatedMediaProjection projection,
-            ExternalReference reference
+            ExternalReference reference,
+            MediaCreditService.CreditSummary creditSummary
     ) {
         if (reference == null) {
             return null;
@@ -255,7 +211,7 @@ public class MediaSearchService {
                 reference.getSource(),
                 media.getType(),
                 media.getTitle(),
-                null,
+                creditSummary.creator(),
                 media.getDescription(),
                 media.getCoverUrl(),
                 media.getReleaseDate(),
@@ -411,12 +367,6 @@ public class MediaSearchService {
             SourceSlot[] values = SourceSlot.values();
             return values[(ordinal() + 1) % values.length];
         }
-    }
-
-    private record ExternalKey(ExternalSource source, String externalId) {
-    }
-
-    private record RatingSummary(Double average, long count) {
     }
 
     private record SingleCursor(int offset) {

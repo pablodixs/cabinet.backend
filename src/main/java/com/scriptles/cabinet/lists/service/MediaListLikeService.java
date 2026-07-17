@@ -6,6 +6,7 @@ import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListLike;
 import com.scriptles.cabinet.lists.repository.MediaListLikeRepository;
 import com.scriptles.cabinet.lists.repository.MediaListRepository;
+import com.scriptles.cabinet.notifications.service.NotificationService;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
@@ -22,6 +23,7 @@ public class MediaListLikeService {
     private final MediaListLikeRepository mediaListLikeRepository;
     private final MediaListRepository mediaListRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
     public MediaListLikeResponse find(UUID userId, UUID listId) {
@@ -33,10 +35,12 @@ public class MediaListLikeService {
     public MediaListLikeResponse like(UUID userId, UUID listId) {
         MediaList list = findPublicList(listId);
         if (!mediaListLikeRepository.existsByUserIdAndListId(userId, listId)) {
+            User actor = findUser(userId);
             MediaListLike like = new MediaListLike();
-            like.setUser(findUser(userId));
+            like.setUser(actor);
             like.setList(list);
             mediaListLikeRepository.saveAndFlush(like);
+            if (notificationService != null) notificationService.syncListLike(list, actor);
         }
 
         return response(userId, listId);
@@ -44,8 +48,11 @@ public class MediaListLikeService {
 
     @Transactional
     public MediaListLikeResponse unlike(UUID userId, UUID listId) {
-        findPublicList(listId);
-        mediaListLikeRepository.deleteByUserIdAndListId(userId, listId);
+        MediaList list = findPublicList(listId);
+        long deleted = mediaListLikeRepository.deleteByUserIdAndListId(userId, listId);
+        if (deleted > 0 && notificationService != null) {
+            notificationService.syncListLike(list, findUser(userId));
+        }
         return response(userId, listId);
     }
 

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.security;
 
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.enums.UserRole;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -16,19 +17,62 @@ public record AuthenticatedUser(
         String displayName,
         String passwordHash,
         Collection<? extends GrantedAuthority> authorities,
-        boolean active
+        boolean active,
+        UserRole role
 ) implements UserDetails {
 
+    public AuthenticatedUser(
+            UUID id,
+            String email,
+            String username,
+            String displayName,
+            String passwordHash,
+            Collection<? extends GrantedAuthority> authorities,
+            boolean active
+    ) {
+        this(id, email, username, displayName, passwordHash, authorities, active, UserRole.USER);
+    }
+
     public static AuthenticatedUser from(User user) {
+        return from(user, user.getRole() == null ? UserRole.USER : user.getRole());
+    }
+
+    public static AuthenticatedUser from(User user, UserRole role) {
         return new AuthenticatedUser(
                 user.getId(),
                 user.getEmail(),
                 user.getUsername(),
                 user.getDisplayName(),
                 user.getPasswordHash(),
-                List.of(new SimpleGrantedAuthority("ROLE_USER")),
-                Boolean.TRUE.equals(user.getActive())
+                authorities(role),
+                Boolean.TRUE.equals(user.getActive()),
+                role
         );
+    }
+
+    private static List<SimpleGrantedAuthority> authorities(UserRole role) {
+        if (role == UserRole.ADMIN) {
+            return List.of(
+                    new SimpleGrantedAuthority("ROLE_USER"),
+                    new SimpleGrantedAuthority("ROLE_MODERATOR"),
+                    new SimpleGrantedAuthority("ROLE_ADMIN")
+            );
+        }
+        if (role == UserRole.MODERATOR) {
+            return List.of(
+                    new SimpleGrantedAuthority("ROLE_USER"),
+                    new SimpleGrantedAuthority("ROLE_MODERATOR")
+            );
+        }
+        return List.of(new SimpleGrantedAuthority("ROLE_USER"));
+    }
+
+    public boolean moderator() {
+        return role.canModerate();
+    }
+
+    public boolean admin() {
+        return role == UserRole.ADMIN;
     }
 
     @Override

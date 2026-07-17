@@ -3,10 +3,12 @@ package com.scriptles.cabinet.media.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
+import com.scriptles.cabinet.media.dto.response.ReviewLikerResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
@@ -22,8 +24,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -33,34 +41,86 @@ public class ReviewService {
     private static final BigDecimal RATING_STEP = new BigDecimal("0.5");
 
     private final ReviewRepository reviewRepository;
+    private final ReviewLikeRepository reviewLikeRepository;
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final UserMediaService userMediaService;
 
     @Transactional(readOnly = true)
-    public PageResponse<ReviewResponse> findPublic(UUID mediaId, int page, int size) {
-        if (!mediaRepository.existsById(mediaId)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada");
-        }
+    public PageResponse<ReviewResponse> findPublic(
+            UUID userId,
+            UUID mediaId,
+            int page,
+            int size
+    ) {
+        validateMediaExists(mediaId);
 
-        Page<ReviewResponse> reviews = reviewRepository.findByMediaIdAndVisibility(
-                        mediaId,
-                        Visibility.PUBLIC,
-                        PageRequest.of(
-                                page,
-                                size,
-                                Sort.by(Sort.Direction.DESC, "createdAt")
-                                        .and(Sort.by(Sort.Direction.DESC, "id"))
-                        )
+        Page<Review> reviews = reviewRepository.findByMediaIdAndVisibility(
+                mediaId,
+                Visibility.PUBLIC,
+                PageRequest.of(
+                        page,
+                        size,
+                        Sort.by(Sort.Direction.DESC, "createdAt")
+                                .and(Sort.by(Sort.Direction.DESC, "id"))
                 )
-                .map(ReviewResponse::from);
-        return PageResponse.from(reviews);
+        );
+        return new PageResponse<>(
+                responses(reviews.getContent(), userId),
+                reviews.getNumber(),
+                reviews.getSize(),
+                reviews.getTotalElements(),
+                reviews.getTotalPages()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReviewResponse> findPopular(UUID userId, UUID mediaId) {
+        validateMediaExists(mediaId);
+        List<UUID> reviewIds = reviewRepository.findPopularIds(
+                mediaId,
+                Visibility.PUBLIC,
+                PageRequest.of(0, 3)
+        );
+        if (reviewIds.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Review> reviewsById = reviewRepository.findAllByIdIn(reviewIds)
+                .stream()
+                .collect(Collectors.toMap(Review::getId, review -> review));
+        return responses(
+                reviewIds.stream()
+                        .map(reviewsById::get)
+                        .filter(Objects::nonNull)
+                        .toList(),
+                userId
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReviewResponse> findRecent(UUID userId, UUID mediaId) {
+        validateMediaExists(mediaId);
+        return responses(
+                reviewRepository.findTop3ByMediaIdAndVisibilityOrderByCreatedAtDescIdDesc(
+                        mediaId,
+                        Visibility.PUBLIC
+                ),
+                userId
+        );
     }
 
     @Transactional(readOnly = true)
     public Optional<ReviewResponse> findMine(UUID userId, UUID mediaId) {
         return reviewRepository.findByUserIdAndMediaId(userId, mediaId)
-                .map(ReviewResponse::from);
+                .map(review -> response(review, userId));
+    }
+
+    @Transactional(readOnly = true)
+    public ReviewResponse findPublicById(UUID userId, UUID reviewId) {
+        Review review = reviewRepository.findByIdAndVisibility(reviewId, Visibility.PUBLIC)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "Review não encontrada"));
+        return response(review, userId);
     }
 
     @Transactional
@@ -81,13 +141,16 @@ public class ReviewService {
 
         Review saved = reviewRepository.saveAndFlush(review);
         userMediaService.markCompleted(user, media);
-        return ReviewResponse.from(saved);
+        return response(saved, userId);
     }
 
     @Transactional
     public void delete(UUID userId, UUID mediaId) {
         reviewRepository.findByUserIdAndMediaId(userId, mediaId)
-                .ifPresent(reviewRepository::delete);
+                .ifPresent(review -> {
+                    reviewLikeRepository.deleteByReviewId(review.getId());
+                    reviewRepository.delete(review);
+                });
     }
 
     private Review newReview(User user, Media media) {
@@ -142,5 +205,67 @@ public class ReviewService {
                 "MEDIA_NOT_FOUND",
                 "Mídia não encontrada"
         ));
+    }
+
+    private void validateMediaExists(UUID mediaId) {
+        if (!mediaRepository.existsById(mediaId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada");
+        }
+    }
+
+    private ReviewResponse response(Review review, UUID userId) {
+        UUID reviewId = review.getId();
+        return ReviewResponse.from(
+                review,
+                reviewLikeRepository.countByReviewId(reviewId),
+                userId != null && reviewLikeRepository.existsByUserIdAndReviewId(userId, reviewId),
+                reviewId == null
+                        ? List.of()
+                        : recentLikers(List.of(reviewId)).getOrDefault(reviewId, List.of())
+        );
+    }
+
+    private List<ReviewResponse> responses(List<Review> reviews, UUID userId) {
+        if (reviews.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> reviewIds = reviews.stream().map(Review::getId).toList();
+        Map<UUID, Long> likeCounts = reviewLikeRepository.countByReviewIds(reviewIds)
+                .stream()
+                .collect(Collectors.toMap(
+                        ReviewLikeRepository.ReviewLikeCount::getReviewId,
+                        ReviewLikeRepository.ReviewLikeCount::getLikeCount
+                ));
+        Set<UUID> likedReviewIds = userId == null
+                ? Set.of()
+                : Set.copyOf(reviewLikeRepository.findLikedReviewIds(userId, reviewIds));
+        Map<UUID, List<ReviewLikerResponse>> recentLikers = recentLikers(reviewIds);
+
+        return reviews.stream()
+                .map(review -> ReviewResponse.from(
+                        review,
+                        likeCounts.getOrDefault(review.getId(), 0L),
+                        likedReviewIds.contains(review.getId()),
+                        recentLikers.getOrDefault(review.getId(), List.of())
+                ))
+                .toList();
+    }
+
+    private Map<UUID, List<ReviewLikerResponse>> recentLikers(List<UUID> reviewIds) {
+        return reviewLikeRepository.findRecentLikers(reviewIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        liker -> UUID.fromString(liker.getReviewId()),
+                        LinkedHashMap::new,
+                        Collectors.mapping(
+                                liker -> new ReviewLikerResponse(
+                                        UUID.fromString(liker.getUserId()),
+                                        liker.getUsername(),
+                                        liker.getAvatarUrl()
+                                ),
+                                Collectors.toList()
+                        )
+                ));
     }
 }

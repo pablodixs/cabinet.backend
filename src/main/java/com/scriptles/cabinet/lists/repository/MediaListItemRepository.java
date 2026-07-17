@@ -23,6 +23,30 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
             """)
     List<MediaListItemCount> countByListIds(@Param("listIds") Collection<UUID> listIds);
 
+    @Query("""
+            select item.list.id as listId,
+                   item.media.coverUrl as coverUrl,
+                   item.media.type as type
+            from MediaListItem item
+            where item.list.id in :listIds
+              and item.media.coverUrl is not null
+              and (
+                  select count(newerItem)
+                  from MediaListItem newerItem
+                  where newerItem.list = item.list
+                    and newerItem.media.coverUrl is not null
+                    and (
+                        newerItem.createdAt > item.createdAt
+                        or (
+                            newerItem.createdAt = item.createdAt
+                            and newerItem.position > item.position
+                        )
+                    )
+              ) < 4
+            order by item.list.id, item.createdAt desc, item.position desc
+            """)
+    List<MediaListCover> findRecentCoversByListIds(@Param("listIds") Collection<UUID> listIds);
+
     long countByListId(UUID listId);
 
     long countByMediaIdAndListVisibility(UUID mediaId, Visibility visibility);
@@ -83,6 +107,14 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
         UUID getListId();
 
         long getItemCount();
+    }
+
+    interface MediaListCover {
+        UUID getListId();
+
+        String getCoverUrl();
+
+        com.scriptles.cabinet.media.enums.MediaType getType();
     }
 
     interface MediaListPopularity {

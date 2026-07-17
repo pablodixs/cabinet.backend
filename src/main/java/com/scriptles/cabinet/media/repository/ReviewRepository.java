@@ -27,10 +27,39 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     );
 
     @EntityGraph(attributePaths = {"user", "media"})
+    Optional<Review> findByIdAndVisibility(UUID reviewId, Visibility visibility);
+
+    @EntityGraph(attributePaths = {"user", "media"})
     Page<Review> findByMediaIdAndVisibility(
             UUID mediaId,
             Visibility visibility,
             Pageable pageable
+    );
+
+    @Query("""
+            select review.id
+            from Review review
+            left join ReviewLike reviewLike on reviewLike.review = review
+            where review.media.id = :mediaId
+              and review.visibility = :visibility
+            group by review.id, review.createdAt
+            order by count(reviewLike.id) desc,
+                     review.createdAt desc,
+                     review.id desc
+            """)
+    List<UUID> findPopularIds(
+            @Param("mediaId") UUID mediaId,
+            @Param("visibility") Visibility visibility,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = {"user", "media"})
+    List<Review> findAllByIdIn(Collection<UUID> reviewIds);
+
+    @EntityGraph(attributePaths = {"user", "media"})
+    List<Review> findTop3ByMediaIdAndVisibilityOrderByCreatedAtDescIdDesc(
+            UUID mediaId,
+            Visibility visibility
     );
 
     @Query("""

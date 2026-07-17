@@ -5,6 +5,7 @@ import com.scriptles.cabinet.auth.dto.response.AuthUserResponse;
 import com.scriptles.cabinet.auth.dto.response.CsrfTokenResponse;
 import com.scriptles.cabinet.auth.service.AuthService;
 import com.scriptles.cabinet.security.AuthenticatedUser;
+import com.scriptles.cabinet.security.CustomUserDetailsService;
 import com.scriptles.cabinet.user.dto.request.CreateUserRequest;
 import com.scriptles.cabinet.user.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService authService;
     private final UserService userService;
+    private final CustomUserDetailsService userDetailsService;
 
     @PostMapping("/login")
     public ResponseEntity<AuthUserResponse> login(
@@ -57,7 +59,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public AuthUserResponse currentUser(@AuthenticationPrincipal AuthenticatedUser user) {
-        return AuthUserResponse.from(user);
+        return AuthUserResponse.from(userDetailsService.loadUserById(user.id()));
     }
 
     @GetMapping("/csrf")

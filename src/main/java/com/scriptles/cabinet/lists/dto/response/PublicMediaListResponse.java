@@ -4,6 +4,7 @@ import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListItem;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record PublicMediaListResponse(
@@ -12,6 +13,7 @@ public record PublicMediaListResponse(
         String description,
         boolean ordered,
         String coverUrl,
+        List<MediaListPreviewResponse> previewItems,
         long itemCount,
         long likeCount,
         int mediaPosition,
@@ -22,7 +24,8 @@ public record PublicMediaListResponse(
             MediaList list,
             MediaListItem item,
             long itemCount,
-            long likeCount
+            long likeCount,
+            List<MediaListPreviewResponse> previewItems
     ) {
         return new PublicMediaListResponse(
                 list.getId(),
@@ -30,6 +33,7 @@ public record PublicMediaListResponse(
                 list.getDescription(),
                 list.isOrdered(),
                 list.getCoverUrl(),
+                List.copyOf(previewItems),
                 itemCount,
                 likeCount,
                 item.getPosition(),

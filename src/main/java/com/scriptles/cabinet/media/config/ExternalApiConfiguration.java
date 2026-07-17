@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
 @Configuration
-@EnableConfigurationProperties(ExternalApiProperties.class)
+@EnableConfigurationProperties({ExternalApiProperties.class, OmdbProperties.class})
 public class ExternalApiConfiguration {
     @Bean
     public RestClient.Builder restClientBuilder() {

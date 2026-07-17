@@ -31,7 +31,7 @@ class ExternalMediaTest {
                 ExternalSource.TMDB, "550", MediaType.MOVIE, "Fight Club", "Fight Club", null, null,
                 null, null, null, null, "en", "US", null, null, null, null, null, null, 139, null, null,
                 null, null, null, null, null, null, "David Fincher", null, null,
-                genres, List.of(), List.of()
+                genres, List.of(), List.of(), List.of()
         );
     }
 }

@@ -7,6 +7,7 @@ import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListPreviewResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListDetailsResponse;
@@ -29,6 +30,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,6 +41,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MediaListService {
+    private static final int POPULAR_LIST_LIMIT = 3;
+
     private final MediaListRepository mediaListRepository;
     private final MediaListItemRepository mediaListItemRepository;
     private final MediaListLikeRepository mediaListLikeRepository;
@@ -60,11 +65,15 @@ public class MediaListService {
                         MediaListItemRepository.MediaListItemCount::getListId,
                         MediaListItemRepository.MediaListItemCount::getItemCount
                 ));
+        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(
+                lists.stream().map(MediaList::getId).toList()
+        );
 
         return lists.stream()
                 .map(list -> MediaListResponse.from(
                         list,
-                        itemCounts.getOrDefault(list.getId(), 0L)
+                        itemCounts.getOrDefault(list.getId(), 0L),
+                        previewItems.getOrDefault(list.getId(), List.of())
                 ))
                 .toList();
     }
@@ -105,13 +114,20 @@ public class MediaListService {
                 .findAllWithOwnerByIdIn(listIds)
                 .stream()
                 .collect(Collectors.toMap(MediaList::getId, Function.identity()));
+        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(listIds);
 
         return PageResponse.from(memberships.map(membership -> PublicMediaListResponse.from(
                 listsById.get(membership.getListId()),
                 membership.getItem(),
                 itemCounts.getOrDefault(membership.getListId(), 0L),
-                membership.getLikeCount()
+                membership.getLikeCount(),
+                previewItems.getOrDefault(membership.getListId(), List.of())
         )));
+    }
+
+    @Transactional(readOnly = true)
+    public List<PublicMediaListResponse> findPopularByMedia(UUID mediaId) {
+        return findPublicByMedia(mediaId, 0, POPULAR_LIST_LIMIT).items();
     }
 
     @Transactional(readOnly = true)
@@ -183,7 +199,8 @@ public class MediaListService {
 
         return MediaListResponse.from(
                 mediaListRepository.saveAndFlush(list),
-                mediaListItemRepository.countByListId(listId)
+                mediaListItemRepository.countByListId(listId),
+                previewItems(List.of(listId)).getOrDefault(listId, List.of())
         );
     }
 
@@ -251,6 +268,20 @@ public class MediaListService {
                         Function.identity(),
                         (first, ignored) -> first
                 ));
+    }
+
+    private Map<UUID, List<MediaListPreviewResponse>> previewItems(List<UUID> listIds) {
+        if (listIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, List<MediaListPreviewResponse>> previewsByListId = new LinkedHashMap<>();
+        mediaListItemRepository.findRecentCoversByListIds(listIds).forEach(cover ->
+                previewsByListId
+                        .computeIfAbsent(cover.getListId(), ignored -> new ArrayList<>())
+                        .add(new MediaListPreviewResponse(cover.getCoverUrl(), cover.getType()))
+        );
+        return previewsByListId;
     }
 
     private List<MediaListItemResponse> itemResponses(UUID listId) {

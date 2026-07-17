@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.config.ExternalApiProperties;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import lombok.RequiredArgsConstructor;
@@ -99,6 +100,8 @@ public class GoogleBooksClient implements ExternalMediaProvider {
 
     private ExternalMedia toMedia(JsonNode node) {
         JsonNode volume = node.path("volumeInfo");
+        JsonNode authors = volume.path("authors");
+        List<ExternalMedia.ExternalCredit> credits = authorCredits(authors);
         String id = text(node, "id");
         return new ExternalMedia(
                 ExternalSource.GOOGLE_BOOKS, id, MediaType.BOOK, text(volume, "title"), null,
@@ -106,8 +109,28 @@ public class GoogleBooksClient implements ExternalMediaProvider {
                 null, publicationDate(text(volume, "publishedDate")), text(volume, "language"), null,
                 isbn(volume, "ISBN_10"), isbn(volume, "ISBN_13"), integer(volume, "pageCount"),
                 text(volume, "publisher"), null, null, null, null, null, null, null, null, null, null, null,
-                names(volume.path("authors")), null, null, List.of(), List.of(), List.of()
+                names(authors), null, null, List.of(), List.of(), List.of(), credits
         );
+    }
+
+    private List<ExternalMedia.ExternalCredit> authorCredits(JsonNode authors) {
+        List<ExternalMedia.ExternalCredit> credits = new ArrayList<>();
+        int position = 0;
+        for (JsonNode author : authors) {
+            String name = author.asText(null);
+            if (name != null && !name.isBlank()) {
+                credits.add(new ExternalMedia.ExternalCredit(
+                        null,
+                        name,
+                        CreditRole.AUTHOR,
+                        null,
+                        position++,
+                        null,
+                        ExternalSource.GOOGLE_BOOKS
+                ));
+            }
+        }
+        return List.copyOf(credits);
     }
 
     private String thumbnail(JsonNode volume) {

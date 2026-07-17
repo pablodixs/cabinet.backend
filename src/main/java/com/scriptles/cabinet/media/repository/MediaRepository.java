@@ -16,6 +16,12 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
             Pageable pageable
     );
 
+    Page<Media> findByTitleContainingIgnoreCaseOrOriginalTitleContainingIgnoreCase(
+            String title,
+            String originalTitle,
+            Pageable pageable
+    );
+
     Page<Media> findByType(
             MediaType type,
             Pageable pageable
