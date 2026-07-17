@@ -101,7 +101,7 @@ public class MediaReportService {
 
     @Transactional
     public MediaReportResponse review(UUID reportId, ReviewMediaReportRequest request, UUID reviewerId) {
-        MediaReport report = mediaReportRepository.findById(reportId)
+        MediaReport report = mediaReportRepository.findByIdForUpdate(reportId)
                 .orElseThrow(() -> notFound("REPORT_NOT_FOUND", "O reporte não foi encontrado"));
         if (report.getStatus() != MediaReportStatus.PENDING) {
             throw new ApiException(HttpStatus.CONFLICT, "REPORT_ALREADY_REVIEWED", "Este reporte já foi revisado");

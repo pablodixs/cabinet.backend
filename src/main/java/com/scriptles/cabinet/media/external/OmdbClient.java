@@ -59,7 +59,7 @@ public class OmdbClient {
 
     private JsonNode get(String imdbId) {
         try {
-            return restClientBuilder.baseUrl(properties.baseUrl()).build().get()
+            return restClientBuilder.clone().baseUrl(properties.baseUrl()).build().get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/")
                             .queryParam("apikey", properties.apiKey())

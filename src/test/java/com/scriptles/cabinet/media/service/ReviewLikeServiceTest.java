@@ -2,7 +2,6 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.entity.Review;
-import com.scriptles.cabinet.media.entity.ReviewLike;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.entity.User;
@@ -10,7 +9,6 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -22,6 +20,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -52,6 +51,8 @@ class ReviewLikeServiceTest {
         when(reviewLikeRepository.existsByUserIdAndReviewId(userId, reviewId))
                 .thenReturn(false, true);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(reviewLikeRepository.insertIfAbsent(any(UUID.class), eq(userId), eq(reviewId)))
+                .thenReturn(1);
         when(reviewLikeRepository.countByReviewId(reviewId)).thenReturn(7L);
         ReviewLikeRepository.RecentReviewLiker recentLiker = mock(
                 ReviewLikeRepository.RecentReviewLiker.class
@@ -65,10 +66,7 @@ class ReviewLikeServiceTest {
 
         var response = reviewLikeService.like(userId, reviewId);
 
-        ArgumentCaptor<ReviewLike> captor = ArgumentCaptor.forClass(ReviewLike.class);
-        verify(reviewLikeRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getUser()).isSameAs(user);
-        assertThat(captor.getValue().getReview()).isSameAs(review);
+        verify(reviewLikeRepository).insertIfAbsent(any(UUID.class), eq(userId), eq(reviewId));
         assertThat(response.liked()).isTrue();
         assertThat(response.likeCount()).isEqualTo(7);
         assertThat(response.recentLikers()).singleElement().satisfies(liker -> {
@@ -92,7 +90,7 @@ class ReviewLikeServiceTest {
 
         assertThat(response.liked()).isTrue();
         assertThat(response.likeCount()).isEqualTo(3);
-        verify(reviewLikeRepository, never()).saveAndFlush(any());
+        verify(reviewLikeRepository, never()).insertIfAbsent(any(), any(), any());
         verify(userRepository, never()).findById(userId);
     }
 
@@ -124,7 +122,7 @@ class ReviewLikeServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasMessage("Review não encontrada");
 
-        verify(reviewLikeRepository, never()).saveAndFlush(any());
+        verify(reviewLikeRepository, never()).insertIfAbsent(any(), any(), any());
     }
 
     private Review publicReview(UUID reviewId) {

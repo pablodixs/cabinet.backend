@@ -3,7 +3,6 @@ package com.scriptles.cabinet.lists.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.lists.dto.response.MediaListLikeResponse;
 import com.scriptles.cabinet.lists.entity.MediaList;
-import com.scriptles.cabinet.lists.entity.MediaListLike;
 import com.scriptles.cabinet.lists.repository.MediaListLikeRepository;
 import com.scriptles.cabinet.lists.repository.MediaListRepository;
 import com.scriptles.cabinet.notifications.service.NotificationService;
@@ -34,12 +33,12 @@ public class MediaListLikeService {
     @Transactional
     public MediaListLikeResponse like(UUID userId, UUID listId) {
         MediaList list = findPublicList(listId);
-        if (!mediaListLikeRepository.existsByUserIdAndListId(userId, listId)) {
-            User actor = findUser(userId);
-            MediaListLike like = new MediaListLike();
-            like.setUser(actor);
-            like.setList(list);
-            mediaListLikeRepository.saveAndFlush(like);
+        if (mediaListLikeRepository.existsByUserIdAndListId(userId, listId)) {
+            return response(userId, listId);
+        }
+        User actor = findUser(userId);
+        int inserted = mediaListLikeRepository.insertIfAbsent(UUID.randomUUID(), userId, listId);
+        if (inserted > 0) {
             if (notificationService != null) notificationService.syncListLike(list, actor);
         }
 

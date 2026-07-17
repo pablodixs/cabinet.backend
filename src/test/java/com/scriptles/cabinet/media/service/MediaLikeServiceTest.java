@@ -1,14 +1,12 @@
 package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaLike;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -17,6 +15,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,13 +45,12 @@ class MediaLikeServiceTest {
         when(mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId)).thenReturn(false);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(mediaLikeRepository.insertIfAbsent(any(UUID.class), eq(userId), eq(mediaId)))
+                .thenReturn(1);
 
         var response = mediaLikeService.like(userId, mediaId);
 
-        ArgumentCaptor<MediaLike> captor = ArgumentCaptor.forClass(MediaLike.class);
-        verify(mediaLikeRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getUser()).isSameAs(user);
-        assertThat(captor.getValue().getMedia()).isSameAs(media);
+        verify(mediaLikeRepository).insertIfAbsent(any(UUID.class), eq(userId), eq(mediaId));
         assertThat(response.liked()).isTrue();
     }
 
@@ -63,7 +62,7 @@ class MediaLikeServiceTest {
 
         assertThat(mediaLikeService.like(userId, mediaId).liked()).isTrue();
 
-        verify(mediaLikeRepository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
+        verify(mediaLikeRepository, never()).insertIfAbsent(any(), any(), any());
         verify(userRepository, never()).findById(userId);
         verify(mediaRepository, never()).findById(mediaId);
     }

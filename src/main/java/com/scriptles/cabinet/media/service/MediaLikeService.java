@@ -2,11 +2,8 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.response.MediaLikeResponse;
-import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaLike;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
-import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -32,11 +29,9 @@ public class MediaLikeService {
         if (mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId)) {
             return new MediaLikeResponse(true);
         }
-
-        MediaLike like = new MediaLike();
-        like.setUser(findUser(userId));
-        like.setMedia(findMedia(mediaId));
-        mediaLikeRepository.saveAndFlush(like);
+        findUser(userId);
+        findMedia(mediaId);
+        mediaLikeRepository.insertIfAbsent(UUID.randomUUID(), userId, mediaId);
         return new MediaLikeResponse(true);
     }
 
@@ -45,19 +40,23 @@ public class MediaLikeService {
         mediaLikeRepository.deleteByUserIdAndMediaId(userId, mediaId);
     }
 
-    private User findUser(UUID userId) {
-        return userRepository.findById(userId).orElseThrow(() -> new ApiException(
+    private void findUser(UUID userId) {
+        if (userRepository.findById(userId).isEmpty()) {
+            throw new ApiException(
                 HttpStatus.NOT_FOUND,
                 "USER_NOT_FOUND",
                 "Usuário não encontrado"
-        ));
+            );
+        }
     }
 
-    private Media findMedia(UUID mediaId) {
-        return mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
+    private void findMedia(UUID mediaId) {
+        if (mediaRepository.findById(mediaId).isEmpty()) {
+            throw new ApiException(
                 HttpStatus.NOT_FOUND,
                 "MEDIA_NOT_FOUND",
                 "Mídia não encontrada"
-        ));
+            );
+        }
     }
 }

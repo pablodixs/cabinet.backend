@@ -248,7 +248,7 @@ public class WikidataClient {
                 + "query="
                 + UriUtils.encodeQueryParam(query, StandardCharsets.UTF_8)
                 + "&format=json");
-        return restClientBuilder.baseUrl(properties.wikidata().sparqlUrl()).build().get()
+        return restClientBuilder.clone().baseUrl(properties.wikidata().sparqlUrl()).build().get()
                 .uri(uri)
                 .header("User-Agent", properties.wikidata().userAgent())
                 .retrieve()

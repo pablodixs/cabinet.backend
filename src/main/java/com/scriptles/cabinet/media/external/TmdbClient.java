@@ -179,7 +179,8 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         }
 
         try {
-            RestClient.RequestHeadersSpec<?> request = restClientBuilder.baseUrl(properties.tmdb().baseUrl()).build().get()
+            RestClient.RequestHeadersSpec<?> request = restClientBuilder.clone()
+                    .baseUrl(properties.tmdb().baseUrl()).build().get()
                     .uri(uriBuilder -> {
                         uriBuilder.path(path);
                         if (!hasAccessToken) {

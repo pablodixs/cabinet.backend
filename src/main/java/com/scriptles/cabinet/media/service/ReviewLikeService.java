@@ -4,7 +4,6 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.response.ReviewLikeResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewLikerResponse;
 import com.scriptles.cabinet.media.entity.Review;
-import com.scriptles.cabinet.media.entity.ReviewLike;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.notifications.service.NotificationService;
@@ -36,12 +35,12 @@ public class ReviewLikeService {
     @Transactional
     public ReviewLikeResponse like(UUID userId, UUID reviewId) {
         Review review = findPublicReview(reviewId);
-        if (!reviewLikeRepository.existsByUserIdAndReviewId(userId, reviewId)) {
-            User actor = findUser(userId);
-            ReviewLike like = new ReviewLike();
-            like.setUser(actor);
-            like.setReview(review);
-            reviewLikeRepository.saveAndFlush(like);
+        if (reviewLikeRepository.existsByUserIdAndReviewId(userId, reviewId)) {
+            return response(userId, reviewId);
+        }
+        User actor = findUser(userId);
+        int inserted = reviewLikeRepository.insertIfAbsent(UUID.randomUUID(), userId, reviewId);
+        if (inserted > 0) {
             if (notificationService != null) notificationService.syncReviewLike(review, actor);
         }
 

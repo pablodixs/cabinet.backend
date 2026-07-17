@@ -66,7 +66,7 @@ public class GoogleBooksClient implements ExternalMediaProvider {
             throw new ExternalMediaException("Configure GOOGLE_BOOKS_API_KEY");
         }
         try {
-            return restClientBuilder.baseUrl(properties.googleBooks().baseUrl()).build().get()
+            return restClientBuilder.clone().baseUrl(properties.googleBooks().baseUrl()).build().get()
                     .uri(uriBuilder -> {
                         uriBuilder.path(path);
                         uriBuilder.queryParam("key", properties.googleBooks().apiKey());

@@ -42,6 +42,10 @@ app:
   moderation:
     # Bootstrap only: these accounts can appoint the community team through the dashboard.
     admin-emails: ${ADMIN_EMAILS:}
+  notifications:
+    sse:
+      max-per-user: ${SSE_MAX_CONNECTIONS_PER_USER:3}
+      max-total: ${SSE_MAX_TOTAL_CONNECTIONS:1000}
 
 external:
   omdb:

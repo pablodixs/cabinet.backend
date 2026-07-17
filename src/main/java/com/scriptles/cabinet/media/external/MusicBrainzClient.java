@@ -55,7 +55,9 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
         JsonNode body = get(track ? "/recording" : "/release-group", query, offset, limit);
         List<ExternalMedia> results = new ArrayList<>();
         for (JsonNode item : body.path(track ? "recordings" : "release-groups")) {
-            results.add(track ? toTrack(item) : toAlbum(item, List.of(), true));
+            // Cover lookup can require two additional HTTP calls per album. Keep search bounded
+            // to the provider request and resolve the cover only on the details/import path.
+            results.add(track ? toTrack(item) : toAlbum(item, List.of(), false));
         }
         return results;
     }
@@ -105,7 +107,7 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
     private JsonNode browseReleaseGroups(String artistId) {
         waitForRateLimit();
         try {
-            return restClientBuilder.baseUrl(properties.musicbrainz().baseUrl()).build().get()
+            return restClientBuilder.clone().baseUrl(properties.musicbrainz().baseUrl()).build().get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/release-group")
                             .queryParam("fmt", "json")
@@ -236,7 +238,7 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
     private JsonNode get(String path, String query, int offset, int limit, String inc) {
         waitForRateLimit();
         try {
-            return restClientBuilder.baseUrl(properties.musicbrainz().baseUrl()).build().get()
+            return restClientBuilder.clone().baseUrl(properties.musicbrainz().baseUrl()).build().get()
                     .uri(uriBuilder -> {
                         uriBuilder.path(path).queryParam("fmt", "json");
                         if (query != null) {

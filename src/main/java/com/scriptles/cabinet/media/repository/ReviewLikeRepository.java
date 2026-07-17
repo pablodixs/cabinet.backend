@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.repository;
 
 import com.scriptles.cabinet.media.entity.ReviewLike;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +12,18 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ReviewLikeRepository extends JpaRepository<ReviewLike, UUID> {
+    @Modifying
+    @Query(value = """
+            insert into review_likes (id, user_id, review_id, created_at)
+            values (:id, :userId, :reviewId, current_timestamp)
+            on conflict (user_id, review_id) do nothing
+            """, nativeQuery = true)
+    int insertIfAbsent(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId,
+            @Param("reviewId") UUID reviewId
+    );
+
     boolean existsByUserIdAndReviewId(UUID userId, UUID reviewId);
 
     long countByReviewId(UUID reviewId);

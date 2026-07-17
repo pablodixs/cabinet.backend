@@ -87,7 +87,7 @@ class MusicBrainzClientTest {
     }
 
     @Test
-    void searchesAlbumsWithCoverUrls() {
+    void searchesAlbumsWithoutResolvingCovers() {
         server.expect(requestTo(startsWith(BASE_URL + "/release-group")))
                 .andExpect(queryParam("fmt", "json"))
                 .andExpect(queryParam("query", "album"))
@@ -107,7 +107,7 @@ class MusicBrainzClientTest {
 
         assertThat(results).singleElement().satisfies(album -> {
             assertThat(album.type()).isEqualTo(MediaType.ALBUM);
-            assertThat(album.coverUrl()).isEqualTo("https://images.test/cover.jpg");
+            assertThat(album.coverUrl()).isNull();
         });
         server.verify();
     }

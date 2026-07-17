@@ -2,7 +2,6 @@ package com.scriptles.cabinet.lists.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.lists.entity.MediaList;
-import com.scriptles.cabinet.lists.entity.MediaListLike;
 import com.scriptles.cabinet.lists.repository.MediaListLikeRepository;
 import com.scriptles.cabinet.lists.repository.MediaListRepository;
 import com.scriptles.cabinet.user.entity.User;
@@ -10,7 +9,6 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -21,6 +19,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,14 +48,13 @@ class MediaListLikeServiceTest {
         when(mediaListLikeRepository.existsByUserIdAndListId(userId, listId))
                 .thenReturn(false, true);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaListLikeRepository.insertIfAbsent(any(UUID.class), eq(userId), eq(listId)))
+                .thenReturn(1);
         when(mediaListLikeRepository.countByListId(listId)).thenReturn(6L);
 
         var response = mediaListLikeService.like(userId, listId);
 
-        ArgumentCaptor<MediaListLike> captor = ArgumentCaptor.forClass(MediaListLike.class);
-        verify(mediaListLikeRepository).saveAndFlush(captor.capture());
-        assertThat(captor.getValue().getUser()).isSameAs(user);
-        assertThat(captor.getValue().getList()).isSameAs(list);
+        verify(mediaListLikeRepository).insertIfAbsent(any(UUID.class), eq(userId), eq(listId));
         assertThat(response.liked()).isTrue();
         assertThat(response.likeCount()).isEqualTo(6);
     }
@@ -75,7 +73,7 @@ class MediaListLikeServiceTest {
 
         assertThat(response.liked()).isTrue();
         assertThat(response.likeCount()).isEqualTo(3);
-        verify(mediaListLikeRepository, never()).saveAndFlush(any());
+        verify(mediaListLikeRepository, never()).insertIfAbsent(any(), any(), any());
         verify(userRepository, never()).findById(userId);
     }
 
@@ -91,7 +89,7 @@ class MediaListLikeServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasMessage("Lista não encontrada");
 
-        verify(mediaListLikeRepository, never()).saveAndFlush(any());
+        verify(mediaListLikeRepository, never()).insertIfAbsent(any(), any(), any());
     }
 
     private MediaList publicList(UUID listId) {

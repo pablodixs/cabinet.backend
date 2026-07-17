@@ -7,24 +7,46 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 public class AlbumCoverService {
     private static final String COVER_ART_BASE_URL = "https://coverartarchive.org";
+    private static final int MAX_CACHE_ENTRIES = 2_000;
+    private static final Duration HIT_TTL = Duration.ofHours(12);
+    private static final Duration MISS_TTL = Duration.ofMinutes(15);
 
     private final RestClient.Builder restClientBuilder;
     private final ExternalApiProperties properties;
-    private final Map<String, Optional<String>> cache = new ConcurrentHashMap<>();
+    private final Map<String, CacheEntry> cache = Collections.synchronizedMap(
+            new LinkedHashMap<>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CacheEntry> eldest) {
+                    return size() > MAX_CACHE_ENTRIES;
+                }
+            }
+    );
 
     public String findCoverUrl(String releaseGroupId) {
-        if (releaseGroupId == null) {
+        if (releaseGroupId == null || releaseGroupId.isBlank()) {
             return null;
         }
-        return cache.computeIfAbsent(releaseGroupId, this::resolveCoverUrl).orElse(null);
+        Instant now = Instant.now();
+        CacheEntry cached = cache.get(releaseGroupId);
+        if (cached != null && cached.expiresAt().isAfter(now)) {
+            return cached.value().orElse(null);
+        }
+
+        Optional<String> resolved = resolveCoverUrl(releaseGroupId);
+        Duration ttl = resolved.isPresent() ? HIT_TTL : MISS_TTL;
+        cache.put(releaseGroupId, new CacheEntry(resolved, now.plus(ttl)));
+        return resolved.orElse(null);
     }
 
     private Optional<String> resolveCoverUrl(String releaseGroupId) {
@@ -34,7 +56,7 @@ public class AlbumCoverService {
 
     private Optional<String> findCoverArtArchiveUrl(String releaseGroupId) {
         try {
-            JsonNode body = restClientBuilder.baseUrl(COVER_ART_BASE_URL).build().get()
+            JsonNode body = restClientBuilder.clone().baseUrl(COVER_ART_BASE_URL).build().get()
                     .uri("/release-group/{id}", releaseGroupId)
                     .header("User-Agent", properties.musicbrainz().userAgent())
                     .retrieve()
@@ -53,7 +75,7 @@ public class AlbumCoverService {
 
     private Optional<String> findTheAudioDbUrl(String releaseGroupId) {
         try {
-            JsonNode body = restClientBuilder.baseUrl(properties.theAudioDb().baseUrl()).build().get()
+            JsonNode body = restClientBuilder.clone().baseUrl(properties.theAudioDb().baseUrl()).build().get()
                     .uri("/{apiKey}/album-mb.php?i={id}", properties.theAudioDb().apiKey(), releaseGroupId)
                     .retrieve()
                     .body(JsonNode.class);
@@ -68,5 +90,8 @@ public class AlbumCoverService {
     private String text(JsonNode node, String field) {
         String value = node.path(field).asText(null);
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private record CacheEntry(Optional<String> value, Instant expiresAt) {
     }
 }

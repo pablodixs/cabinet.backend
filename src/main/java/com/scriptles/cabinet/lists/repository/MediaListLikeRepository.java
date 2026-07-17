@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.repository;
 
 import com.scriptles.cabinet.lists.entity.MediaListLike;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +12,18 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface MediaListLikeRepository extends JpaRepository<MediaListLike, UUID> {
+    @Modifying
+    @Query(value = """
+            insert into media_list_likes (id, user_id, list_id, created_at)
+            values (:id, :userId, :listId, current_timestamp)
+            on conflict (user_id, list_id) do nothing
+            """, nativeQuery = true)
+    int insertIfAbsent(
+            @Param("id") UUID id,
+            @Param("userId") UUID userId,
+            @Param("listId") UUID listId
+    );
+
     boolean existsByUserIdAndListId(UUID userId, UUID listId);
 
     long countByListId(UUID listId);

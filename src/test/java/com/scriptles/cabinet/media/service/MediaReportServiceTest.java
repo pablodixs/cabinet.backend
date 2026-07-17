@@ -62,7 +62,7 @@ class MediaReportServiceTest {
         report.setSuggestedTargetTitle("Livro");
         report.setSuggestedRelationType(MediaRelationType.ADAPTATION_OF);
 
-        when(reportRepository.findById(reportId)).thenReturn(Optional.of(report));
+        when(reportRepository.findByIdForUpdate(reportId)).thenReturn(Optional.of(report));
         when(userRepository.findById(reviewerId)).thenReturn(Optional.of(reviewer));
         when(externalMediaService.importMedia(any())).thenReturn(new ExternalMediaResponse(
                 target.getId(), "book-10", ExternalSource.GOOGLE_BOOKS, MediaType.BOOK,
@@ -118,7 +118,7 @@ class MediaReportServiceTest {
         report.setSuggestedTargetTitle("1989");
         report.setSuggestedRelationType(MediaRelationType.RE_RECORDING_OF);
 
-        when(reportRepository.findById(reportId)).thenReturn(Optional.of(report));
+        when(reportRepository.findByIdForUpdate(reportId)).thenReturn(Optional.of(report));
         when(userRepository.findById(reviewerId)).thenReturn(Optional.of(reviewer));
         when(externalMediaService.importMedia(any())).thenReturn(new ExternalMediaResponse(
                 original.getId(), "original-id", ExternalSource.MUSICBRAINZ, MediaType.ALBUM,
