@@ -10,8 +10,9 @@ import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.ExternalMediaProvider;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
-import com.scriptles.cabinet.media.repository.ReviewRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.repository.UserMediaArtworkPreferenceRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,23 +43,27 @@ class MediaSearchServiceTest {
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
     @Mock
-    private ReviewRepository reviewRepository;
+    private RatingRepository ratingRepository;
     @Mock
     private MediaCreditService mediaCreditService;
     private MediaSearchService mediaSearchService;
 
     @BeforeEach
     void setUp() {
+        UserArtworkResolver artworkResolver = new UserArtworkResolver(
+                mock(UserMediaArtworkPreferenceRepository.class));
         mediaSearchService = new MediaSearchService(
                 providerRegistry,
                 externalReferenceRepository,
-                reviewRepository,
+                ratingRepository,
                 mediaCreditService,
                 new MediaSearchItemAssembler(
                         externalReferenceRepository,
-                        reviewRepository,
-                        mediaCreditService
-                )
+                        ratingRepository,
+                        mediaCreditService,
+                        artworkResolver
+                ),
+                artworkResolver
         );
     }
 
@@ -68,7 +73,7 @@ class MediaSearchServiceTest {
         ExternalMedia result = media(ExternalSource.TMDB, MediaType.MOVIE, "603", "Matrix");
         Media imported = importedMedia(MediaType.MOVIE, "Matrix");
         ExternalReference reference = reference(imported, ExternalSource.TMDB, "603");
-        ReviewRepository.MediaRatingProjection rating = mock(ReviewRepository.MediaRatingProjection.class);
+        RatingRepository.MediaRatingProjection rating = mock(RatingRepository.MediaRatingProjection.class);
 
         when(providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)).thenReturn(tmdb);
         when(tmdb.search(MediaType.MOVIE, "matrix", "pt-BR", 0, 21)).thenReturn(List.of(result));
@@ -78,7 +83,7 @@ class MediaSearchServiceTest {
         when(rating.getMediaId()).thenReturn(imported.getId());
         when(rating.getAverageRating()).thenReturn(4.5);
         when(rating.getRatingCount()).thenReturn(8L);
-        when(reviewRepository.summarizeRatings(List.of(imported.getId()), Visibility.PUBLIC))
+        when(ratingRepository.summarizeRatings(List.of(imported.getId()), Visibility.PUBLIC))
                 .thenReturn(List.of(rating));
         when(mediaCreditService.summaries(List.of(imported))).thenReturn(Map.of(
                 imported.getId(),
@@ -167,13 +172,13 @@ class MediaSearchServiceTest {
     void ratingSearchUsesOnlyPublicReviewsAndPrimaryReferences() {
         Media media = importedMedia(MediaType.ALBUM, "Clube da Esquina");
         ExternalReference reference = reference(media, ExternalSource.MUSICBRAINZ, "album-id");
-        ReviewRepository.RatedMediaProjection projection = mock(ReviewRepository.RatedMediaProjection.class);
+        RatingRepository.RatedMediaProjection projection = mock(RatingRepository.RatedMediaProjection.class);
         when(projection.getMedia()).thenReturn(media);
         when(projection.getAverageRating()).thenReturn(4.75);
         when(projection.getRatingCount()).thenReturn(12L);
-        when(reviewRepository.searchRatedMedia(
+        when(ratingRepository.searchRatedMedia(
                 eq("clube"),
-                eq(Set.of(MediaType.ALBUM)),
+                eq(Set.of(MediaType.ALBUM.name())),
                 eq(Visibility.PUBLIC),
                 eq(PageRequest.of(0, 20))))
                 .thenReturn(new SliceImpl<>(List.of(projection), PageRequest.of(0, 20), false));

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.notifications.service;
 
 import com.scriptles.cabinet.comments.entity.Comment;
+import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListLike;
@@ -8,6 +9,8 @@ import com.scriptles.cabinet.lists.repository.MediaListLikeRepository;
 import com.scriptles.cabinet.media.entity.MediaReport;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.entity.ReviewLike;
+import com.scriptles.cabinet.media.entity.SeriesEpisode;
+import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.notifications.dto.NotificationResponse;
 import com.scriptles.cabinet.notifications.dto.UnreadCountResponse;
@@ -16,6 +19,10 @@ import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.notifications.event.NotificationChangedEvent;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.repository.UserEpisodeWatchRepository;
+import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.RequiredArgsConstructor;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
@@ -38,6 +45,9 @@ public class NotificationService {
     private final ReviewLikeRepository reviewLikeRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
+    private final SeriesEpisodeRepository seriesEpisodeRepository;
+    private final UserMediaRepository userMediaRepository;
+    private final UserEpisodeWatchRepository episodeWatchRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<NotificationResponse> find(UUID recipientId, int page, int size) {
@@ -167,6 +177,28 @@ public class NotificationService {
         notification.setReport(report);
         notificationRepository.save(notification);
         changed(recipient.getId());
+    }
+
+    @Scheduled(cron = "0 0 8 * * *", zone = "America/Sao_Paulo")
+    @Transactional
+    public void notifyEpisodeReleases() {
+        for (SeriesEpisode episode : seriesEpisodeRepository
+                .findAllByAirDateAndSeasonSeasonNumberGreaterThan(CabinetTime.today(), 0)) {
+            List<UserMedia> trackedEntries = userMediaRepository.findAllByMediaIdAndStatus(
+                    episode.getSeason().getSeries().getId(), UserMediaStatus.IN_PROGRESS);
+            for (UserMedia entry : trackedEntries) {
+                UUID recipientId = entry.getUser().getId();
+                if (episodeWatchRepository.existsByUserIdAndEpisodeId(recipientId, episode.getId())
+                        || notificationRepository.existsByRecipientIdAndSeriesEpisodeId(
+                                recipientId, episode.getId())) {
+                    continue;
+                }
+                Notification notification = notification(entry.getUser(), NotificationType.EPISODE_RELEASED);
+                notification.setSeriesEpisode(episode);
+                notificationRepository.save(notification);
+                changed(recipientId);
+            }
+        }
     }
 
     @Scheduled(cron = "0 20 3 * * *")

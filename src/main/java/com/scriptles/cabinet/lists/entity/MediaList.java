@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.entity;
 
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.media.enums.ExternalSource;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -42,6 +43,13 @@ public class MediaList {
 
     @Column(length = 500, columnDefinition = "TEXT")
     private String coverUrl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private ExternalSource originSource;
+
+    @Column(length = 700)
+    private String originKey;
 
     @CreationTimestamp
     private Instant createdAt;

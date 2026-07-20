@@ -31,6 +31,14 @@ public record LibraryMediaResponse(
             UserMedia entry,
             ExternalReference externalReference
     ) {
+        return from(entry, externalReference, entry.getMedia().getCoverUrl());
+    }
+
+    public static LibraryMediaResponse from(
+            UserMedia entry,
+            ExternalReference externalReference,
+            String coverUrl
+    ) {
         Media media = entry.getMedia();
         return new LibraryMediaResponse(
                 entry.getId(),
@@ -38,7 +46,7 @@ public record LibraryMediaResponse(
                 entry.getStatus(),
                 media.getType(),
                 media.getTitle(),
-                media.getCoverUrl(),
+                coverUrl,
                 media.getReleaseDate(),
                 externalReference == null ? null : externalReference.getSource(),
                 externalReference == null ? null : externalReference.getExternalId(),

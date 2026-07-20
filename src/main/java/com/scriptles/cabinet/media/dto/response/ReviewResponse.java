@@ -20,8 +20,27 @@ public record ReviewResponse(
         long likeCount,
         boolean liked,
         List<ReviewLikerResponse> recentLikers,
-        AuthorResponse author
+        AuthorResponse author,
+        UUID activityId
 ) {
+    public ReviewResponse(
+            UUID id,
+            UUID mediaId,
+            BigDecimal rating,
+            String content,
+            boolean containsSpoilers,
+            Visibility visibility,
+            Instant createdAt,
+            Instant updatedAt,
+            long likeCount,
+            boolean liked,
+            List<ReviewLikerResponse> recentLikers,
+            AuthorResponse author
+    ) {
+        this(id, mediaId, rating, content, containsSpoilers, visibility, createdAt, updatedAt,
+                likeCount, liked, recentLikers, author, null);
+    }
+
     public static ReviewResponse from(Review review) {
         return from(review, 0, false, List.of());
     }
@@ -39,7 +58,7 @@ public record ReviewResponse(
                 review.getContent(),
                 Boolean.TRUE.equals(review.getContainsSpoilers()),
                 review.getVisibility(),
-                review.getCreatedAt(),
+                review.getPublishedAt() != null ? review.getPublishedAt() : review.getCreatedAt(),
                 review.getUpdatedAt(),
                 likeCount,
                 liked,
@@ -49,7 +68,8 @@ public record ReviewResponse(
                         review.getUser().getUsername(),
                         review.getUser().getDisplayName(),
                         review.getUser().getAvatarUlr()
-                )
+                ),
+                review.getActivity() == null ? null : review.getActivity().getId()
         );
     }
 

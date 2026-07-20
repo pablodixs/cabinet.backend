@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.security;
 
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserRole;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -18,7 +19,8 @@ public record AuthenticatedUser(
         String passwordHash,
         Collection<? extends GrantedAuthority> authorities,
         boolean active,
-        UserRole role
+        UserRole role,
+        AccountTier accountTier
 ) implements UserDetails {
 
     public AuthenticatedUser(
@@ -30,7 +32,20 @@ public record AuthenticatedUser(
             Collection<? extends GrantedAuthority> authorities,
             boolean active
     ) {
-        this(id, email, username, displayName, passwordHash, authorities, active, UserRole.USER);
+        this(id, email, username, displayName, passwordHash, authorities, active, UserRole.USER, AccountTier.FREE);
+    }
+
+    public AuthenticatedUser(
+            UUID id,
+            String email,
+            String username,
+            String displayName,
+            String passwordHash,
+            Collection<? extends GrantedAuthority> authorities,
+            boolean active,
+            UserRole role
+    ) {
+        this(id, email, username, displayName, passwordHash, authorities, active, role, AccountTier.FREE);
     }
 
     public static AuthenticatedUser from(User user) {
@@ -46,7 +61,8 @@ public record AuthenticatedUser(
                 user.getPasswordHash(),
                 authorities(role),
                 Boolean.TRUE.equals(user.getActive()),
-                role
+                role,
+                user.getAccountTier() == null ? AccountTier.FREE : user.getAccountTier()
         );
     }
 
@@ -73,6 +89,10 @@ public record AuthenticatedUser(
 
     public boolean admin() {
         return role == UserRole.ADMIN;
+    }
+
+    public boolean pro() {
+        return accountTier == AccountTier.PRO;
     }
 
     @Override

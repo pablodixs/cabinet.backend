@@ -73,10 +73,13 @@ public class SecurityConfig {
                                 HttpMethod.GET,
                                 "/v1/media/external/**",
                                 "/v1/media/search",
+                                "/v1/media/rankings/**",
                                 "/v1/media/*",
                                 "/v1/media/*/credits",
                                 "/v1/media/*/external-info",
+                                "/v1/media/*/awards",
                                 "/v1/media/*/more-by",
+                                "/v1/media/*/seasons/*/episodes",
                                 "/v1/media/*/lists",
                                 "/v1/media/*/lists/**",
                                 "/v1/media/*/reviews",
@@ -87,9 +90,11 @@ public class SecurityConfig {
                                 "/v1/reviews/*",
                                 "/v1/reviews/*/comments",
                                 "/v1/artists/**",
+                                "/v1/people/**",
                                 "/v1/users/search",
                                 "/v1/users/*/profile",
-                                "/v1/users/*/activities"
+                                "/v1/users/*/activities",
+                                "/v1/users/*/diary"
                         ).permitAll()
 
                         .requestMatchers(

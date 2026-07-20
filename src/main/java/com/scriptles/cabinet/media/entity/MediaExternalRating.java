@@ -54,7 +54,7 @@ public class MediaExternalRating {
     @Column(nullable = false, length = 30)
     private ExternalRatingMetric metric;
 
-    @Column(nullable = false)
+    @Column(name = "rating_value", nullable = false)
     private Double value;
 
     @Column(nullable = false)

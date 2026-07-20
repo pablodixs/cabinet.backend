@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
 import com.scriptles.cabinet.media.dto.response.RelatedMediaResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
@@ -70,6 +71,8 @@ class MediaControllerTest {
                         )),
                         true,
                         12,
+                        List.of(new MediaCommunityUserResponse(
+                                UUID.randomUUID(), "ana", "https://example.com/ana.jpg")),
                         4.25,
                         List.of(
                                 new ExternalMediaDetailsResponse.RatingDistributionBucket(4.0, 1),
@@ -77,12 +80,17 @@ class MediaControllerTest {
                         ),
                         7,
                         31,
+                        List.of(new MediaCommunityUserResponse(
+                                UUID.randomUUID(), "bia", "https://example.com/bia.jpg")),
                         new ExternalMediaDetailsResponse.MovieDetails(null, null, null, null)
                 ));
 
         mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/550"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.likeCount").value(12))
+                .andExpect(jsonPath("$.recentLikers[0].username").value("ana"))
+                .andExpect(jsonPath("$.recentLikers[0].avatarUrl")
+                        .value("https://example.com/ana.jpg"))
                 .andExpect(jsonPath("$.averageRating").value(4.25))
                 .andExpect(jsonPath("$.ratingDistribution[0].rating").value(4.0))
                 .andExpect(jsonPath("$.ratingDistribution[0].count").value(1))
@@ -91,7 +99,10 @@ class MediaControllerTest {
                 .andExpect(jsonPath("$.credits[0].name").value("David Fincher"))
                 .andExpect(jsonPath("$.credits[0].role").value("DIRECTOR"))
                 .andExpect(jsonPath("$.listCount").value(7))
-                .andExpect(jsonPath("$.completedCount").value(31));
+                .andExpect(jsonPath("$.completedCount").value(31))
+                .andExpect(jsonPath("$.recentCompleters[0].username").value("bia"))
+                .andExpect(jsonPath("$.recentCompleters[0].avatarUrl")
+                        .value("https://example.com/bia.jpg"));
     }
 
     @Test

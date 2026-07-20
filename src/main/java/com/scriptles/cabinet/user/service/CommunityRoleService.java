@@ -6,9 +6,12 @@ import com.scriptles.cabinet.security.CustomUserDetailsService;
 import com.scriptles.cabinet.user.dto.response.CommunityUserRoleResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserRoleChange;
+import com.scriptles.cabinet.user.entity.UserAccountTierChange;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserRole;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.repository.UserRoleChangeRepository;
+import com.scriptles.cabinet.user.repository.UserAccountTierChangeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,6 +27,7 @@ import java.util.UUID;
 public class CommunityRoleService {
     private final UserRepository userRepository;
     private final UserRoleChangeRepository userRoleChangeRepository;
+    private final UserAccountTierChangeRepository userAccountTierChangeRepository;
     private final CustomUserDetailsService userDetailsService;
 
     @Transactional(readOnly = true)
@@ -63,6 +67,31 @@ public class CommunityRoleService {
             change.setPreviousRole(previousRole);
             change.setNewRole(newRole);
             userRoleChangeRepository.save(change);
+        }
+
+        return CommunityUserRoleResponse.from(target, userDetailsService.effectiveRole(target));
+    }
+
+    @Transactional
+    public CommunityUserRoleResponse updateAccountTier(
+            UUID targetUserId,
+            AccountTier newTier,
+            UUID actorUserId
+    ) {
+        User target = requireUser(targetUserId);
+        User actor = requireUser(actorUserId);
+        AccountTier previousTier = target.getAccountTier() == null ? AccountTier.FREE : target.getAccountTier();
+
+        if (previousTier != newTier) {
+            target.setAccountTier(newTier);
+            userRepository.save(target);
+
+            UserAccountTierChange change = new UserAccountTierChange();
+            change.setTargetUser(target);
+            change.setChangedBy(actor);
+            change.setPreviousTier(previousTier);
+            change.setNewTier(newTier);
+            userAccountTierChangeRepository.save(change);
         }
 
         return CommunityUserRoleResponse.from(target, userDetailsService.effectiveRole(target));

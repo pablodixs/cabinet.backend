@@ -5,11 +5,15 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
@@ -34,6 +38,12 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             UserMediaStatus status
     );
 
+    @EntityGraph(attributePaths = "user")
+    List<UserMedia> findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
+            UUID mediaId,
+            UserMediaStatus status
+    );
+
     @Query(
             value = """
                     select userMedia
@@ -41,7 +51,7 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
                     join fetch userMedia.media media
                     where userMedia.user.id = :userId
                       and (:status is null or userMedia.status = :status)
-                      and (:type is null or media.type = :type)
+                      and (:type is null or media.typeValue = :#{#type == null ? null : #type.name()})
                     """,
             countQuery = """
                     select count(userMedia)
@@ -49,7 +59,7 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
                     join userMedia.media media
                     where userMedia.user.id = :userId
                       and (:status is null or userMedia.status = :status)
-                      and (:type is null or media.type = :type)
+                      and (:type is null or media.typeValue = :#{#type == null ? null : #type.name()})
                     """
     )
     Page<UserMedia> findLibrary(
@@ -59,22 +69,14 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             Pageable pageable
     );
 
-    @Query(
-            value = """
-                    select userMedia
-                    from UserMedia userMedia
-                    join fetch userMedia.media media
-                    where userMedia.user.id = :userId
-                      and (:includePrivate = true or userMedia.privateEntry = false)
-                    """,
-            countQuery = """
-                    select count(userMedia)
-                    from UserMedia userMedia
-                    where userMedia.user.id = :userId
-                      and (:includePrivate = true or userMedia.privateEntry = false)
-                    """
-    )
-    Page<UserMedia> findProfileLibrary(
+    @Query("""
+            select userMedia
+            from UserMedia userMedia
+            join fetch userMedia.media media
+            where userMedia.user.id = :userId
+              and (:includePrivate = true or userMedia.privateEntry = false)
+            """)
+    List<UserMedia> findRecentProfileLibrary(
             @Param("userId") UUID userId,
             @Param("includePrivate") boolean includePrivate,
             Pageable pageable
@@ -107,16 +109,70 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             Pageable pageable
     );
 
-    @Query("""
-            select count(userMedia)
-            from UserMedia userMedia
-            where userMedia.user.id = :userId
-              and (:includePrivate = true or userMedia.privateEntry = false)
-              and (:status is null or userMedia.status = :status)
-            """)
-    long countProfileLibrary(
+    @Query(value = """
+            with media_stats as (
+                select
+                    count(*) as library_count,
+                    coalesce(sum(case when um.status = 'COMPLETED' then 1 else 0 end), 0)
+                        as completed_count,
+                    coalesce(sum(case when um.status = 'IN_PROGRESS' then 1 else 0 end), 0)
+                        as in_progress_count,
+                    coalesce(sum(case
+                        when um.status = 'COMPLETED' and m.type = 'ALBUM' then 1 else 0
+                    end), 0) as albums_consumed,
+                    coalesce(sum(case
+                        when um.status = 'COMPLETED' and m.type = 'MOVIE' then 1 else 0
+                    end), 0) as movies_consumed,
+                    coalesce(sum(case
+                        when um.status = 'COMPLETED' and m.type = 'BOOK' then 1 else 0
+                    end), 0) as books_consumed,
+                    coalesce(sum(case
+                        when um.status = 'COMPLETED' and m.type = 'MOVIE'
+                            then coalesce(movie.runtime_minutes, 0)
+                        else 0
+                    end), 0) as movie_minutes,
+                    coalesce(sum(case
+                        when um.status = 'COMPLETED' and m.type = 'BOOK'
+                            then coalesce(book.page_count, 0)
+                        else 0
+                    end), 0) as pages_read
+                from user_media um
+                join media m on m.id = um.media_id
+                left join movie_details movie on movie.media_id = um.media_id
+                left join book_details book on book.media_id = um.media_id
+                where um.user_id = :userId
+                  and (:includePrivate = true or um.private_entry = false)
+            ),
+            episode_stats as (
+                select
+                    count(*) as episodes_watched,
+                    count(distinct season.series_media_id) as series_consumed,
+                    coalesce(sum(coalesce(episode.runtime_minutes, 0)), 0) as series_minutes
+                from user_episode_watches watch
+                join series_episodes episode on episode.id = watch.series_episode_id
+                join series_seasons season on season.id = episode.season_id
+                join user_media series_entry
+                  on series_entry.user_id = watch.user_id
+                 and series_entry.media_id = season.series_media_id
+                where watch.user_id = :userId
+                  and (:includePrivate = true or series_entry.private_entry = false)
+            )
+            select
+                media.library_count,
+                media.completed_count,
+                media.in_progress_count,
+                media.albums_consumed,
+                media.movies_consumed,
+                episode.series_consumed,
+                media.books_consumed,
+                episode.episodes_watched,
+                media.pages_read,
+                media.movie_minutes + episode.series_minutes as watched_minutes
+            from media_stats media
+            cross join episode_stats episode
+            """, nativeQuery = true)
+    ProfileStatisticsProjection findProfileStatistics(
             @Param("userId") UUID userId,
-            @Param("status") UserMediaStatus status,
             @Param("includePrivate") boolean includePrivate
     );
 
@@ -124,4 +180,55 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             UUID userId,
             UUID mediaId
     );
+
+    @Query("""
+            select userMedia.media.id as mediaId, count(userMedia.id) as activityCount
+            from UserMedia userMedia
+            where userMedia.privateEntry = false
+              and userMedia.media.typeValue in :types
+              and coalesce(userMedia.lastInteractionAt, userMedia.updatedAt, userMedia.createdAt) >= :since
+            group by userMedia.media.id
+            order by count(userMedia.id) desc, userMedia.media.id asc
+            """)
+    List<MediaActivityProjection> findRecentPublicActivity(@Param("types") Set<String> types,
+                                                            @Param("since") Instant since,
+                                                            Pageable pageable);
+
+    interface MediaActivityProjection {
+        UUID getMediaId();
+        long getActivityCount();
+    }
+
+    interface ProfileStatisticsProjection {
+        long getLibraryCount();
+        long getCompletedCount();
+        long getInProgressCount();
+        long getWatchedMinutes();
+        long getPagesRead();
+        long getEpisodesWatched();
+        long getAlbumsConsumed();
+        long getMoviesConsumed();
+        long getSeriesConsumed();
+        long getBooksConsumed();
+    }
+
+    @Query("""
+            select distinct entry.media.id
+            from UserMedia entry
+            where entry.status = :status
+              and entry.media.typeValue = 'SERIES'
+            """)
+    List<UUID> findDistinctSeriesIdsByStatus(@Param("status") UserMediaStatus status);
+
+    @Query("""
+            select entry.media.id
+            from UserMedia entry
+            where entry.user.id = :userId
+              and entry.status = :status
+              and entry.media.typeValue = 'SERIES'
+            """)
+    List<UUID> findSeriesIdsForUserAndStatus(@Param("userId") UUID userId,
+                                             @Param("status") UserMediaStatus status);
+
+    List<UserMedia> findAllByMediaIdAndStatus(UUID mediaId, UserMediaStatus status);
 }

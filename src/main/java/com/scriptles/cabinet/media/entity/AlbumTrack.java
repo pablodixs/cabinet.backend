@@ -21,6 +21,10 @@ public class AlbumTrack {
     @JoinColumn(name = "album_media_id", nullable = false)
     private Media album;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "track_media_id", nullable = false)
+    private Media trackMedia;
+
     @Column(length = 200)
     private String externalId;
 

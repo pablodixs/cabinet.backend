@@ -15,6 +15,8 @@ import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
+import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,6 +53,9 @@ class UserProfileServiceTest {
 
     @Mock
     private UserMediaRepository userMediaRepository;
+
+    @Mock
+    private UserMediaActivityRepository userMediaActivityRepository;
 
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
@@ -83,23 +89,16 @@ class UserProfileServiceTest {
         User profileUser = user(Visibility.PUBLIC);
         when(userRepository.findByUsernameIgnoreCase("maria"))
                 .thenReturn(Optional.of(profileUser));
-        when(userMediaRepository.findProfileLibrary(
+        when(userMediaRepository.findRecentProfileLibrary(
                 eq(profileUser.getId()),
                 eq(false),
                 any(Pageable.class)
-        )).thenReturn(new PageImpl<>(List.of()));
-        when(userMediaRepository.countProfileLibrary(profileUser.getId(), null, false))
-                .thenReturn(12L);
-        when(userMediaRepository.countProfileLibrary(
-                profileUser.getId(),
-                UserMediaStatus.COMPLETED,
-                false
-        )).thenReturn(7L);
-        when(userMediaRepository.countProfileLibrary(
-                profileUser.getId(),
-                UserMediaStatus.IN_PROGRESS,
-                false
-        )).thenReturn(2L);
+        )).thenReturn(List.of());
+        UserMediaRepository.ProfileStatisticsProjection statistics = statistics(
+                12, 7, 2, 540, 930, 8, 3, 4, 2, 5
+        );
+        when(userMediaRepository.findProfileStatistics(profileUser.getId(), false))
+                .thenReturn(statistics);
 
         UserProfileResponse response = userProfileService.findByUsername(
                 " maria ",
@@ -112,6 +111,13 @@ class UserProfileServiceTest {
         assertThat(response.libraryCount()).isEqualTo(12);
         assertThat(response.completedCount()).isEqualTo(7);
         assertThat(response.inProgressCount()).isEqualTo(2);
+        assertThat(response.stats().watchedMinutes()).isEqualTo(540);
+        assertThat(response.stats().pagesRead()).isEqualTo(930);
+        assertThat(response.stats().episodesWatched()).isEqualTo(8);
+        assertThat(response.stats().albumsConsumed()).isEqualTo(3);
+        assertThat(response.stats().moviesConsumed()).isEqualTo(4);
+        assertThat(response.stats().seriesConsumed()).isEqualTo(2);
+        assertThat(response.stats().booksConsumed()).isEqualTo(5);
         assertThat(response.recentItems()).isEmpty();
     }
 
@@ -120,11 +126,16 @@ class UserProfileServiceTest {
         User profileUser = user(Visibility.PRIVATE);
         when(userRepository.findByUsernameIgnoreCase("maria"))
                 .thenReturn(Optional.of(profileUser));
-        when(userMediaRepository.findProfileLibrary(
+        when(userMediaRepository.findRecentProfileLibrary(
                 eq(profileUser.getId()),
                 eq(true),
                 any(Pageable.class)
-        )).thenReturn(new PageImpl<>(List.of()));
+        )).thenReturn(List.of());
+        UserMediaRepository.ProfileStatisticsProjection statistics = statistics(
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        );
+        when(userMediaRepository.findProfileStatistics(profileUser.getId(), true))
+                .thenReturn(statistics);
 
         UserProfileResponse response = userProfileService.findByUsername(
                 "maria",
@@ -133,7 +144,7 @@ class UserProfileServiceTest {
 
         assertThat(response.ownProfile()).isTrue();
         assertThat(response.email()).isEqualTo("maria@example.com");
-        verify(userMediaRepository).countProfileLibrary(profileUser.getId(), null, true);
+        verify(userMediaRepository).findProfileStatistics(profileUser.getId(), true);
     }
 
     @Test
@@ -147,13 +158,13 @@ class UserProfileServiceTest {
         media.setReleaseDate(LocalDate.of(2019, 1, 1));
 
         Instant occurredAt = Instant.parse("2026-07-14T12:00:00Z");
-        UserMedia entry = new UserMedia();
+        UserMediaActivity entry = new UserMediaActivity();
         entry.setId(UUID.randomUUID());
         entry.setUser(profileUser);
         entry.setMedia(media);
-        entry.setStatus(UserMediaStatus.COMPLETED);
-        entry.setLastInteractionAt(occurredAt);
-        entry.setPrivateEntry(false);
+        entry.setType(ProfileActivityType.COMPLETED);
+        entry.setOccurredOn(LocalDate.of(2026, 7, 14));
+        entry.setVisibility(Visibility.PUBLIC);
 
         ExternalReference reference = new ExternalReference();
         reference.setMedia(media);
@@ -163,9 +174,10 @@ class UserProfileServiceTest {
 
         when(userRepository.findByUsernameIgnoreCase("maria"))
                 .thenReturn(Optional.of(profileUser));
-        when(userMediaRepository.findProfileActivities(
+        when(userMediaActivityRepository.findProfileActivities(
                 eq(profileUser.getId()),
                 eq(false),
+                eq(Visibility.PUBLIC),
                 any(Pageable.class)
         )).thenReturn(new PageImpl<>(List.of(entry)));
         when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(
@@ -180,7 +192,7 @@ class UserProfileServiceTest {
         ).items().getFirst();
 
         assertThat(activity.type()).isEqualTo(ProfileActivityType.COMPLETED);
-        assertThat(activity.occurredAt()).isEqualTo(occurredAt);
+        assertThat(activity.occurredOn()).isEqualTo(LocalDate.of(2026, 7, 14));
         assertThat(activity.title()).isEqualTo("Torto Arado");
         assertThat(activity.source()).isEqualTo(ExternalSource.GOOGLE_BOOKS);
         assertThat(activity.externalId()).isEqualTo("book-123");
@@ -201,7 +213,7 @@ class UserProfileServiceTest {
                     assertThat(exception.getCode()).isEqualTo("USER_PROFILE_NOT_FOUND");
                 });
 
-        verify(userMediaRepository, never()).findProfileLibrary(
+        verify(userMediaRepository, never()).findRecentProfileLibrary(
                 any(UUID.class),
                 anyBoolean(),
                 any(Pageable.class)
@@ -217,5 +229,32 @@ class UserProfileServiceTest {
         user.setActive(true);
         user.setProfileVisibility(visibility);
         return user;
+    }
+
+    private UserMediaRepository.ProfileStatisticsProjection statistics(
+            long libraryCount,
+            long completedCount,
+            long inProgressCount,
+            long watchedMinutes,
+            long pagesRead,
+            long episodesWatched,
+            long albumsConsumed,
+            long moviesConsumed,
+            long seriesConsumed,
+            long booksConsumed
+    ) {
+        UserMediaRepository.ProfileStatisticsProjection statistics =
+                mock(UserMediaRepository.ProfileStatisticsProjection.class);
+        when(statistics.getLibraryCount()).thenReturn(libraryCount);
+        when(statistics.getCompletedCount()).thenReturn(completedCount);
+        when(statistics.getInProgressCount()).thenReturn(inProgressCount);
+        when(statistics.getWatchedMinutes()).thenReturn(watchedMinutes);
+        when(statistics.getPagesRead()).thenReturn(pagesRead);
+        when(statistics.getEpisodesWatched()).thenReturn(episodesWatched);
+        when(statistics.getAlbumsConsumed()).thenReturn(albumsConsumed);
+        when(statistics.getMoviesConsumed()).thenReturn(moviesConsumed);
+        when(statistics.getSeriesConsumed()).thenReturn(seriesConsumed);
+        when(statistics.getBooksConsumed()).thenReturn(booksConsumed);
+        return statistics;
     }
 }

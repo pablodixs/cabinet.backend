@@ -4,6 +4,7 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.response.MediaLikeResponse;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -51,12 +52,17 @@ public class MediaLikeService {
     }
 
     private void findMedia(UUID mediaId) {
-        if (mediaRepository.findById(mediaId).isEmpty()) {
+        var media = mediaRepository.findById(mediaId).orElse(null);
+        if (media == null) {
             throw new ApiException(
                 HttpStatus.NOT_FOUND,
                 "MEDIA_NOT_FOUND",
                 "Mídia não encontrada"
             );
+        }
+        if (media.getType() == MediaType.EPISODE) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_MEDIA_CAPABILITY",
+                    "Episódios não podem ser curtidos diretamente");
         }
     }
 }

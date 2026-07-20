@@ -283,6 +283,25 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         return episodes;
     }
 
+    public SeriesTrackingSnapshot findSeriesTrackingSnapshot(String seriesId, String language) {
+        JsonNode body = get(detailPath(MediaType.SERIES, seriesId), null, language, true, null);
+        if (body.isMissingNode() || body.isEmpty()) {
+            throw new ExternalMediaException("TV series was not found on TMDB");
+        }
+        return new SeriesTrackingSnapshot(
+                toMedia(body, MediaType.SERIES, true),
+                integer(body.path("last_episode_to_air"), "season_number"),
+                integer(body.path("next_episode_to_air"), "season_number")
+        );
+    }
+
+    public record SeriesTrackingSnapshot(
+            ExternalMedia media,
+            Integer lastEpisodeSeasonNumber,
+            Integer nextEpisodeSeasonNumber
+    ) {
+    }
+
     private List<ExternalMedia.ExternalGenre> genres(JsonNode node) {
         List<ExternalMedia.ExternalGenre> result = new ArrayList<>();
         for (JsonNode genre : node.path("genres")) {

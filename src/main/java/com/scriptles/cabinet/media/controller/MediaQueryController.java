@@ -3,11 +3,17 @@ package com.scriptles.cabinet.media.controller;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaExternalInfoResponse;
+import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.MoreByResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.AwardResult;
 import com.scriptles.cabinet.media.service.MediaExternalInfoService;
 import com.scriptles.cabinet.media.service.MediaQueryService;
 import com.scriptles.cabinet.media.service.MoreByService;
+import com.scriptles.cabinet.media.service.AwardQueryService;
+import com.scriptles.cabinet.media.service.SeasonEpisodeService;
+import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
+import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
@@ -19,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.UUID;
 
@@ -30,10 +37,13 @@ public class MediaQueryController {
     private final MediaQueryService mediaQueryService;
     private final MediaExternalInfoService mediaExternalInfoService;
     private final MoreByService moreByService;
+    private final SeasonEpisodeService seasonEpisodeService;
+    private final AwardQueryService awardQueryService;
 
     @GetMapping("/{mediaId}")
-    public ExternalMediaDetailsResponse findDetails(@PathVariable UUID mediaId) {
-        return mediaQueryService.findDetails(mediaId);
+    public ExternalMediaDetailsResponse findDetails(@AuthenticationPrincipal AuthenticatedUser user,
+                                                    @PathVariable UUID mediaId) {
+        return mediaQueryService.findDetails(mediaId, user == null ? null : user.id());
     }
 
     @GetMapping("/{mediaId}/credits")
@@ -48,12 +58,15 @@ public class MediaQueryController {
 
     @GetMapping("/{mediaId}/more-by")
     public MoreByResponse findMoreBy(
+            @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable UUID mediaId,
             @RequestParam(defaultValue = "pt-BR")
             @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
             @RequestParam(defaultValue = "12") @Min(1) @Max(40) int limit
     ) {
-        return moreByService.find(mediaId, language, limit);
+        return user == null
+                ? moreByService.find(mediaId, language, limit)
+                : moreByService.find(mediaId, language, limit, user.id());
     }
 
     @GetMapping("/{mediaId}/external-info")
@@ -69,5 +82,29 @@ public class MediaQueryController {
                     .body(response);
         }
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{mediaId}/awards")
+    public ResponseEntity<AwardPageResponse> findAwards(
+            @PathVariable UUID mediaId,
+            @RequestParam(required = false) AwardResult result,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        AwardPageResponse response = awardQueryService.findMedia(mediaId, result, page, size);
+        return response.pendingWithoutData()
+                ? ResponseEntity.accepted().header("Retry-After", "2").body(response)
+                : ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{seriesId}/seasons/{seasonNumber}/episodes")
+    public SeasonEpisodesResponse findSeasonEpisodes(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID seriesId,
+            @PathVariable @Min(0) int seasonNumber,
+            @RequestParam(defaultValue = "pt-BR")
+            @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language
+    ) {
+        return seasonEpisodeService.find(seriesId, seasonNumber, language, user == null ? null : user.id());
     }
 }

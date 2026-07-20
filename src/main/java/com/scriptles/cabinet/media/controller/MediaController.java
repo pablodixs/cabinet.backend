@@ -8,6 +8,7 @@ import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ExternalMediaService;
+import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Max;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.List;
 
@@ -57,6 +59,7 @@ public class MediaController {
 
     @GetMapping("/{source}/{type}/{externalId}/relations")
     public RelatedMediaResponse findRelations(
+            @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable ExternalSource source,
             @PathVariable MediaType type,
             @PathVariable @NotBlank String externalId,
@@ -64,7 +67,9 @@ public class MediaController {
             @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
             @RequestParam(defaultValue = "12") @Min(1) @Max(40) int maxResults
     ) {
-        return externalMediaService.findRelations(source, type, externalId, language, maxResults);
+        return user == null
+                ? externalMediaService.findRelations(source, type, externalId, language, maxResults)
+                : externalMediaService.findRelations(source, type, externalId, language, maxResults, user.id());
     }
 
     @GetMapping("/TMDB/SERIES/{externalId}/seasons/{seasonNumber}")

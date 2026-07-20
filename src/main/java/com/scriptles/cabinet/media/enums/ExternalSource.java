@@ -15,5 +15,6 @@ public enum ExternalSource {
     OMDB,
     ROTTEN_TOMATOES,
     METACRITIC,
+    LETTERBOXD,
     MANUAL
 }

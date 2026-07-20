@@ -4,6 +4,7 @@ import com.scriptles.cabinet.comments.entity.Comment;
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.media.entity.MediaReport;
 import com.scriptles.cabinet.media.entity.Review;
+import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.user.entity.User;
 import jakarta.persistence.*;
@@ -64,6 +65,11 @@ public class Notification {
     @JoinColumn(name = "report_id")
     @OnDelete(action = OnDeleteAction.CASCADE)
     private MediaReport report;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "series_episode_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private SeriesEpisode seriesEpisode;
 
     private Instant readAt;
 

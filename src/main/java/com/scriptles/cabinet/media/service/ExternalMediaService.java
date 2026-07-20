@@ -4,6 +4,7 @@ import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.request.ImportExternalMediaRequest;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaResponse;
+import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
 import com.scriptles.cabinet.media.dto.response.RelatedMediaResponse;
 import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.entity.AlbumDetails;
@@ -15,6 +16,7 @@ import com.scriptles.cabinet.media.entity.MediaRelation;
 import com.scriptles.cabinet.media.entity.MovieDetails;
 import com.scriptles.cabinet.media.entity.SeriesDetails;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
+import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.media.entity.TrackDetails;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.AlbumType;
@@ -35,11 +37,14 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.MediaRelationRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
+import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.repository.TrackDetailsRepository;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,8 +77,9 @@ public class ExternalMediaService {
     private final SeriesDetailsRepository seriesDetailsRepository;
     private final AlbumTrackRepository albumTrackRepository;
     private final SeriesSeasonRepository seriesSeasonRepository;
+    private final SeriesEpisodeRepository seriesEpisodeRepository;
     private final TrackDetailsRepository trackDetailsRepository;
-    private final ReviewRepository reviewRepository;
+    private final RatingRepository ratingRepository;
     private final MediaLikeRepository mediaLikeRepository;
     private final MediaListItemRepository mediaListItemRepository;
     private final UserMediaRepository userMediaRepository;
@@ -80,6 +87,7 @@ public class ExternalMediaService {
     private final TmdbClient tmdbClient;
     private final MediaQueryService mediaQueryService;
     private final MediaCreditService mediaCreditService;
+    private final UserArtworkResolver userArtworkResolver;
 
     @Transactional(readOnly = true)
     public List<ExternalMediaResponse> search(MediaType mediaType, String query, String language, int offset, int limit) {
@@ -151,10 +159,12 @@ public class ExternalMediaService {
                 toCreditResponses(external.credits()),
                 importedId != null,
                 communityStats.likeCount(),
+                communityStats.recentLikers(),
                 communityStats.averageRating(),
                 communityStats.ratingDistribution(),
                 communityStats.listCount(),
                 communityStats.completedCount(),
+                communityStats.recentCompleters(),
                 details(external, canonicalWorkWikidataId)
         );
     }
@@ -164,17 +174,17 @@ public class ExternalMediaService {
             return MediaCommunityStats.empty();
         }
 
-        Double averageRating = reviewRepository.summarizeRatings(List.of(mediaId), Visibility.PUBLIC)
+        Double averageRating = ratingRepository.summarizeRatings(List.of(mediaId), Visibility.PUBLIC)
                 .stream()
                 .findFirst()
-                .map(ReviewRepository.MediaRatingProjection::getAverageRating)
+                .map(RatingRepository.MediaRatingProjection::getAverageRating)
                 .orElse(null);
-        Map<BigDecimal, Long> ratingCounts = reviewRepository
+        Map<BigDecimal, Long> ratingCounts = ratingRepository
                 .ratingDistribution(mediaId, Visibility.PUBLIC)
                 .stream()
                 .collect(Collectors.toMap(
                         projection -> projection.getRating().stripTrailingZeros(),
-                        ReviewRepository.RatingDistributionProjection::getRatingCount
+                        RatingRepository.RatingDistributionProjection::getRatingCount
                 ));
         List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution = new ArrayList<>(10);
         for (int step = 1; step <= 10; step++) {
@@ -185,18 +195,37 @@ public class ExternalMediaService {
             ));
         }
         long likeCount = mediaLikeRepository.countByMediaId(mediaId);
+        List<MediaCommunityUserResponse> recentLikers = mediaLikeRepository
+                .findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId)
+                .stream()
+                .map(like -> toCommunityUser(like.getUser()))
+                .toList();
         long listCount = mediaListItemRepository
                 .countByMediaIdAndListVisibility(mediaId, Visibility.PUBLIC);
         long completedCount = userMediaRepository
                 .countByMediaIdAndStatusAndPrivateEntryFalse(mediaId, UserMediaStatus.COMPLETED);
+        List<MediaCommunityUserResponse> recentCompleters = userMediaRepository
+                .findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
+                        mediaId,
+                        UserMediaStatus.COMPLETED
+                )
+                .stream()
+                .map(entry -> toCommunityUser(entry.getUser()))
+                .toList();
 
         return new MediaCommunityStats(
                 likeCount,
+                recentLikers,
                 averageRating,
                 List.copyOf(ratingDistribution),
                 listCount,
-                completedCount
+                completedCount,
+                recentCompleters
         );
+    }
+
+    private MediaCommunityUserResponse toCommunityUser(User user) {
+        return new MediaCommunityUserResponse(user.getId(), user.getUsername(), user.getAvatarUlr());
     }
 
     @Transactional(readOnly = true)
@@ -206,6 +235,18 @@ public class ExternalMediaService {
             String externalId,
             String language,
             int maxResults
+    ) {
+        return findRelations(source, mediaType, externalId, language, maxResults, null);
+    }
+
+    @Transactional(readOnly = true)
+    public RelatedMediaResponse findRelations(
+            ExternalSource source,
+            MediaType mediaType,
+            String externalId,
+            String language,
+            int maxResults,
+            UUID viewerId
     ) {
         ExternalMedia external = providerRegistry.get(source, mediaType)
                 .findById(mediaType, externalId, language)
@@ -229,7 +270,7 @@ public class ExternalMediaService {
             return new RelatedMediaResponse(
                     manualItems.isEmpty() ? ExternalSource.WIKIDATA : ExternalSource.MANUAL,
                     relations.incomplete(),
-                    manualItems
+                    applyArtwork(manualItems, viewerId)
             );
         }
 
@@ -288,7 +329,33 @@ public class ExternalMediaService {
         manualItems.stream()
                 .filter(item -> automaticKeys.add(item.relationType() + ":" + item.id()))
                 .forEach(items::add);
-        return new RelatedMediaResponse(ExternalSource.WIKIDATA, relations.incomplete(), items);
+        return new RelatedMediaResponse(
+                ExternalSource.WIKIDATA, relations.incomplete(), applyArtwork(items, viewerId));
+    }
+
+    private List<RelatedMediaResponse.Item> applyArtwork(
+            List<RelatedMediaResponse.Item> items,
+            UUID viewerId
+    ) {
+        if (viewerId == null || items.isEmpty()) return items;
+        Map<UUID, Media> mediaById = mediaRepository.findAllById(items.stream()
+                        .map(RelatedMediaResponse.Item::id)
+                        .filter(java.util.Objects::nonNull)
+                        .distinct()
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(Media::getId, java.util.function.Function.identity()));
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = userArtworkResolver.resolve(
+                viewerId, mediaById.values());
+        return items.stream().map(item -> {
+            UserArtworkResolver.ResolvedArtwork artwork = item.id() == null ? null : artworks.get(item.id());
+            if (artwork == null) return item;
+            return new RelatedMediaResponse.Item(
+                    item.id(), item.relationType(), item.type(), item.title(), item.releaseDate(),
+                    artwork.coverUrl(), item.wikidataId(), item.providerSource(), item.providerExternalId(),
+                    item.externalUrl(), item.imported()
+            );
+        }).toList();
     }
 
     private List<RelatedMediaResponse.Item> manualRelations(ExternalSource source, String externalId) {
@@ -326,11 +393,14 @@ public class ExternalMediaService {
     }
 
     public SeasonEpisodesResponse findSeasonEpisodes(String seriesId, int seasonNumber, String language) {
-        return new SeasonEpisodesResponse(seriesId, seasonNumber,
+        return new SeasonEpisodesResponse(null, seriesId, null, seasonNumber,
+                null, 0, null, 0, 0,
                 tmdbClient.findSeasonEpisodes(seriesId, seasonNumber, language).stream()
                         .map(episode -> new SeasonEpisodesResponse.EpisodeResponse(
-                                episode.externalId(), episode.episodeNumber(), episode.title(), episode.description(),
-                                episode.stillUrl(), episode.airDate(), episode.runtimeMinutes())).toList());
+                                null, episode.externalId(), episode.episodeNumber(), episode.title(), episode.description(),
+                            episode.stillUrl(), episode.airDate(), episode.runtimeMinutes(),
+                            null, 0, null, episode.airDate() == null
+                                || !episode.airDate().isAfter(java.time.LocalDate.now()), false, 0)).toList());
     }
 
     private Object details(ExternalMedia external, String canonicalWorkWikidataId) {
@@ -340,16 +410,17 @@ public class ExternalMediaService {
             case TRACK -> new ExternalMediaDetailsResponse.TrackDetails(
                     external.durationSeconds(), external.explicit());
             case ALBUM -> new ExternalMediaDetailsResponse.AlbumDetails(
-                    external.albumType(), external.numberOfTracks(), external.tracks().stream()
+                    external.albumType(), external.numberOfTracks(), null, external.tracks().stream()
                     .map(track -> new ExternalMediaDetailsResponse.TrackResponse(
-                            track.externalId(), track.title(), track.discNumber(), track.trackNumber(),
-                            track.durationSeconds(), track.explicit())).toList());
+                            null, track.externalId(), track.title(), track.discNumber(), track.trackNumber(),
+                            track.durationSeconds(), track.explicit(), null, 0, null)).toList());
             case SERIES -> new ExternalMediaDetailsResponse.SeriesDetails(
                     external.seriesStatus(), external.numberOfSeasons(), external.numberOfEpisodes(),
                     external.lastAirDate(), external.seasons().stream()
                     .map(season -> new ExternalMediaDetailsResponse.SeasonResponse(
-                            season.externalId(), season.seasonNumber(), season.name(), season.description(),
-                            season.coverUrl(), season.episodeCount(), season.airDate())).toList());
+                            null, season.externalId(), season.seasonNumber(), season.name(), season.description(),
+                            season.coverUrl(), season.episodeCount(), season.airDate(),
+                            null, 0, null, 0, 0)).toList());
             case BOOK -> new ExternalMediaDetailsResponse.BookDetails(
                     external.isbn10(), external.isbn13(), external.pageCount(), external.publisher(),
                     canonicalWorkWikidataId);
@@ -560,6 +631,7 @@ public class ExternalMediaService {
                 external.tracks().forEach(track -> {
                     AlbumTrack entity = new AlbumTrack();
                     entity.setAlbum(media);
+                    entity.setTrackMedia(resolveTrackMedia(track, external.releaseDate()));
                     entity.setExternalId(track.externalId());
                     entity.setTitle(track.title());
                     entity.setDiscNumber(track.discNumber());
@@ -613,6 +685,40 @@ public class ExternalMediaService {
             }
             default -> throw new IllegalArgumentException("Import is unavailable for type " + external.type());
         }
+    }
+
+    private Media resolveTrackMedia(ExternalMedia.ExternalTrack track, LocalDate releaseDate) {
+        if (track.externalId() != null) {
+            ExternalReference existing = externalReferenceRepository
+                    .findBySourceAndExternalId(ExternalSource.MUSICBRAINZ, track.externalId())
+                    .orElse(null);
+            if (existing != null && existing.getMedia().getType() == MediaType.TRACK) {
+                return existing.getMedia();
+            }
+        }
+
+        Media media = new Media();
+        media.setType(MediaType.TRACK);
+        media.setTitle(track.title());
+        media.setReleaseDate(releaseDate);
+        Media saved = mediaRepository.save(media);
+
+        TrackDetails details = new TrackDetails();
+        details.setMedia(saved);
+        details.setDurationSeconds(track.durationSeconds());
+        details.setExplicit(Boolean.TRUE.equals(track.explicit()));
+        trackDetailsRepository.save(details);
+
+        if (track.externalId() != null) {
+            ExternalReference reference = new ExternalReference();
+            reference.setMedia(saved);
+            reference.setSource(ExternalSource.MUSICBRAINZ);
+            reference.setExternalId(track.externalId());
+            reference.setPrimaryReference(true);
+            reference.setLastSyncedAt(Instant.now());
+            externalReferenceRepository.save(reference);
+        }
+        return saved;
     }
 
     private SeriesStatus seriesStatus(String status) {
@@ -744,17 +850,20 @@ public class ExternalMediaService {
 
     private record MediaCommunityStats(
             long likeCount,
+            List<MediaCommunityUserResponse> recentLikers,
             Double averageRating,
             List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution,
             long listCount,
-            long completedCount
+            long completedCount,
+            List<MediaCommunityUserResponse> recentCompleters
     ) {
         private static MediaCommunityStats empty() {
             List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution = new ArrayList<>(10);
             for (int step = 1; step <= 10; step++) {
                 ratingDistribution.add(new ExternalMediaDetailsResponse.RatingDistributionBucket(step / 2.0, 0));
             }
-            return new MediaCommunityStats(0, null, List.copyOf(ratingDistribution), 0, 0);
+            return new MediaCommunityStats(
+                    0, List.of(), null, List.copyOf(ratingDistribution), 0, 0, List.of());
         }
     }
 }

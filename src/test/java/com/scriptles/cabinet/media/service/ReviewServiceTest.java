@@ -4,14 +4,19 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
+import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
+import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
 import org.junit.jupiter.api.Test;
@@ -32,7 +37,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,7 +54,15 @@ class ReviewServiceTest {
     @Mock
     private MediaRepository mediaRepository;
     @Mock
+    private RatingRepository ratingRepository;
+    @Mock
+    private UserMediaActivityRepository userMediaActivityRepository;
+    @Mock
     private UserMediaService userMediaService;
+    @Mock
+    private MediaSearchItemAssembler mediaSearchItemAssembler;
+    @Mock
+    private MediaConsumptionPolicy mediaConsumptionPolicy;
 
     @InjectMocks
     private ReviewService reviewService;
@@ -82,25 +97,16 @@ class ReviewServiceTest {
     }
 
     @Test
-    void ratingOnlyReviewCannotContainSpoilers() {
+    void rejectsAReviewWithoutContent() {
         UUID userId = UUID.randomUUID();
         UUID mediaId = UUID.randomUUID();
-        User user = user(userId);
-        Media media = media(mediaId);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
-        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
-        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
-        when(reviewRepository.saveAndFlush(any(Review.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-
-        ReviewResponse response = reviewService.upsert(
+        assertThatThrownBy(() -> reviewService.upsert(
                 userId,
                 mediaId,
                 new UpsertReviewRequest(new BigDecimal("3.0"), " ", true, Visibility.PRIVATE)
-        );
+        )).isInstanceOf(ApiException.class).hasMessage("A resenha precisa ter conteúdo");
 
-        assertThat(response.content()).isNull();
-        assertThat(response.containsSpoilers()).isFalse();
+        verify(reviewRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -144,10 +150,43 @@ class ReviewServiceTest {
     }
 
     @Test
+    void createsAReviewFromTheUsersExistingStandaloneRating() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media media = media(mediaId);
+        Rating rating = new Rating();
+        rating.setUser(user);
+        rating.setMedia(media);
+        rating.setValue(new BigDecimal("3.5"));
+        rating.setVisibility(Visibility.PUBLIC);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(rating));
+        when(reviewRepository.saveAndFlush(any(Review.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponse response = reviewService.upsert(
+                userId,
+                mediaId,
+                new UpsertReviewRequest(
+                        new BigDecimal("4.5"),
+                        "Agora com review",
+                        false,
+                        Visibility.PUBLIC
+                )
+        );
+
+        assertThat(response.rating()).isEqualByComparingTo("4.5");
+        verify(reviewRepository).saveAndFlush(argThat(review -> review.getRatingEntity() == rating));
+    }
+
+    @Test
     void rejectsRatingsOutsideHalfStarSteps() {
         UpsertReviewRequest request = new UpsertReviewRequest(
                 new BigDecimal("4.2"),
-                null,
+                "Nota inválida",
                 false,
                 Visibility.PUBLIC
         );
@@ -156,6 +195,33 @@ class ReviewServiceTest {
                 .isInstanceOf(ApiException.class)
                 .hasMessage("A nota deve estar entre 0,5 e 5, em intervalos de meia estrela");
 
+        verify(reviewRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsReviewingAnUnreleasedWork() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media futureMovie = media(mediaId);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(futureMovie));
+        doThrow(new ApiException(
+                org.springframework.http.HttpStatus.BAD_REQUEST,
+                "MEDIA_NOT_RELEASED",
+                "A obra ainda não foi lançada"
+        )).when(mediaConsumptionPolicy).ensureReleased(futureMovie);
+
+        assertThatThrownBy(() -> reviewService.upsert(
+                userId,
+                mediaId,
+                new UpsertReviewRequest(
+                        new BigDecimal("4.0"),
+                        "Review antecipada",
+                        false,
+                        Visibility.PUBLIC
+                )
+        )).isInstanceOf(ApiException.class).hasMessage("A obra ainda não foi lançada");
         verify(reviewRepository, never()).saveAndFlush(any());
     }
 
@@ -184,7 +250,7 @@ class ReviewServiceTest {
                 org.mockito.ArgumentMatchers.eq(PageRequest.of(
                         0,
                         10,
-                        Sort.by(Sort.Direction.DESC, "createdAt")
+                        Sort.by(Sort.Direction.DESC, "publishedAt")
                                 .and(Sort.by(Sort.Direction.DESC, "id"))
                 ))
         );
@@ -218,6 +284,30 @@ class ReviewServiceTest {
     }
 
     @Test
+    void returnsGloballyPopularReviewsWithTheirMediaSummary() {
+        UUID mediaId = UUID.randomUUID();
+        Review review = review(mediaId, "4.5");
+        review.setContent("Uma ótima descoberta.");
+        when(reviewRepository.findGloballyPopularIds(
+                Visibility.PUBLIC, PageRequest.of(0, 12)))
+                .thenReturn(List.of(review.getId()));
+        when(reviewRepository.findAllByIdIn(List.of(review.getId())))
+                .thenReturn(List.of(review));
+        MediaSearchItemResponse mediaItem = new MediaSearchItemResponse(
+                mediaId, mediaId.toString(), ExternalSource.MANUAL, MediaType.MOVIE,
+                "Central do Brasil", null, null, null, null, true, 4.5, 10
+        );
+        when(mediaSearchItemAssembler.fromImported(List.of(review.getMedia())))
+                .thenReturn(List.of(mediaItem));
+
+        var response = reviewService.findGloballyPopular(null, 12);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.getFirst().review().content()).isEqualTo("Uma ótima descoberta.");
+        assertThat(response.getFirst().media().title()).isEqualTo("Central do Brasil");
+    }
+
+    @Test
     void returnsTheThreeMostRecentPublicReviews() {
         UUID mediaId = UUID.randomUUID();
         List<Review> reviews = List.of(
@@ -226,7 +316,7 @@ class ReviewServiceTest {
                 review(mediaId, "5.0")
         );
         when(mediaRepository.existsById(mediaId)).thenReturn(true);
-        when(reviewRepository.findTop3ByMediaIdAndVisibilityOrderByCreatedAtDescIdDesc(
+        when(reviewRepository.findTop3ByRatingMediaIdAndRatingVisibilityOrderByCreatedAtDescIdDesc(
                 mediaId,
                 Visibility.PUBLIC
         )).thenReturn(reviews);

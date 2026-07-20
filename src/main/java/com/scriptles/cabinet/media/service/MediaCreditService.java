@@ -243,6 +243,7 @@ public class MediaCreditService {
     private CreditRole creatorRole(MediaType type) {
         return switch (type) {
             case BOOK -> CreditRole.AUTHOR;
+            case EPISODE -> CreditRole.CREATOR;
             case MOVIE -> CreditRole.DIRECTOR;
             case SERIES -> CreditRole.CREATOR;
             case TRACK, ALBUM -> CreditRole.ARTIST;

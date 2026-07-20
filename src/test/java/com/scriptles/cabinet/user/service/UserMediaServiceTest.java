@@ -8,12 +8,14 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
 import com.scriptles.cabinet.user.dto.response.LibraryEntryResponse;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -35,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,12 +46,19 @@ import static org.mockito.Mockito.when;
 class UserMediaServiceTest {
     @Mock
     private UserMediaRepository userMediaRepository;
+
+    @Mock
+    private UserMediaActivityRepository userMediaActivityRepository;
     @Mock
     private UserRepository userRepository;
     @Mock
     private MediaRepository mediaRepository;
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
+    @Mock
+    private MediaConsumptionPolicy mediaConsumptionPolicy;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private UserMediaService userMediaService;
@@ -186,6 +197,34 @@ class UserMediaServiceTest {
 
         assertThat(entry.getCompletedAt()).isEqualTo("2026-01-02T03:04:05Z");
         assertThat(entry.getLastInteractionAt()).isAfter(entry.getCompletedAt());
+    }
+
+    @Test
+    void rejectsConsumptionStatusForAnUnreleasedWorkButAllowsPlanningIt() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media futureBook = media(mediaId, MediaType.BOOK);
+        futureBook.setReleaseDate(LocalDate.now().plusDays(1));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(futureBook));
+        when(userMediaRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        doThrow(new ApiException(
+                org.springframework.http.HttpStatus.BAD_REQUEST,
+                "MEDIA_NOT_RELEASED",
+                "A obra ainda não foi lançada"
+        )).when(mediaConsumptionPolicy).ensureReleased(futureBook);
+
+        assertThatThrownBy(() -> userMediaService.upsert(
+                userId, mediaId, UserMediaStatus.IN_PROGRESS))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("A obra ainda não foi lançada");
+        verify(userMediaRepository, never()).saveAndFlush(any());
+
+        when(userMediaRepository.saveAndFlush(any(UserMedia.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        assertThat(userMediaService.upsert(userId, mediaId, UserMediaStatus.PLANNED).status())
+                .isEqualTo(UserMediaStatus.PLANNED);
     }
 
     private User user(UUID id) {

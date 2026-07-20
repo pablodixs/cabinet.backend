@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.user.dto.response;
 
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserRole;
 
 import java.time.Instant;
@@ -12,6 +13,8 @@ public record CommunityUserRoleResponse(
         String displayName,
         String email,
         UserRole role,
+        AccountTier accountTier,
+        boolean pro,
         boolean active,
         Instant memberSince
 ) {
@@ -22,6 +25,8 @@ public record CommunityUserRoleResponse(
                 user.getDisplayName(),
                 user.getEmail(),
                 effectiveRole,
+                user.getAccountTier() == null ? AccountTier.FREE : user.getAccountTier(),
+                user.getAccountTier() == AccountTier.PRO,
                 Boolean.TRUE.equals(user.getActive()),
                 user.getCreatedAt()
         );

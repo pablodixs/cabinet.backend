@@ -67,6 +67,24 @@ class PublicListControllerTest {
     }
 
     @Test
+    void returnsPopularListsWithoutAuthentication() throws Exception {
+        PublicListSearchResponse response = new PublicListSearchResponse(
+                UUID.randomUUID(), "Favoritos da comunidade", null, true, null,
+                List.of(), 20, 15, Instant.parse("2026-07-19T12:00:00Z"),
+                new PublicMediaListResponse.AuthorResponse(
+                        UUID.randomUUID(), "maria", "Maria", null)
+        );
+        when(mediaListService.findGloballyPopular(12)).thenReturn(List.of(response));
+
+        mockMvc.perform(get("/v1/lists/popular"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("Favoritos da comunidade"))
+                .andExpect(jsonPath("$[0].likeCount").value(15));
+
+        verify(mediaListService).findGloballyPopular(12);
+    }
+
+    @Test
     void returnsPublicListDetailsWithoutAuthentication() throws Exception {
         UUID listId = UUID.randomUUID();
         PublicMediaListDetailsResponse response = new PublicMediaListDetailsResponse(

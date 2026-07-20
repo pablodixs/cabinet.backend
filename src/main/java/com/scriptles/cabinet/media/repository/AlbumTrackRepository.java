@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface AlbumTrackRepository extends JpaRepository<AlbumTrack, UUID> {
     List<AlbumTrack> findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(UUID albumId);
+    boolean existsByTrackMediaId(UUID trackMediaId);
 }

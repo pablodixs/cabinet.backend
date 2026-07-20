@@ -12,7 +12,7 @@ import com.scriptles.cabinet.media.external.ExternalMediaException;
 import com.scriptles.cabinet.media.external.ExternalMediaProvider;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
-import com.scriptles.cabinet.media.repository.ReviewRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.enums.Visibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -45,9 +45,10 @@ public class MediaSearchService {
 
     private final ExternalMediaProviderRegistry providerRegistry;
     private final ExternalReferenceRepository externalReferenceRepository;
-    private final ReviewRepository reviewRepository;
+    private final RatingRepository ratingRepository;
     private final MediaCreditService mediaCreditService;
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
+    private final UserArtworkResolver userArtworkResolver;
 
     @Transactional(readOnly = true)
     public MediaSearchPageResponse search(
@@ -57,23 +58,36 @@ public class MediaSearchService {
             String cursor,
             int limit
     ) {
+        return search(query, type, sort, cursor, limit, null);
+    }
+
+    @Transactional(readOnly = true)
+    public MediaSearchPageResponse search(
+            String query,
+            MediaType type,
+            MediaSearchSort sort,
+            String cursor,
+            int limit,
+            UUID viewerId
+    ) {
         validateType(type);
         String normalizedQuery = query.trim();
 
         if (sort == MediaSearchSort.RATING) {
-            return searchByRating(normalizedQuery, type, cursor, limit);
+            return searchByRating(normalizedQuery, type, cursor, limit, viewerId);
         }
-        return searchByRelevance(normalizedQuery, type, cursor, limit);
+        return searchByRelevance(normalizedQuery, type, cursor, limit, viewerId);
     }
 
     private MediaSearchPageResponse searchByRelevance(
             String query,
             MediaType type,
             String cursor,
-            int limit
+            int limit,
+            UUID viewerId
     ) {
         if (type == null) {
-            return searchAllByRelevance(query, cursor, limit);
+            return searchAllByRelevance(query, cursor, limit, viewerId);
         }
 
         SingleCursor state = decodeSingleCursor(cursor);
@@ -85,10 +99,15 @@ public class MediaSearchService {
                 ? encode("s:%d".formatted(state.offset() + consumed))
                 : null;
 
-        return new MediaSearchPageResponse(mediaSearchItemAssembler.fromExternal(page), nextCursor);
+        return new MediaSearchPageResponse(mediaSearchItemAssembler.fromExternal(page, viewerId), nextCursor);
     }
 
-    private MediaSearchPageResponse searchAllByRelevance(String query, String cursor, int limit) {
+    private MediaSearchPageResponse searchAllByRelevance(
+            String query,
+            String cursor,
+            int limit,
+            UUID viewerId
+    ) {
         AllCursor state = decodeAllCursor(cursor);
         int fetchLimit = limit + 1;
 
@@ -146,20 +165,22 @@ public class MediaSearchService {
                 interleaved.nextSource().name()
         ));
 
-        return new MediaSearchPageResponse(mediaSearchItemAssembler.fromExternal(interleaved.items()), nextCursor);
+        return new MediaSearchPageResponse(
+                mediaSearchItemAssembler.fromExternal(interleaved.items(), viewerId), nextCursor);
     }
 
     private MediaSearchPageResponse searchByRating(
             String query,
             MediaType type,
             String cursor,
-            int limit
+            int limit,
+            UUID viewerId
     ) {
         RatingCursor state = decodeRatingCursor(cursor);
         Set<MediaType> types = type == null ? SEARCHABLE_TYPES : EnumSet.of(type);
-        Slice<ReviewRepository.RatedMediaProjection> ratings = reviewRepository.searchRatedMedia(
+        Slice<RatingRepository.RatedMediaProjection> ratings = ratingRepository.searchRatedMedia(
                 query,
-                types,
+                types.stream().map(Enum::name).collect(Collectors.toSet()),
                 Visibility.PUBLIC,
                 PageRequest.of(state.page(), limit)
         );
@@ -177,7 +198,11 @@ public class MediaSearchService {
                         LinkedHashMap::new
                 ));
         Map<UUID, MediaCreditService.CreditSummary> creditSummaries = mediaCreditService.summaries(
-                ratings.getContent().stream().map(ReviewRepository.RatedMediaProjection::getMedia).toList()
+                ratings.getContent().stream().map(RatingRepository.RatedMediaProjection::getMedia).toList()
+        );
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = userArtworkResolver.resolve(
+                viewerId,
+                ratings.getContent().stream().map(RatingRepository.RatedMediaProjection::getMedia).toList()
         );
 
         List<MediaSearchItemResponse> items = ratings.getContent().stream()
@@ -185,7 +210,8 @@ public class MediaSearchService {
                         projection,
                         references.get(projection.getMedia().getId()),
                         creditSummaries.getOrDefault(
-                                projection.getMedia().getId(), MediaCreditService.CreditSummary.empty())
+                                projection.getMedia().getId(), MediaCreditService.CreditSummary.empty()),
+                        artworks.get(projection.getMedia().getId())
                 ))
                 .filter(java.util.Objects::nonNull)
                 .toList();
@@ -197,9 +223,10 @@ public class MediaSearchService {
     }
 
     private MediaSearchItemResponse toRatedResponse(
-            ReviewRepository.RatedMediaProjection projection,
+            RatingRepository.RatedMediaProjection projection,
             ExternalReference reference,
-            MediaCreditService.CreditSummary creditSummary
+            MediaCreditService.CreditSummary creditSummary,
+            UserArtworkResolver.ResolvedArtwork artwork
     ) {
         if (reference == null) {
             return null;
@@ -213,7 +240,7 @@ public class MediaSearchService {
                 media.getTitle(),
                 creditSummary.creator(),
                 media.getDescription(),
-                media.getCoverUrl(),
+                artwork.coverUrl(),
                 media.getReleaseDate(),
                 true,
                 projection.getAverageRating(),

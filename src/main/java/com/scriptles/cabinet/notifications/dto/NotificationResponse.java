@@ -61,6 +61,13 @@ public record NotificationResponse(
         if (notification.getReport() != null) {
             return new SubjectResponse("REPORT", notification.getReport().getId(), notification.getReport().getMediaTitle());
         }
+        if (notification.getSeriesEpisode() != null) {
+            return new SubjectResponse(
+                    "EPISODE",
+                    notification.getSeriesEpisode().getEpisodeMedia().getId(),
+                    notification.getSeriesEpisode().getSeason().getSeries().getTitle()
+            );
+        }
         return null;
     }
 
@@ -73,6 +80,12 @@ public record NotificationResponse(
         }
         if (notification.getReport() != null && notification.getReport().getMedia() != null) {
             return "/media/" + notification.getReport().getMedia().getId();
+        }
+        if (notification.getSeriesEpisode() != null) {
+            var episode = notification.getSeriesEpisode();
+            return "/media/" + episode.getSeason().getSeries().getId()
+                    + "?tab=episodes&season=" + episode.getSeason().getSeasonNumber()
+                    + "#episode-" + episode.getEpisodeMedia().getId();
         }
         return "/notificacoes";
     }

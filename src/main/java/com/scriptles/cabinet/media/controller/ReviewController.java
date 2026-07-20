@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
+import com.scriptles.cabinet.media.dto.response.PopularReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
 import com.scriptles.cabinet.media.service.ReviewService;
 import com.scriptles.cabinet.security.AuthenticatedUser;
@@ -28,6 +29,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ReviewController {
     private final ReviewService reviewService;
+
+    @GetMapping("/v1/reviews/popular")
+    public List<PopularReviewResponse> findGloballyPopular(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(defaultValue = "12") @Min(1) @Max(40) int limit
+    ) {
+        return reviewService.findGloballyPopular(user == null ? null : user.id(), limit);
+    }
 
     @GetMapping("/v1/reviews/{reviewId}")
     public ReviewResponse findPublicById(

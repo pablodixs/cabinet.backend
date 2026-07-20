@@ -2,10 +2,13 @@ package com.scriptles.cabinet.security;
 
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.controller.ReviewController;
+import com.scriptles.cabinet.media.controller.RatingController;
 import com.scriptles.cabinet.media.controller.MediaLikeController;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
+import com.scriptles.cabinet.media.dto.response.RatingResponse;
 import com.scriptles.cabinet.media.service.ReviewService;
+import com.scriptles.cabinet.media.service.RatingService;
 import com.scriptles.cabinet.media.dto.response.MediaLikeResponse;
 import com.scriptles.cabinet.media.service.MediaLikeService;
 import com.scriptles.cabinet.user.controller.MeLibraryController;
@@ -38,7 +41,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest({ReviewController.class, MediaLikeController.class, MeLibraryController.class})
+@WebMvcTest({ReviewController.class, RatingController.class, MediaLikeController.class, MeLibraryController.class})
 @Import(SecurityConfig.class)
 class CommunitySecurityTest {
     @Autowired
@@ -46,6 +49,9 @@ class CommunitySecurityTest {
 
     @MockitoBean
     private ReviewService reviewService;
+
+    @MockitoBean
+    private RatingService ratingService;
 
     @MockitoBean
     private MediaLikeService mediaLikeService;
@@ -114,6 +120,19 @@ class CommunitySecurityTest {
         mockMvc.perform(get("/v1/me/reviews/{mediaId}", UUID.randomUUID()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void returnsTheAuthenticatedUsersRating() throws Exception {
+        AuthenticatedUser principal = principal();
+        UUID mediaId = UUID.randomUUID();
+        when(ratingService.find(principal.id(), mediaId))
+                .thenReturn(Optional.of(new RatingResponse(mediaId, new BigDecimal("4.5"))));
+
+        mockMvc.perform(get("/v1/me/ratings/{mediaId}", mediaId)
+                        .with(user(principal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rating").value(4.5));
     }
 
     @Test

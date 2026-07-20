@@ -48,6 +48,20 @@ public class MoreByService {
     private final AlbumCoverService albumCoverService;
 
     public MoreByResponse find(UUID mediaId, String language, int limit) {
+        return find(mediaId, language, limit, null, false);
+    }
+
+    public MoreByResponse find(UUID mediaId, String language, int limit, UUID viewerId) {
+        return find(mediaId, language, limit, viewerId, true);
+    }
+
+    private MoreByResponse find(
+            UUID mediaId,
+            String language,
+            int limit,
+            UUID viewerId,
+            boolean personalized
+    ) {
         Media current = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND,
                 "MEDIA_NOT_FOUND",
@@ -75,7 +89,9 @@ public class MoreByService {
                 mediaId,
                 PageRequest.of(0, LOCAL_FETCH_LIMIT)
         );
-        List<MediaSearchItemResponse> localItems = itemAssembler.fromImported(localMedia);
+        List<MediaSearchItemResponse> localItems = personalized
+                ? itemAssembler.fromImported(localMedia, viewerId)
+                : itemAssembler.fromImported(localMedia);
 
         String personExternalId = externalId(person, principal, eligibility.source());
         boolean incomplete = personExternalId == null;
@@ -98,7 +114,9 @@ public class MoreByService {
                         ? media.withCoverUrl(albumCoverService.findCoverUrl(media.externalId()))
                         : media)
                 .toList();
-        List<MediaSearchItemResponse> externalItems = itemAssembler.fromExternal(externalMedia).stream()
+        List<MediaSearchItemResponse> externalItems = (personalized
+                ? itemAssembler.fromExternal(externalMedia, viewerId)
+                : itemAssembler.fromExternal(externalMedia)).stream()
                 .filter(item -> !mediaId.equals(item.id()))
                 .toList();
 
@@ -174,7 +192,7 @@ public class MoreByService {
         return switch (type) {
             case MOVIE -> new Eligibility(CreditRole.DIRECTOR, MediaType.MOVIE, ExternalSource.TMDB);
             case ALBUM, TRACK -> new Eligibility(CreditRole.ARTIST, MediaType.ALBUM, ExternalSource.MUSICBRAINZ);
-            case BOOK, SERIES -> null;
+            case BOOK, SERIES, EPISODE -> null;
         };
     }
 

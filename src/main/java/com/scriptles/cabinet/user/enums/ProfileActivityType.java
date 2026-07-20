@@ -5,5 +5,10 @@ public enum ProfileActivityType {
     STARTED,
     COMPLETED,
     PAUSED,
-    DROPPED
+    DROPPED,
+    WATCHED,
+    REWATCHED,
+    MARKED_WATCHED,
+    LOGGED,
+    RELOGGED
 }

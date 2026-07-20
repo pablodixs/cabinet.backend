@@ -3,15 +3,24 @@ package com.scriptles.cabinet.media.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
+import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
+import com.scriptles.cabinet.media.dto.response.PopularReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewLikerResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
+import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
+import com.scriptles.cabinet.media.validation.RatingValue;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.entity.UserMediaActivity;
+import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +32,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,19 +40,20 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
 public class ReviewService {
-    private static final BigDecimal MIN_RATING = new BigDecimal("0.5");
-    private static final BigDecimal MAX_RATING = new BigDecimal("5.0");
-    private static final BigDecimal RATING_STEP = new BigDecimal("0.5");
-
     private final ReviewRepository reviewRepository;
     private final ReviewLikeRepository reviewLikeRepository;
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
+    private final RatingRepository ratingRepository;
+    private final UserMediaActivityRepository userMediaActivityRepository;
     private final UserMediaService userMediaService;
+    private final MediaSearchItemAssembler mediaSearchItemAssembler;
+    private final MediaConsumptionPolicy mediaConsumptionPolicy;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -61,7 +70,7 @@ public class ReviewService {
                 PageRequest.of(
                         page,
                         size,
-                        Sort.by(Sort.Direction.DESC, "createdAt")
+                        Sort.by(Sort.Direction.DESC, "publishedAt")
                                 .and(Sort.by(Sort.Direction.DESC, "id"))
                 )
         );
@@ -98,10 +107,48 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
+    public List<PopularReviewResponse> findGloballyPopular(UUID userId, int limit) {
+        List<UUID> reviewIds = reviewRepository.findGloballyPopularIds(
+                Visibility.PUBLIC,
+                PageRequest.of(0, limit)
+        );
+        if (reviewIds.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, Review> reviewsById = reviewRepository.findAllByIdIn(reviewIds)
+                .stream()
+                .collect(Collectors.toMap(Review::getId, review -> review));
+        List<Review> reviews = reviewIds.stream()
+                .map(reviewsById::get)
+                .filter(Objects::nonNull)
+                .toList();
+        List<ReviewResponse> reviewResponses = responses(reviews, userId);
+        List<Media> media = reviews.stream()
+                .map(Review::getMedia)
+                .collect(Collectors.toMap(
+                        Media::getId,
+                        item -> item,
+                        (first, ignored) -> first,
+                        LinkedHashMap::new
+                ))
+                .values()
+                .stream()
+                .toList();
+        Map<UUID, MediaSearchItemResponse> mediaById = mediaSearchItemAssembler.fromImported(media)
+                .stream()
+                .collect(Collectors.toMap(MediaSearchItemResponse::id, item -> item));
+
+        return reviewResponses.stream()
+                .map(review -> new PopularReviewResponse(review, mediaById.get(review.mediaId())))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ReviewResponse> findRecent(UUID userId, UUID mediaId) {
         validateMediaExists(mediaId);
         return responses(
-                reviewRepository.findTop3ByMediaIdAndVisibilityOrderByCreatedAtDescIdDesc(
+                reviewRepository.findTop3ByRatingMediaIdAndRatingVisibilityOrderByCreatedAtDescIdDesc(
                         mediaId,
                         Visibility.PUBLIC
                 ),
@@ -125,19 +172,45 @@ public class ReviewService {
 
     @Transactional
     public ReviewResponse upsert(UUID userId, UUID mediaId, UpsertReviewRequest request) {
-        BigDecimal rating = validateRating(request.rating());
+        BigDecimal requestedRating = request.rating() == null
+                ? null
+                : RatingValue.normalize(request.rating());
         validateVisibility(request.visibility());
+        String content = normalizeContent(request.content());
 
         User user = findUser(userId);
         Media media = findMedia(mediaId);
+        if (media.getType() == MediaType.TRACK || media.getType() == MediaType.EPISODE) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "REVIEW_NOT_SUPPORTED",
+                    "Faixas e episódios aceitam somente nota");
+        }
+        mediaConsumptionPolicy.ensureReleased(media);
         Review review = reviewRepository.findByUserIdAndMediaId(userId, mediaId)
                 .orElseGet(() -> newReview(user, media));
 
-        String content = normalizeContent(request.content());
-        review.setRating(rating);
+        Rating rating = review.getRatingEntity();
+        if (requestedRating != null) {
+            if (rating == null) {
+                rating = ratingRepository.findByUserIdAndMediaId(userId, mediaId)
+                        .orElseGet(() -> newRating(user, media));
+            }
+            rating.setValue(requestedRating);
+            rating.setRatedAt(Instant.now());
+            review.setRatingEntity(rating);
+        }
         review.setContent(content);
-        review.setContainsSpoilers(content != null && Boolean.TRUE.equals(request.containsSpoilers()));
+        review.setContainsSpoilers(Boolean.TRUE.equals(request.containsSpoilers()));
         review.setVisibility(request.visibility());
+        if (request.activityId() != null) {
+            UserMediaActivity activity = findOwnedDiaryActivity(userId, mediaId, request.activityId());
+            review.setActivity(activity);
+            activity.setRating(review.getRating());
+            activity.setReviewContent(content);
+            activity.setContainsSpoilers(review.getContainsSpoilers());
+            activity.setVisibility(review.getVisibility());
+            userMediaActivityRepository.save(activity);
+        }
+        if (review.getPublishedAt() == null) review.setPublishedAt(Instant.now());
 
         Review saved = reviewRepository.saveAndFlush(review);
         userMediaService.markCompleted(user, media);
@@ -157,21 +230,17 @@ public class ReviewService {
         Review review = new Review();
         review.setUser(user);
         review.setMedia(media);
+        ratingRepository.findByUserIdAndMediaId(user.getId(), media.getId())
+                .ifPresent(review::setRatingEntity);
         return review;
     }
 
-    private BigDecimal validateRating(BigDecimal rating) {
-        if (rating == null
-                || rating.compareTo(MIN_RATING) < 0
-                || rating.compareTo(MAX_RATING) > 0
-                || rating.remainder(RATING_STEP).compareTo(BigDecimal.ZERO) != 0) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "INVALID_RATING",
-                    "A nota deve estar entre 0,5 e 5, em intervalos de meia estrela"
-            );
-        }
-        return rating.setScale(1, RoundingMode.UNNECESSARY);
+    private Rating newRating(User user, Media media) {
+        Rating rating = new Rating();
+        rating.setUser(user);
+        rating.setMedia(media);
+        rating.setVisibility(Visibility.PUBLIC);
+        return rating;
     }
 
     private void validateVisibility(Visibility visibility) {
@@ -186,9 +255,28 @@ public class ReviewService {
 
     private String normalizeContent(String content) {
         if (content == null || content.isBlank()) {
-            return null;
+            throw new ApiException(HttpStatus.BAD_REQUEST, "REVIEW_CONTENT_REQUIRED",
+                    "A resenha precisa ter conteúdo");
         }
         return content.trim();
+    }
+
+    private UserMediaActivity findOwnedDiaryActivity(UUID userId, UUID mediaId, UUID activityId) {
+        UserMediaActivity activity = userMediaActivityRepository.findByIdAndUserId(activityId, userId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, "DIARY_ENTRY_NOT_FOUND", "Registro do diário não encontrado"));
+        if (!activity.getMedia().getId().equals(mediaId) || !isDiaryType(activity.getType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DIARY_ENTRY",
+                    "O registro não pertence a esta obra ou não é uma entrada do diário");
+        }
+        return activity;
+    }
+
+    private boolean isDiaryType(ProfileActivityType type) {
+        return type == ProfileActivityType.LOGGED
+                || type == ProfileActivityType.RELOGGED
+                || type == ProfileActivityType.WATCHED
+                || type == ProfileActivityType.REWATCHED;
     }
 
     private User findUser(UUID userId) {

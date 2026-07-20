@@ -27,6 +27,14 @@ public record MediaListItemResponse(
             MediaListItem item,
             ExternalReference externalReference
     ) {
+        return from(item, externalReference, item.getMedia().getCoverUrl());
+    }
+
+    public static MediaListItemResponse from(
+            MediaListItem item,
+            ExternalReference externalReference,
+            String coverUrl
+    ) {
         Media media = item.getMedia();
         return new MediaListItemResponse(
                 item.getId(),
@@ -35,7 +43,7 @@ public record MediaListItemResponse(
                 item.getNotes(),
                 media.getType(),
                 media.getTitle(),
-                media.getCoverUrl(),
+                coverUrl,
                 media.getReleaseDate(),
                 externalReference == null ? null : externalReference.getSource(),
                 externalReference == null ? null : externalReference.getExternalId(),

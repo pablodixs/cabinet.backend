@@ -36,6 +36,9 @@ public class AlbumDetails {
 
     private Integer numberOfTracks;
 
+    @Column(columnDefinition = "TEXT")
+    private String animatedCoverUrl;
+
     private LocalDate releaseDate;
 
     @CreationTimestamp

@@ -58,6 +58,49 @@ GET /v1/media/search?query=matrix&sort=RATING&cursor={opaqueCursor}&limit=20
 }
 ```
 
+## Rankings and trending media
+
+Both discovery endpoints are public and return only Cabinet community data. With no `type` filter they include
+top-level works (`MOVIE`, `SERIES`, `ALBUM`, and `BOOK`); pass a type explicitly to request a specific category,
+including `TRACK` or `EPISODE`.
+
+The top-rated ranking uses public ratings, ordered by average rating, number of ratings, and title. It uses regular
+page pagination:
+
+```http
+GET /v1/media/rankings/top-rated?type=MOVIE&page=0&limit=20
+```
+
+The homepage-oriented trending endpoint combines activity inside a recent window. A public rating has weight 3, a
+media like has weight 2, and a public library interaction has weight 1. `days` defaults to 7 and accepts 1 through
+30; `limit` defaults to 12.
+
+```http
+GET /v1/media/rankings/trending?type=SERIES&days=7&limit=12
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "6c64fb1f-8af4-4eca-92ec-d086af80b87a",
+      "externalId": "603",
+      "source": "TMDB",
+      "type": "MOVIE",
+      "title": "The Matrix",
+      "creator": null,
+      "description": "...",
+      "coverUrl": "https://image.tmdb.org/t/p/w500/...",
+      "releaseDate": "1999-03-30",
+      "imported": true,
+      "averageRating": 4.5,
+      "ratingCount": 8
+    }
+  ],
+  "periodDays": 7
+}
+```
+
 ## Search
 
 ```http
@@ -106,8 +149,15 @@ role for each media type.
 Calling the import endpoint again for media imported before credit persistence was introduced performs a best-effort
 credit backfill and does not duplicate existing credits.
 `likeCount`, `averageRating`, `listCount`, and `completedCount` contain public Cabinet community aggregates.
-Private reviews, non-public lists, and private library entries are excluded. Media that has not been imported yet
-returns zero for the counters and `null` for `averageRating`.
+`recentLikers` and `recentCompleters` contain up to three accounts in reverse chronological order, including each
+account's `id`, `username`, and `avatarUrl`. Private reviews, non-public lists, and private library entries are
+excluded. Media that has not been imported yet returns zero for the counters, empty recent-account arrays, and
+`null` for `averageRating`.
+
+Works with a `releaseDate` after the current date can be added as `PLANNED`, but cannot use any consumption status
+(`IN_PROGRESS`, `PAUSED`, `DROPPED`, or `COMPLETED`) and cannot receive a rating or review. Those attempts return
+`400 Bad Request` with code `MEDIA_NOT_RELEASED`. A work is available on its release date; a missing release date
+does not block it.
 
 ### Where to watch or listen and external ratings
 
@@ -225,6 +275,82 @@ Artist identities from TMDB and MusicBrainz are reconciled through their exact W
 point to the same QID, Cabinet keeps one artist profile with references to both providers and combines all imported
 works. Names alone are never used to merge people. Identity lookup is best-effort, so an unavailable provider does
 not prevent media import; importing an existing media item again also reconciles legacy credits incrementally.
+
+`/v1/artists` is a compatibility alias for the generic people resource. Alias responses include `Deprecation: true`
+and a `Link` header pointing to the successor route:
+
+```http
+GET /v1/people/{personId}
+GET /v1/people/{personId}/works?page=0&size=24
+```
+
+## Awards
+
+Awards and nominations for imported media and people are sourced from Wikidata. Cabinet accepts only film,
+television, literary, and music award families. Other `award received` values such as state honours, editorial lists,
+and unrelated rankings are ignored.
+
+```http
+GET /v1/media/{mediaId}/awards?result=WIN&page=0&size=20
+GET /v1/people/{personId}/awards?result=NOMINATION&page=0&size=20
+GET /v1/artists/{personId}/awards?page=0&size=20
+```
+
+`result` is optional and accepts `WIN` or `NOMINATION`; `size` accepts 1 through 100. A matching win replaces the
+corresponding nomination, so `totalNominations` counts only non-winning nominations. Results are sorted by year and
+date descending, with undated entries last.
+
+Award lookups use the same persisted stale-while-revalidate behavior as external availability. A first request
+returns `202 Accepted`, `Retry-After: 2`, and `state: PENDING`. Existing expired data returns immediately with
+`state: STALE` while a refresh runs. `NOT_LINKED` means that the media or person does not have a Wikidata QID.
+Successful results are refreshed every seven days; provider failures retry after one hour.
+
+```json
+{
+  "subjectId": "e14e30d7-4d53-40d7-92f6-12434e82245a",
+  "subjectType": "PERSON",
+  "state": "READY",
+  "fetchedAt": "2026-07-20T18:00:00Z",
+  "expiresAt": "2026-07-27T18:00:00Z",
+  "totalWins": 1,
+  "totalNominations": 2,
+  "items": [
+    {
+      "id": "05c403d8-1e80-4c84-82c8-c908943c6633",
+      "result": "WIN",
+      "program": { "qid": "Q19020", "name": "Óscar" },
+      "category": { "qid": "Q103916", "name": "Óscar de melhor ator" },
+      "ceremony": { "qid": "Q20022969", "name": "Oscar 2016" },
+      "eventDate": "2016-02-28",
+      "eventYear": 2016,
+      "datePrecision": "DAY",
+      "work": {
+        "mediaId": null,
+        "wikidataId": "Q18002795",
+        "title": "The Revenant"
+      },
+      "origin": "WIKIDATA",
+      "curated": false,
+      "sourceUrl": "https://www.wikidata.org/wiki/Q38111"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 3,
+  "totalPages": 1
+}
+```
+
+Moderators can list, add, correct, hide, and restore award entries. Edits use optimistic `version` checks and are
+audited. Corrected imported entries are not overwritten by later Wikidata refreshes.
+
+```http
+GET /v1/moderation/awards?subjectType=MEDIA&subjectId={mediaId}&page=0&size=20
+POST /v1/moderation/awards
+PUT /v1/moderation/awards/{awardId}
+DELETE /v1/moderation/awards/{awardId}
+POST /v1/moderation/awards/{awardId}/reset-to-source
+```
 
 ### More by this artist or director
 
@@ -372,9 +498,11 @@ when provider credits are incomplete.
   ],
   "imported": false,
   "likeCount": 0,
+  "recentLikers": [],
   "averageRating": null,
   "listCount": 0,
   "completedCount": 0,
+  "recentCompleters": [],
   "details": {
     "runtimeMinutes": 139,
     "budget": 63000000,
@@ -412,6 +540,7 @@ Album details prefer an official MusicBrainz release with the most complete trac
   "details": {
     "albumType": "Album",
     "numberOfTracks": 10,
+    "animatedCoverUrl": "https://example.com/animated-cover.gif",
     "tracks": [
       {
         "externalId": "recording-uuid",
@@ -481,6 +610,31 @@ GET /v1/media/external/TMDB/SERIES/1396/seasons/1?language=pt-BR
 
 Season `0` is valid and represents specials when supplied by TMDB.
 
+For an imported series, the authenticated response also includes `watched` and
+`unwatchedPreviousCount` for each episode. Tracking uses the episode media UUID returned in `id`:
+
+```http
+PUT /v1/me/episodes/{episodeMediaId}/watched
+Content-Type: application/json
+
+{ "includePrevious": true }
+
+DELETE /v1/me/episodes/{episodeMediaId}/watched
+```
+
+Marking a future episode returns `400 EPISODE_NOT_RELEASED`. `includePrevious` only includes regular seasons and
+episodes that are already eligible to watch.
+
+The personalized agenda includes unwatched past episodes and confirmed releases for the requested window. It only
+uses series whose library status is `IN_PROGRESS`:
+
+```http
+GET /v1/me/episodes/agenda?days=30&overdueLimit=50
+```
+
+The response contains `syncPending`, `lastSyncedAt`, `overdueCount`, `overdue`, and `upcoming`. When `syncPending`
+is true, the client may poll while the background TMDB synchronization finishes.
+
 ## Import
 
 ```http
@@ -497,6 +651,19 @@ Content-Type: application/json
 Imports persist cover, backdrop, logo, genres, Wikidata ID/reference, type-specific details, album tracks, and series season summaries. Import is idempotent for a source/external-ID pair.
 
 ## Reviews
+
+Ratings and reviews are independent. A member has at most one current rating and one current review per media item,
+but a review no longer requires a rating. Deleting `/v1/me/ratings/{mediaId}` keeps the review, and deleting
+`/v1/me/reviews/{mediaId}` keeps the rating. An optional `activityId` in the review request links the current review
+to a diary entry owned by the same member for the same media item.
+
+The global popular-review endpoint is intended for discovery and homepage sections. It returns public reviews with
+non-empty text, ordered by like count and recency. Each item includes both the regular review object and a media
+summary, avoiding an additional media lookup per card:
+
+```http
+GET /v1/reviews/popular?limit=12
+```
 
 The public highlight endpoints return at most three public reviews as a JSON array:
 
@@ -522,7 +689,47 @@ DELETE /v1/me/review-likes/{reviewId}
 All three responses contain `liked`, `likeCount`, and `recentLikers` using the same five-account format. `PUT` and
 `DELETE` are idempotent.
 
+## Diary and consumption logs
+
+A diary entry is an append-only consumption occurrence. Creating another entry for the same media item preserves
+the previous entry and uses `RELOGGED` when `reconsumption` is true. Its rating, review and tags are historical
+snapshots; a supplied rating also updates the member's canonical rating, and supplied review text updates the
+canonical review while linking it to the new entry.
+
+```http
+POST /v1/me/diary
+Content-Type: application/json
+
+{
+  "mediaId": "6c64fb1f-8af4-4eca-92ec-d086af80b87a",
+  "occurredOn": "2026-07-19",
+  "reconsumption": true,
+  "rating": 4.5,
+  "review": "Funcionou ainda melhor na segunda vez.",
+  "containsSpoilers": false,
+  "visibility": "PUBLIC",
+  "tags": ["cinema", "com:amigos"]
+}
+```
+
+```http
+GET /v1/me/diary?page=0&size=20
+GET /v1/users/{username}/diary?page=0&size=20
+DELETE /v1/me/diary/{entryId}
+```
+
+The personal endpoint includes private entries. The public endpoint only includes public entries unless the member
+is reading their own profile. Deleting an entry removes only the historical occurrence; canonical ratings and
+reviews are preserved, and a linked review is detached from the deleted entry.
+
 ## Lists
+
+The global popular-list endpoint returns public lists ordered by like count and update date. Items include owner,
+item and like counts, plus up to four preview covers:
+
+```http
+GET /v1/lists/popular?limit=12
+```
 
 The popular-lists highlight endpoint returns at most three public lists containing the media as a JSON array:
 
@@ -571,6 +778,35 @@ Content-Type: application/json
 ```
 
 The association is saved even if Wikidata is temporarily unavailable. In that case, `enriched` is `false`; the ID and external reference are still persisted. When enrichment succeeds, missing logo and additional genres are applied without replacing the primary provider's existing data.
+
+## Pro artwork preferences
+
+The account tier is independent from the community role. Existing and newly registered accounts default to `FREE`;
+administrators can assign `PRO` with `PATCH /v1/admin/community-users/{userId}/tier` and
+`{ "accountTier": "PRO" }`.
+
+Pro members can select provider-owned artwork for imported media. Movies and series use TMDB posters and backdrops;
+albums use front covers from Cover Art Archive and do not support backdrops.
+
+```http
+GET /v1/me/media/{mediaId}/artwork-options
+PUT /v1/me/media/{mediaId}/artwork
+DELETE /v1/me/media/{mediaId}/artwork
+```
+
+The `PUT` body is a full replacement. A null key restores that slot to the canonical artwork. Keys must come from
+the options response; arbitrary image URLs are rejected.
+
+```json
+{
+  "coverKey": "/provider-cover-key.jpg",
+  "backdropKey": null
+}
+```
+
+Preferences never modify canonical media metadata. Authenticated reads resolve them for the viewer in media details,
+search, library, lists and profiles. Anonymous and Free viewers receive canonical URLs. Downgrading an account keeps
+the preference stored but inactive.
 
 ## Front-end types
 

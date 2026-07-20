@@ -2,16 +2,21 @@ package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.config.ExternalApiProperties;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.AwardDatePrecision;
+import com.scriptles.cabinet.media.enums.AwardResult;
 import com.scriptles.cabinet.media.enums.MediaRelationType;
 import com.scriptles.cabinet.media.enums.MediaType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +27,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class WikidataClientTest {
@@ -284,6 +290,97 @@ class WikidataClientTest {
                 .get()
                 .extracting(WikidataClient.WikidataEnrichment::wikidataId)
                 .isEqualTo("Q601");
+        server.verify();
+    }
+
+    @Test
+    void findsStructuredRelevantAwardsAndPreservesDatePrecision() {
+        expectQuery(allOf(
+                containsString("p:P166"),
+                containsString("p:P1411"),
+                containsString("Q4220917"),
+                containsString("Q1407225"),
+                containsString("Q378427"),
+                containsString("Q1364556"),
+                containsString("FILTER%20EXISTS"),
+                containsString("pq:P805"),
+                containsString("pq:P1686"),
+                containsString("wdt:P1269"),
+                containsString("wikibase:language%20%22pt,en%22"),
+                containsString("wikibase:timePrecision")
+        ), """
+                {
+                  "results": {"bindings": [
+                    {
+                      "statement": {"value": "http://www.wikidata.org/entity/statement/Q38111-win"},
+                      "result": {"value": "WIN"},
+                      "award": {"value": "http://www.wikidata.org/entity/Q103916"},
+                      "awardLabel": {"value": "Óscar de melhor ator"},
+                      "program": {"value": "http://www.wikidata.org/entity/Q19020"},
+                      "programLabel": {"value": "Óscar"},
+                      "ceremony": {"value": "http://www.wikidata.org/entity/Q20022969"},
+                      "ceremonyLabel": {"value": "Oscar 2016"},
+                      "date": {"value": "2016-02-28T00:00:00Z"},
+                      "datePrecision": {"value": "11"},
+                      "work": {"value": "http://www.wikidata.org/entity/Q18002795"},
+                      "workLabel": {"value": "The Revenant"}
+                    },
+                    {
+                      "statement": {"value": "http://www.wikidata.org/entity/statement/Q38111-nomination"},
+                      "result": {"value": "NOMINATION"},
+                      "award": {"value": "http://www.wikidata.org/entity/Q106291"},
+                      "awardLabel": {"value": "Óscar de melhor ator coadjuvante"},
+                      "date": {"value": "1994-01-01T00:00:00Z"},
+                      "datePrecision": {"value": "9"}
+                    }
+                  ]}
+                }
+                """);
+
+        WikidataClient.WikidataAwards result = client.findAwards("Q38111");
+
+        assertThat(result.incomplete()).isFalse();
+        assertThat(result.items()).hasSize(2);
+        assertThat(result.items().getFirst()).satisfies(award -> {
+            assertThat(award.result()).isEqualTo(AwardResult.WIN);
+            assertThat(award.programQid()).isEqualTo("Q19020");
+            assertThat(award.ceremonyQid()).isEqualTo("Q20022969");
+            assertThat(award.eventDate()).isEqualTo(LocalDate.of(2016, 2, 28));
+            assertThat(award.eventYear()).isEqualTo(2016);
+            assertThat(award.datePrecision()).isEqualTo(AwardDatePrecision.DAY);
+            assertThat(award.workQid()).isEqualTo("Q18002795");
+            assertThat(award.sourceUrl()).isEqualTo("https://www.wikidata.org/wiki/Q38111");
+        });
+        assertThat(result.items().get(1).eventDate()).isNull();
+        assertThat(result.items().get(1).eventYear()).isEqualTo(1994);
+        assertThat(result.items().get(1).datePrecision()).isEqualTo(AwardDatePrecision.YEAR);
+        server.verify();
+    }
+
+    @Test
+    void marksAwardProviderFailureAsIncomplete() {
+        server.expect(requestTo(startsWith(SPARQL_URL))).andRespond(withServerError());
+
+        WikidataClient.WikidataAwards result = client.findAwards("Q38111");
+
+        assertThat(result.incomplete()).isTrue();
+        assertThat(result.items()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void retriesAwardQueryAfterWikidataRateLimit() {
+        server.expect(requestTo(startsWith(SPARQL_URL)))
+                .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                        .header(HttpHeaders.RETRY_AFTER, "0"));
+        expectQuery(containsString("p:P166"), """
+                {"results":{"bindings":[]}}
+                """);
+
+        WikidataClient.WikidataAwards result = client.findAwards("Q38111");
+
+        assertThat(result.incomplete()).isFalse();
+        assertThat(result.items()).isEmpty();
         server.verify();
     }
 

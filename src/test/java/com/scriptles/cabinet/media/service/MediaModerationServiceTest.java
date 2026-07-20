@@ -2,9 +2,11 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.request.UpdateMediaMetadataRequest;
+import com.scriptles.cabinet.media.entity.AlbumDetails;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaMetadataRevision;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.MediaMetadataRevisionRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
@@ -30,6 +32,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class MediaModerationServiceTest {
     @Mock MediaRepository mediaRepository;
+    @Mock AlbumDetailsRepository albumDetailsRepository;
     @Mock MediaMetadataRevisionRepository revisionRepository;
     @Mock UserRepository userRepository;
     @Mock ObjectMapper objectMapper;
@@ -47,7 +50,7 @@ class MediaModerationServiceTest {
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"state\":true}");
 
         MediaModerationService service = new MediaModerationService(
-                mediaRepository, revisionRepository, userRepository, objectMapper);
+                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper);
         var response = service.update(mediaId, request(3L), editorId);
 
         assertThat(response.title()).isEqualTo("Novo título");
@@ -68,12 +71,39 @@ class MediaModerationServiceTest {
         Media media = media(mediaId, 4);
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         MediaModerationService service = new MediaModerationService(
-                mediaRepository, revisionRepository, userRepository, objectMapper);
+                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper);
 
         assertThatThrownBy(() -> service.update(mediaId, request(3L), UUID.randomUUID()))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("alterada por outra pessoa");
         verifyNoInteractions(userRepository, revisionRepository, objectMapper);
+    }
+
+    @Test
+    void updatesAnimatedCoverForAlbums() {
+        UUID mediaId = UUID.randomUUID();
+        UUID editorId = UUID.randomUUID();
+        Media media = media(mediaId, 2);
+        media.setType(MediaType.ALBUM);
+        AlbumDetails albumDetails = new AlbumDetails();
+        albumDetails.setMedia(media);
+        albumDetails.setAnimatedCoverUrl("https://example.com/old.gif");
+        User editor = new User();
+        editor.setId(editorId);
+
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(albumDetailsRepository.findById(mediaId)).thenReturn(Optional.of(albumDetails));
+        when(userRepository.findById(editorId)).thenReturn(Optional.of(editor));
+        when(mediaRepository.saveAndFlush(media)).thenReturn(media);
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"state\":true}");
+
+        MediaModerationService service = new MediaModerationService(
+                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper);
+        var response = service.update(mediaId, request(2L, " https://example.com/new.gif "), editorId);
+
+        assertThat(response.animatedCoverUrl()).isEqualTo("https://example.com/new.gif");
+        assertThat(albumDetails.getAnimatedCoverUrl()).isEqualTo("https://example.com/new.gif");
+        verify(albumDetailsRepository).save(albumDetails);
     }
 
     private Media media(UUID id, long version) {
@@ -87,6 +117,10 @@ class MediaModerationServiceTest {
     }
 
     private UpdateMediaMetadataRequest request(long version) {
+        return request(version, null);
+    }
+
+    private UpdateMediaMetadataRequest request(long version, String animatedCoverUrl) {
         return new UpdateMediaMetadataRequest(
                 version,
                 " Novo título ",
@@ -94,6 +128,7 @@ class MediaModerationServiceTest {
                 "Nova sinopse",
                 null,
                 "https://example.com/cover.jpg",
+                animatedCoverUrl,
                 null,
                 null,
                 LocalDate.of(2024, 1, 1),

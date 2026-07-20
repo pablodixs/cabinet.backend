@@ -4,9 +4,12 @@ import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListItem;
 import com.scriptles.cabinet.lists.entity.MediaListLike;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
+import com.scriptles.cabinet.lists.repository.MediaListRepository;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaLike;
+import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
+import com.scriptles.cabinet.media.entity.ReviewLike;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
@@ -20,7 +23,9 @@ import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,10 +38,16 @@ class MediaCommunityStatsRepositoryTest {
     private ReviewRepository reviewRepository;
 
     @Autowired
+    private RatingRepository ratingRepository;
+
+    @Autowired
     private MediaLikeRepository mediaLikeRepository;
 
     @Autowired
     private MediaListItemRepository mediaListItemRepository;
+
+    @Autowired
+    private MediaListRepository mediaListRepository;
 
     @Autowired
     private UserMediaRepository userMediaRepository;
@@ -64,17 +75,17 @@ class MediaCommunityStatsRepositoryTest {
         entityManager.flush();
         entityManager.clear();
 
-        var ratings = reviewRepository.summarizeRatings(
+        var ratings = ratingRepository.summarizeRatings(
                 List.of(media.getId()),
                 Visibility.PUBLIC
         );
 
         assertThat(ratings).hasSize(1);
         assertThat(ratings.getFirst().getAverageRating()).isEqualTo(4.0);
-        assertThat(reviewRepository.ratingDistribution(media.getId(), Visibility.PUBLIC))
+        assertThat(ratingRepository.ratingDistribution(media.getId(), Visibility.PUBLIC))
                 .extracting(
-                        ReviewRepository.RatingDistributionProjection::getRating,
-                        ReviewRepository.RatingDistributionProjection::getRatingCount
+                        RatingRepository.RatingDistributionProjection::getRating,
+                        RatingRepository.RatingDistributionProjection::getRatingCount
                 )
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(new BigDecimal("3.0"), 1L),
@@ -94,6 +105,106 @@ class MediaCommunityStatsRepositoryTest {
         assertThat(publicLists.getContent())
                 .extracting(item -> item.getItem().getList().getName())
                 .containsExactly("Pública");
+    }
+
+    @Test
+    void returnsTheThreeMostRecentPublicLikersAndCompleters() {
+        Media media = media();
+        User ana = user("recent-ana");
+        User bia = user("recent-bia");
+        User caio = user("recent-caio");
+        User dora = user("recent-dora");
+        User privateUser = user("recent-private");
+        Instant base = Instant.parse("2026-07-20T12:00:00Z");
+
+        MediaLike oldestLike = mediaLike(media, ana);
+        MediaLike secondLike = mediaLike(media, bia);
+        MediaLike thirdLike = mediaLike(media, caio);
+        MediaLike newestLike = mediaLike(media, dora);
+        UserMedia oldestCompletion = userMedia(
+                media, ana, false, false, UserMediaStatus.COMPLETED);
+        UserMedia secondCompletion = userMedia(
+                media, bia, false, false, UserMediaStatus.COMPLETED);
+        UserMedia thirdCompletion = userMedia(
+                media, caio, false, false, UserMediaStatus.COMPLETED);
+        UserMedia newestCompletion = userMedia(
+                media, dora, false, false, UserMediaStatus.COMPLETED);
+        UserMedia privateCompletion = userMedia(
+                media, privateUser, false, true, UserMediaStatus.COMPLETED);
+
+        entityManager.flush();
+        oldestLike.setCreatedAt(base);
+        secondLike.setCreatedAt(base.plusSeconds(1));
+        thirdLike.setCreatedAt(base.plusSeconds(2));
+        newestLike.setCreatedAt(base.plusSeconds(3));
+        oldestLike.setLikedAt(base);
+        secondLike.setLikedAt(base.plusSeconds(1));
+        thirdLike.setLikedAt(base.plusSeconds(2));
+        newestLike.setLikedAt(base.plusSeconds(3));
+        oldestCompletion.setCompletedAt(base);
+        secondCompletion.setCompletedAt(base.plusSeconds(1));
+        thirdCompletion.setCompletedAt(base.plusSeconds(2));
+        newestCompletion.setCompletedAt(base.plusSeconds(3));
+        privateCompletion.setCompletedAt(base.plusSeconds(4));
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(media.getId()))
+                .extracting(like -> like.getUser().getUsername())
+                .containsExactly("recent-dora", "recent-caio", "recent-bia");
+        assertThat(userMediaRepository
+                .findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
+                        media.getId(), UserMediaStatus.COMPLETED))
+                .extracting(entry -> entry.getUser().getUsername())
+                .containsExactly("recent-dora", "recent-caio", "recent-bia");
+    }
+
+    @Test
+    void ranksPublicRatingsAndFindsOnlyRecentPublicActivity() {
+        Instant since = Instant.now().minusSeconds(3600);
+        Media highestAverage = media("Uma nota máxima", null);
+        Media moreRatings = media("Duas notas", null);
+        User ana = user("rank-ana");
+        User bia = user("rank-bia");
+        User caio = user("rank-caio");
+
+        review(highestAverage, ana, "5.0", Visibility.PUBLIC);
+        review(moreRatings, bia, "4.5", Visibility.PUBLIC);
+        review(moreRatings, caio, "4.5", Visibility.PUBLIC);
+        review(highestAverage, caio, "0.5", Visibility.PRIVATE);
+        mediaLike(moreRatings, ana);
+        userMedia(highestAverage, bia, false, false, UserMediaStatus.PLANNED);
+        userMedia(moreRatings, ana, false, true, UserMediaStatus.PLANNED);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        Set<String> types = Set.of(MediaType.MOVIE.name());
+        var ranking = ratingRepository.findTopRatedMedia(
+                types, Visibility.PUBLIC, PageRequest.of(0, 20));
+        assertThat(ranking.getContent())
+                .extracting(item -> item.getMedia().getTitle())
+                .containsExactly("Uma nota máxima", "Duas notas");
+        assertThat(ranking.getContent())
+                .extracting(RatingRepository.RatedMediaProjection::getRatingCount)
+                .containsExactly(1L, 2L);
+
+        assertThat(ratingRepository.findRecentActivity(
+                types, Visibility.PUBLIC, since, PageRequest.of(0, 20)))
+                .extracting(
+                        RatingRepository.MediaActivityProjection::getMediaId,
+                        RatingRepository.MediaActivityProjection::getActivityCount
+                )
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple(highestAverage.getId(), 1L),
+                        org.assertj.core.groups.Tuple.tuple(moreRatings.getId(), 2L)
+                );
+        assertThat(mediaLikeRepository.findRecentActivity(types, since, PageRequest.of(0, 20)))
+                .extracting(MediaLikeRepository.MediaActivityProjection::getMediaId)
+                .containsExactly(moreRatings.getId());
+        assertThat(userMediaRepository.findRecentPublicActivity(types, since, PageRequest.of(0, 20)))
+                .extracting(UserMediaRepository.MediaActivityProjection::getMediaId)
+                .containsExactly(highestAverage.getId());
     }
 
     @Test
@@ -129,6 +240,46 @@ class MediaCommunityStatsRepositoryTest {
         assertThat(lists.getContent())
                 .extracting(MediaListItemRepository.MediaListPopularity::getLikeCount)
                 .containsExactly(2L, 1L);
+    }
+
+    @Test
+    void ranksGlobalPopularReviewsAndListsWhileExcludingPrivateContent() {
+        User ana = user("global-ana");
+        User bia = user("global-bia");
+        User caio = user("global-caio");
+        Review firstReview = review(
+                media("Primeira review", null), ana, "5.0", Visibility.PUBLIC);
+        firstReview.setContent("Texto mais curtido");
+        Review secondReview = review(
+                media("Segunda review", null), bia, "4.5", Visibility.PUBLIC);
+        secondReview.setContent("Outro texto");
+        Review privateReview = review(
+                media("Review privada", null), caio, "5.0", Visibility.PRIVATE);
+        privateReview.setContent("Não deve aparecer");
+        review(media("Só nota", null), caio, "4.0", Visibility.PUBLIC);
+        reviewLike(firstReview, ana);
+        reviewLike(firstReview, bia);
+        reviewLike(secondReview, caio);
+        reviewLike(privateReview, ana);
+
+        MediaList firstList = mediaList(ana, "Lista mais curtida", Visibility.PUBLIC);
+        MediaList secondList = mediaList(bia, "Outra lista", Visibility.PUBLIC);
+        MediaList privateList = mediaList(caio, "Lista privada", Visibility.PRIVATE);
+        listLike(firstList, ana);
+        listLike(firstList, bia);
+        listLike(secondList, caio);
+        listLike(privateList, ana);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(reviewRepository.findGloballyPopularIds(
+                Visibility.PUBLIC, PageRequest.of(0, 20)))
+                .containsExactly(firstReview.getId(), secondReview.getId());
+        assertThat(mediaListRepository.findPopularPublicLists(
+                Visibility.PUBLIC, PageRequest.of(0, 20)))
+                .extracting(MediaListRepository.PopularListProjection::getListId)
+                .containsExactly(firstList.getId(), secondList.getId());
     }
 
     @Test
@@ -188,7 +339,7 @@ class MediaCommunityStatsRepositoryTest {
         ));
     }
 
-    private void userMedia(
+    private UserMedia userMedia(
             Media media,
             User user,
             boolean favorite,
@@ -201,23 +352,37 @@ class MediaCommunityStatsRepositoryTest {
         entry.setFavorite(favorite);
         entry.setPrivateEntry(privateEntry);
         entry.setStatus(status);
-        entityManager.persist(entry);
+        return entityManager.persist(entry);
     }
 
-    private void mediaLike(Media media, User user) {
+    private MediaLike mediaLike(Media media, User user) {
         MediaLike like = new MediaLike();
         like.setMedia(media);
         like.setUser(user);
-        entityManager.persist(like);
+        return entityManager.persist(like);
     }
 
-    private void review(Media media, User user, String rating, Visibility visibility) {
+    private Review review(Media media, User user, String rating, Visibility visibility) {
+        Rating ratingEntity = new Rating();
+        ratingEntity.setMedia(media);
+        ratingEntity.setUser(user);
+        ratingEntity.setValue(new BigDecimal(rating));
+        ratingEntity.setVisibility(visibility);
+        entityManager.persist(ratingEntity);
+
         Review review = new Review();
         review.setMedia(media);
         review.setUser(user);
-        review.setRating(new BigDecimal(rating));
+        review.setRatingEntity(ratingEntity);
         review.setVisibility(visibility);
-        entityManager.persist(review);
+        return entityManager.persist(review);
+    }
+
+    private void reviewLike(Review review, User user) {
+        ReviewLike like = new ReviewLike();
+        like.setReview(review);
+        like.setUser(user);
+        entityManager.persist(like);
     }
 
     private MediaList mediaList(User owner, String name, Visibility visibility) {

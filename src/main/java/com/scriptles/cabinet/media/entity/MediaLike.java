@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.PrePersist;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
@@ -47,4 +48,11 @@ public class MediaLike {
 
     @CreationTimestamp
     private Instant createdAt;
+
+    private Instant likedAt;
+
+    @PrePersist
+    void initializeLikedAt() {
+        if (likedAt == null) likedAt = Instant.now();
+    }
 }

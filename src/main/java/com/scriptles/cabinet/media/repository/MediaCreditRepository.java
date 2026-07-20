@@ -63,7 +63,7 @@ public interface MediaCreditRepository extends JpaRepository<MediaCredit, UUID> 
     );
 
     @Query("select media from Media media "
-            + "where media.type = :mediaType and media.id <> :excludedMediaId "
+            + "where media.typeValue = :#{#mediaType.name()} and media.id <> :excludedMediaId "
             + "and exists (select credit.id from MediaCredit credit "
             + "where credit.media = media and credit.person.id = :personId and credit.role = :role) "
             + "order by media.releaseDate desc nulls last, media.title asc, media.id asc")

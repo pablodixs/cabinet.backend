@@ -25,10 +25,12 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
 
     @Query(value = """
             select cast(ranked.list_id as varchar) as "listIdValue",
+                   cast(ranked.media_id as varchar) as "mediaIdValue",
                    ranked.cover_url as "coverUrl",
                    ranked.media_type as "typeValue"
             from (
                 select item.list_id,
+                       media.id as media_id,
                        media.cover_url,
                        cast(media.type as varchar) as media_type,
                        row_number() over (
@@ -115,6 +117,12 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
         }
 
         String getCoverUrl();
+
+        String getMediaIdValue();
+
+        default UUID getMediaId() {
+            return UUID.fromString(getMediaIdValue());
+        }
 
         String getTypeValue();
 

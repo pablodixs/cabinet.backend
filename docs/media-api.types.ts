@@ -115,9 +115,127 @@ export interface MediaSearchPage {
   nextCursor: string | null;
 }
 
+export interface RankedMediaResult extends Omit<MediaSearchResult, "type"> {
+  type: MediaType;
+}
+
+export type TopRatedMediaPage = PageResponse<RankedMediaResult>;
+
+export interface TrendingMediaResponse {
+  items: RankedMediaResult[];
+  periodDays: number;
+}
+
 export type ExternalInfoSectionState =
   | "READY" | "EMPTY" | "PENDING" | "STALE"
   | "ERROR" | "NOT_CONFIGURED" | "NOT_SUPPORTED";
+
+export type AwardResult = "WIN" | "NOMINATION";
+export type AwardOrigin = "WIKIDATA" | "MANUAL";
+export type AwardSubjectType = "MEDIA" | "PERSON";
+export type AwardSectionState =
+  | "PENDING" | "READY" | "EMPTY" | "STALE" | "ERROR" | "NOT_LINKED";
+export type AwardDatePrecision = "YEAR" | "MONTH" | "DAY";
+
+export interface AwardReference {
+  qid: string | null;
+  name: string | null;
+}
+
+export interface AwardItem {
+  id: string;
+  result: AwardResult;
+  program: AwardReference | null;
+  category: AwardReference;
+  ceremony: AwardReference | null;
+  eventDate: string | null;
+  eventYear: number | null;
+  datePrecision: AwardDatePrecision | null;
+  work: {
+    mediaId: string | null;
+    wikidataId: string | null;
+    title: string | null;
+  } | null;
+  origin: AwardOrigin;
+  curated: boolean;
+  sourceUrl: string | null;
+}
+
+export interface AwardPageResponse {
+  subjectId: string;
+  subjectType: AwardSubjectType;
+  state: AwardSectionState;
+  fetchedAt: string | null;
+  expiresAt: string | null;
+  totalWins: number;
+  totalNominations: number;
+  items: AwardItem[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export interface ModerationAwardResponse {
+  id: string;
+  subjectType: AwardSubjectType;
+  subjectId: string;
+  result: AwardResult;
+  programQid: string | null;
+  programName: string | null;
+  categoryQid: string | null;
+  categoryName: string;
+  ceremonyQid: string | null;
+  ceremonyName: string | null;
+  eventDate: string | null;
+  eventYear: number | null;
+  datePrecision: AwardDatePrecision | null;
+  workQid: string | null;
+  workName: string | null;
+  workMediaId: string | null;
+  origin: AwardOrigin;
+  sourceStatementId: string | null;
+  sourceUrl: string | null;
+  curated: boolean;
+  hidden: boolean;
+  version: number;
+}
+
+export interface CreateAwardRequest {
+  subjectType: AwardSubjectType;
+  subjectId: string;
+  result: AwardResult;
+  programQid?: string | null;
+  programName?: string | null;
+  categoryQid?: string | null;
+  categoryName: string;
+  ceremonyQid?: string | null;
+  ceremonyName?: string | null;
+  eventDate?: string | null;
+  eventYear?: number | null;
+  datePrecision?: AwardDatePrecision | null;
+  workQid?: string | null;
+  workName?: string | null;
+  sourceUrl?: string | null;
+}
+
+export interface UpdateAwardRequest {
+  version: number;
+  result: AwardResult;
+  programQid?: string | null;
+  programName?: string | null;
+  categoryQid?: string | null;
+  categoryName: string;
+  ceremonyQid?: string | null;
+  ceremonyName?: string | null;
+  eventDate?: string | null;
+  eventYear?: number | null;
+  datePrecision?: AwardDatePrecision | null;
+  workQid?: string | null;
+  workName?: string | null;
+  sourceUrl?: string | null;
+  hidden: boolean;
+}
 
 export type ExternalOfferType =
   | "SUBSCRIPTION" | "FREE" | "ADS" | "RENT" | "BUY"
@@ -163,6 +281,12 @@ export interface MediaExternalInfoResponse {
   };
 }
 
+export interface MediaCommunityUser {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+}
+
 interface MediaDetailsBase<T extends MediaType, D> {
   id: string | null;
   externalId: string;
@@ -186,9 +310,11 @@ interface MediaDetailsBase<T extends MediaType, D> {
   credits: MediaCredit[];
   imported: boolean;
   likeCount: number;
+  recentLikers: MediaCommunityUser[];
   averageRating: number | null;
   listCount: number;
   completedCount: number;
+  recentCompleters: MediaCommunityUser[];
   details: D;
 }
 
@@ -216,6 +342,7 @@ export interface AlbumTrack {
 export interface AlbumSpecificDetails {
   albumType: string | null;
   numberOfTracks: number | null;
+  animatedCoverUrl: string | null;
   tracks: AlbumTrack[];
 }
 
@@ -283,6 +410,7 @@ export type MediaDetailsResponse =
   | BookDetailsResponse;
 
 export interface Episode {
+  id: string | null;
   externalId: string | null;
   episodeNumber: number;
   title: string;
@@ -290,12 +418,43 @@ export interface Episode {
   stillUrl: string | null;
   airDate: string | null;
   runtimeMinutes: number | null;
+  watched: boolean;
+  unwatchedPreviousCount: number;
 }
 
 export interface SeasonEpisodesResponse {
   seriesExternalId: string;
   seasonNumber: number;
   episodes: Episode[];
+}
+
+export interface EpisodeAgendaItem {
+  episodeId: string;
+  seriesId: string;
+  seriesTitle: string;
+  seriesCoverUrl: string | null;
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeTitle: string;
+  stillUrl: string | null;
+  airDate: string;
+  watched: boolean;
+}
+
+export interface EpisodeAgendaResponse {
+  syncPending: boolean;
+  lastSyncedAt: string | null;
+  overdueCount: number;
+  overdue: EpisodeAgendaItem[];
+  upcoming: EpisodeAgendaItem[];
+}
+
+export interface EpisodeWatchResponse {
+  episodeId: string;
+  watched: boolean;
+  watchedAt: string | null;
+  changedEpisodeIds: string[];
+  seriesStatus: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "PAUSED" | "DROPPED" | null;
 }
 
 export interface MediaLikeResponse {
@@ -313,7 +472,7 @@ export interface ReviewLikerResponse {
 export interface ReviewResponse {
   id: string;
   mediaId: string;
-  rating: number;
+  rating: number | null;
   content: string | null;
   containsSpoilers: boolean;
   visibility: ReviewVisibility;
@@ -323,6 +482,67 @@ export interface ReviewResponse {
   liked: boolean;
   recentLikers: ReviewLikerResponse[];
   author: {
+    id: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+  activityId: string | null;
+}
+
+export type DiaryEntryType = "LOGGED" | "RELOGGED" | "WATCHED" | "REWATCHED";
+
+export interface CreateDiaryEntryRequest {
+  mediaId: string;
+  occurredOn: string;
+  reconsumption?: boolean;
+  rating?: number | null;
+  review?: string | null;
+  containsSpoilers?: boolean;
+  visibility: ReviewVisibility;
+  tags?: string[];
+}
+
+export interface DiaryEntryResponse {
+  id: string;
+  type: DiaryEntryType;
+  occurredOn: string;
+  loggedOn: string | null;
+  mediaId: string;
+  mediaType: MediaType;
+  title: string;
+  coverUrl: string | null;
+  releaseDate: string | null;
+  source: ExternalSource | null;
+  externalId: string | null;
+  rating: number | null;
+  review: string | null;
+  containsSpoilers: boolean;
+  visibility: ReviewVisibility;
+  tags: string[];
+}
+
+export interface PopularReviewResponse {
+  review: ReviewResponse;
+  media: RankedMediaResult;
+}
+
+export interface MediaListPreview {
+  coverUrl: string;
+  type: MediaType;
+}
+
+export interface PublicListSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  ordered: boolean;
+  coverUrl: string | null;
+  previewItems: MediaListPreview[];
+  itemCount: number;
+  likeCount: number;
+  updatedAt: string;
+  owner: {
     id: string;
     username: string;
     displayName: string;
@@ -346,4 +566,32 @@ export interface WikidataLinkResponse {
   wikidataId: `Q${number}`;
   externalUrl: string;
   enriched: boolean;
+}
+
+export type AccountTier = "FREE" | "PRO";
+export type ArtworkProvider = "TMDB" | "COVER_ART_ARCHIVE";
+
+export interface ArtworkOption {
+  key: string;
+  url: string;
+  previewUrl: string;
+  width: number | null;
+  height: number | null;
+  language: string | null;
+}
+
+export interface ArtworkOptionsResponse {
+  mediaId: string;
+  provider: ArtworkProvider;
+  defaultCoverUrl: string | null;
+  defaultBackdropUrl: string | null;
+  selectedCoverKey: string | null;
+  selectedBackdropKey: string | null;
+  coverOptions: ArtworkOption[];
+  backdropOptions: ArtworkOption[];
+}
+
+export interface UpsertUserMediaArtworkRequest {
+  coverKey: string | null;
+  backdropKey: string | null;
 }

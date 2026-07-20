@@ -17,7 +17,20 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
-    @EntityGraph(attributePaths = {"actor", "mediaList", "review", "review.media", "comment", "report", "report.media"})
+    @EntityGraph(attributePaths = {
+            "actor",
+            "mediaList",
+            "review",
+            "review.rating",
+            "review.rating.media",
+            "comment",
+            "report",
+            "report.media",
+            "seriesEpisode",
+            "seriesEpisode.episodeMedia",
+            "seriesEpisode.season",
+            "seriesEpisode.season.series"
+    })
     Page<Notification> findByRecipientIdOrderByActivityAtDescIdDesc(UUID recipientId, Pageable pageable);
 
     long countByRecipientIdAndReadAtIsNull(UUID recipientId);
@@ -33,6 +46,8 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     boolean existsByRecipientIdAndCommentId(UUID recipientId, UUID commentId);
 
     boolean existsByRecipientIdAndReportId(UUID recipientId, UUID reportId);
+
+    boolean existsByRecipientIdAndSeriesEpisodeId(UUID recipientId, UUID seriesEpisodeId);
 
     List<Notification> findByCommentId(UUID commentId);
 

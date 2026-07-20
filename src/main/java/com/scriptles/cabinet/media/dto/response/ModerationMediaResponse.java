@@ -16,6 +16,7 @@ public record ModerationMediaResponse(
         String description,
         String tagline,
         String coverUrl,
+        String animatedCoverUrl,
         String backdropUrl,
         String logoUrl,
         LocalDate releaseDate,
@@ -25,11 +26,11 @@ public record ModerationMediaResponse(
         long version,
         Instant updatedAt
 ) {
-    public static ModerationMediaResponse from(Media media) {
+    public static ModerationMediaResponse from(Media media, String animatedCoverUrl) {
         return new ModerationMediaResponse(
                 media.getId(), media.getType(), media.getTitle(), media.getOriginalTitle(),
-                media.getDescription(), media.getTagline(), media.getCoverUrl(), media.getBackdropUrl(),
-                media.getLogoUrl(), media.getReleaseDate(), media.getOriginalLanguage(), media.getCountryCode(),
+                media.getDescription(), media.getTagline(), media.getCoverUrl(), animatedCoverUrl,
+                media.getBackdropUrl(), media.getLogoUrl(), media.getReleaseDate(), media.getOriginalLanguage(), media.getCountryCode(),
                 media.getGenres().stream().sorted(String.CASE_INSENSITIVE_ORDER).toList(),
                 media.getVersion(), media.getUpdatedAt()
         );

@@ -36,8 +36,8 @@ public class Media {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Enumerated(EnumType.STRING)
-    private MediaType type;
+    @Column(name = "type", length = 20)
+    private String typeValue;
 
     @Column(length = 300, nullable = false)
     private String title;
@@ -85,4 +85,12 @@ public class Media {
     @Version
     @Column(nullable = false, columnDefinition = "bigint default 0")
     private long version;
+
+    public MediaType getType() {
+        return typeValue == null ? null : MediaType.valueOf(typeValue);
+    }
+
+    public void setType(MediaType type) {
+        this.typeValue = type == null ? null : type.name();
+    }
 }

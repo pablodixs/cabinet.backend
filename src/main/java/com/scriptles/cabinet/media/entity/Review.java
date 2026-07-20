@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.entity;
 
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.Visibility;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -10,7 +11,6 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,15 +19,15 @@ import java.util.UUID;
         @UniqueConstraint(
                 name = "uk_reviews_user_media",
                 columnNames = {"user_id", "media_id"}
+        ),
+        @UniqueConstraint(
+                name = "uk_reviews_activity",
+                columnNames = {"activity_id"}
         )
 }, indexes = {
         @Index(
-                name = "idx_reviews_media_created",
-                columnList = "media_id, created_at"
-        ),
-        @Index(
-                name = "idx_reviews_media_popular",
-                columnList = "media_id, visibility, rating, created_at"
+                name = "idx_reviews_created",
+                columnList = "created_at"
         )
 })
 @Getter
@@ -47,8 +47,13 @@ public class Review {
     @JoinColumn(name = "media_id", nullable = false)
     private Media media;
 
-    @Column(nullable = false, precision = 2, scale = 1)
-    private BigDecimal rating;
+    @OneToOne(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @JoinColumn(name = "rating_id", unique = true)
+    private Rating rating;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "activity_id", unique = true)
+    private UserMediaActivity activity;
 
     @Column(columnDefinition = "TEXT")
     private String content;
@@ -65,4 +70,34 @@ public class Review {
 
     @UpdateTimestamp
     private Instant updatedAt;
+
+    private Instant publishedAt;
+
+    @PrePersist
+    void initializePublishedAt() {
+        if (publishedAt == null) publishedAt = Instant.now();
+    }
+
+    public Rating getRatingEntity() {
+        return rating;
+    }
+
+    public void setRatingEntity(Rating rating) {
+        this.rating = rating;
+    }
+
+    public java.math.BigDecimal getRating() {
+        return rating == null ? null : rating.getValue();
+    }
+
+    public void setRating(java.math.BigDecimal value) {
+        ensureRating().setValue(value);
+    }
+
+    private Rating ensureRating() {
+        if (rating == null) {
+            rating = new Rating();
+        }
+        return rating;
+    }
 }

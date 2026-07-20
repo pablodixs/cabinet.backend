@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.user.entity;
 
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -51,6 +52,11 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20, columnDefinition = "varchar(20) default 'USER'")
     private UserRole role = UserRole.USER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_tier", nullable = false, length = 20,
+            columnDefinition = "varchar(20) default 'FREE'")
+    private AccountTier accountTier = AccountTier.FREE;
 
     @CreationTimestamp
     private Instant createdAt;

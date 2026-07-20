@@ -101,6 +101,29 @@ class TmdbClientTest {
     }
 
     @Test
+    void mapsTheLastAndNextEpisodeSeasonsForTracking() {
+        server.expect(requestTo(startsWith(BASE_URL + "/tv/1396")))
+                .andRespond(withSuccess("""
+                        {
+                          "id": 1396,
+                          "name": "Breaking Bad",
+                          "credits": {"crew": [], "cast": []},
+                          "images": {"logos": []},
+                          "seasons": [],
+                          "last_episode_to_air": {"season_number": 4},
+                          "next_episode_to_air": {"season_number": 5}
+                        }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        var snapshot = client.findSeriesTrackingSnapshot("1396", "pt-BR");
+
+        assertThat(snapshot.media().title()).isEqualTo("Breaking Bad");
+        assertThat(snapshot.lastEpisodeSeasonNumber()).isEqualTo(4);
+        assertThat(snapshot.nextEpisodeSeasonNumber()).isEqualTo(5);
+        server.verify();
+    }
+
+    @Test
     void resolvesPersonWikidataIdentityFromExternalIds() {
         server.expect(requestTo(startsWith(BASE_URL + "/person/7467/external_ids")))
                 .andExpect(queryParam("api_key", "api-key"))

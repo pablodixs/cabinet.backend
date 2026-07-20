@@ -5,12 +5,21 @@ import com.scriptles.cabinet.lists.entity.MediaListLike;
 import com.scriptles.cabinet.lists.repository.MediaListLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.entity.MediaReport;
+import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.SeriesEpisode;
+import com.scriptles.cabinet.media.entity.SeriesSeason;
+import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.enums.MediaReportStatus;
 import com.scriptles.cabinet.notifications.entity.Notification;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.notifications.event.NotificationChangedEvent;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.repository.UserEpisodeWatchRepository;
+import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -35,6 +44,9 @@ class NotificationServiceTest {
     @Mock ReviewLikeRepository reviewLikeRepository;
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock EntityManager entityManager;
+    @Mock SeriesEpisodeRepository seriesEpisodeRepository;
+    @Mock UserMediaRepository userMediaRepository;
+    @Mock UserEpisodeWatchRepository episodeWatchRepository;
     @InjectMocks NotificationService notificationService;
 
     @Test
@@ -94,6 +106,47 @@ class NotificationServiceTest {
         notificationService.syncListLike(list, owner);
 
         verifyNoInteractions(notificationRepository, mediaListLikeRepository, eventPublisher);
+    }
+
+    @Test
+    void createsOnlyOneReleaseNotificationForAnUnwatchedTrackedEpisode() {
+        User recipient = user("recipient");
+        Media series = new Media();
+        series.setId(UUID.randomUUID());
+        series.setType(MediaType.SERIES);
+        series.setTitle("Ruptura");
+        SeriesSeason season = new SeriesSeason();
+        season.setSeries(series);
+        season.setSeasonNumber(2);
+        Media episodeMedia = new Media();
+        episodeMedia.setId(UUID.randomUUID());
+        episodeMedia.setType(MediaType.EPISODE);
+        SeriesEpisode episode = new SeriesEpisode();
+        episode.setId(UUID.randomUUID());
+        episode.setSeason(season);
+        episode.setEpisodeMedia(episodeMedia);
+        UserMedia entry = new UserMedia();
+        entry.setUser(recipient);
+        entry.setMedia(series);
+        entry.setStatus(UserMediaStatus.IN_PROGRESS);
+
+        when(seriesEpisodeRepository.findAllByAirDateAndSeasonSeasonNumberGreaterThan(
+                java.time.LocalDate.now(), 0)).thenReturn(List.of(episode));
+        when(userMediaRepository.findAllByMediaIdAndStatus(series.getId(), UserMediaStatus.IN_PROGRESS))
+                .thenReturn(List.of(entry));
+
+        notificationService.notifyEpisodeReleases();
+
+        ArgumentCaptor<Notification> notification = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(notification.capture());
+        assertThat(notification.getValue().getType()).isEqualTo(NotificationType.EPISODE_RELEASED);
+        assertThat(notification.getValue().getSeriesEpisode()).isSameAs(episode);
+        verify(eventPublisher).publishEvent(new NotificationChangedEvent(recipient.getId()));
+
+        when(notificationRepository.existsByRecipientIdAndSeriesEpisodeId(recipient.getId(), episode.getId()))
+                .thenReturn(true);
+        notificationService.notifyEpisodeReleases();
+        verify(notificationRepository, times(1)).save(any(Notification.class));
     }
 
     @Test

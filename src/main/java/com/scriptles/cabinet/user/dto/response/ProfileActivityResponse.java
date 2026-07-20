@@ -5,11 +5,15 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.ProfileActivityType;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.math.BigDecimal;
+import java.util.List;
+import java.time.ZoneId;
 
 public record ProfileActivityResponse(
         UUID id,
@@ -21,7 +25,13 @@ public record ProfileActivityResponse(
         String coverUrl,
         LocalDate releaseDate,
         ExternalSource source,
-        String externalId
+        String externalId,
+        LocalDate occurredOn,
+        LocalDate loggedOn,
+        BigDecimal rating,
+        String review,
+        List<String> tags,
+        boolean containsSpoilers
 ) {
     public static ProfileActivityResponse from(
             UserMedia entry,
@@ -50,7 +60,49 @@ public record ProfileActivityResponse(
                 media.getCoverUrl(),
                 media.getReleaseDate(),
                 externalReference == null ? null : externalReference.getSource(),
-                externalReference == null ? null : externalReference.getExternalId()
+                externalReference == null ? null : externalReference.getExternalId(),
+                occurredAt == null ? null : occurredAt.atZone(ZoneId.of("America/Sao_Paulo")).toLocalDate(),
+                null,
+                null,
+                null,
+                List.of(),
+                false
+        );
+    }
+
+    public static ProfileActivityResponse from(
+            UserMediaActivity activity,
+            ExternalReference externalReference
+    ) {
+        return from(activity, externalReference, activity.getMedia().getCoverUrl());
+    }
+
+    public static ProfileActivityResponse from(
+            UserMediaActivity activity,
+            ExternalReference externalReference,
+            String coverUrl
+    ) {
+        Media media = activity.getMedia();
+        Instant occurredAt = activity.getOccurredOn()
+                .atStartOfDay(ZoneId.of("America/Sao_Paulo"))
+                .toInstant();
+        return new ProfileActivityResponse(
+                activity.getId(),
+                activity.getType(),
+                occurredAt,
+                media.getId(),
+                media.getType(),
+                media.getTitle(),
+                coverUrl,
+                media.getReleaseDate(),
+                externalReference == null ? null : externalReference.getSource(),
+                externalReference == null ? null : externalReference.getExternalId(),
+                activity.getOccurredOn(),
+                activity.getLoggedOn(),
+                activity.getRating(),
+                activity.getReviewContent(),
+                List.copyOf(activity.getTags()),
+                Boolean.TRUE.equals(activity.getContainsSpoilers())
         );
     }
 }

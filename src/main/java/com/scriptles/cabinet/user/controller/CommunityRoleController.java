@@ -3,6 +3,7 @@ package com.scriptles.cabinet.user.controller;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.dto.request.UpdateUserRoleRequest;
+import com.scriptles.cabinet.user.dto.request.UpdateAccountTierRequest;
 import com.scriptles.cabinet.user.dto.response.CommunityUserRoleResponse;
 import com.scriptles.cabinet.user.service.CommunityRoleService;
 import jakarta.validation.Valid;
@@ -40,5 +41,14 @@ public class CommunityRoleController {
             @AuthenticationPrincipal AuthenticatedUser actor
     ) {
         return communityRoleService.updateRole(userId, request.role(), actor.id());
+    }
+
+    @PatchMapping("/{userId}/tier")
+    public CommunityUserRoleResponse updateAccountTier(
+            @PathVariable UUID userId,
+            @RequestBody @Valid UpdateAccountTierRequest request,
+            @AuthenticationPrincipal AuthenticatedUser actor
+    ) {
+        return communityRoleService.updateAccountTier(userId, request.accountTier(), actor.id());
     }
 }

@@ -32,10 +32,12 @@ public record ExternalMediaDetailsResponse(
         List<CreditResponse> credits,
         boolean imported,
         long likeCount,
+        List<MediaCommunityUserResponse> recentLikers,
         Double averageRating,
         List<RatingDistributionBucket> ratingDistribution,
         long listCount,
         long completedCount,
+        List<MediaCommunityUserResponse> recentCompleters,
         Object details
 ) {
     public record GenreResponse(String id, String name, ExternalSource source) {}
@@ -52,13 +54,17 @@ public record ExternalMediaDetailsResponse(
     public record RatingDistributionBucket(double rating, long count) {}
     public record MovieDetails(Integer runtimeMinutes, Long budget, Long revenue, String director) {}
     public record TrackDetails(Integer durationSeconds, Boolean explicit) {}
-    public record AlbumDetails(String albumType, Integer numberOfTracks, List<TrackResponse> tracks) {}
+    public record AlbumDetails(String albumType, Integer numberOfTracks, String animatedCoverUrl,
+                               List<TrackResponse> tracks) {}
     public record SeriesDetails(String status, Integer numberOfSeasons, Integer numberOfEpisodes,
                                 LocalDate lastAirDate, List<SeasonResponse> seasons) {}
     public record BookDetails(String isbn10, String isbn13, Integer pageCount, String publisher,
                               String canonicalWorkWikidataId) {}
-    public record TrackResponse(String externalId, String title, Integer discNumber, Integer trackNumber,
-                                Integer durationSeconds, Boolean explicit) {}
-    public record SeasonResponse(String externalId, Integer seasonNumber, String name, String description,
-                                 String coverUrl, Integer episodeCount, LocalDate airDate) {}
+    public record TrackResponse(UUID id, String externalId, String title, Integer discNumber, Integer trackNumber,
+                                Integer durationSeconds, Boolean explicit, Double averageRating,
+                                long ratingCount, Double myRating) {}
+    public record SeasonResponse(UUID id, String externalId, Integer seasonNumber, String name, String description,
+                                 String coverUrl, Integer episodeCount, LocalDate airDate, Double averageRating,
+                                 long ratingCount, Double myRating, long myRatedEpisodeCount,
+                                 long eligibleEpisodeCount) {}
 }

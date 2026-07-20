@@ -5,8 +5,9 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
-import com.scriptles.cabinet.media.repository.ReviewRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.repository.UserMediaArtworkPreferenceRepository;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -22,10 +23,12 @@ class MediaSearchItemAssemblerTest {
     @Test
     void assemblesImportedCardsWithPrimaryReferenceCreatorAndCommunityRating() {
         ExternalReferenceRepository externalReferenceRepository = mock(ExternalReferenceRepository.class);
-        ReviewRepository reviewRepository = mock(ReviewRepository.class);
+        RatingRepository ratingRepository = mock(RatingRepository.class);
         MediaCreditService mediaCreditService = mock(MediaCreditService.class);
+        UserArtworkResolver artworkResolver = new UserArtworkResolver(
+                mock(UserMediaArtworkPreferenceRepository.class));
         MediaSearchItemAssembler assembler = new MediaSearchItemAssembler(
-                externalReferenceRepository, reviewRepository, mediaCreditService);
+                externalReferenceRepository, ratingRepository, mediaCreditService, artworkResolver);
         Media media = new Media();
         media.setId(UUID.randomUUID());
         media.setType(MediaType.ALBUM);
@@ -35,11 +38,11 @@ class MediaSearchItemAssemblerTest {
         reference.setMedia(media);
         reference.setSource(ExternalSource.MUSICBRAINZ);
         reference.setExternalId("album-id");
-        ReviewRepository.MediaRatingProjection rating = mock(ReviewRepository.MediaRatingProjection.class);
+        RatingRepository.MediaRatingProjection rating = mock(RatingRepository.MediaRatingProjection.class);
 
         when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(List.of(media.getId())))
                 .thenReturn(List.of(reference));
-        when(reviewRepository.summarizeRatings(List.of(media.getId()), Visibility.PUBLIC))
+        when(ratingRepository.summarizeRatings(List.of(media.getId()), Visibility.PUBLIC))
                 .thenReturn(List.of(rating));
         when(rating.getMediaId()).thenReturn(media.getId());
         when(rating.getAverageRating()).thenReturn(4.5);

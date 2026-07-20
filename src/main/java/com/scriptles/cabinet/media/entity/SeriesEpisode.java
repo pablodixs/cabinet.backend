@@ -23,6 +23,10 @@ public class SeriesEpisode {
     @JoinColumn(name = "season_id", nullable = false)
     private SeriesSeason season;
 
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "episode_media_id", nullable = false, unique = true)
+    private Media episodeMedia;
+
     @Column(length = 100)
     private String externalId;
     private Integer episodeNumber;

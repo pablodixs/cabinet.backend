@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -34,4 +35,6 @@ public class SeriesSeason {
     private String coverUrl;
     private Integer episodeCount;
     private LocalDate airDate;
+
+    private Instant episodesSyncedAt;
 }

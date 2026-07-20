@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.auth.dto.response;
 
 import com.scriptles.cabinet.security.AuthenticatedUser;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserRole;
 
 import java.util.UUID;
@@ -12,7 +13,9 @@ public record AuthUserResponse(
         String email,
         UserRole role,
         boolean moderator,
-        boolean admin
+        boolean admin,
+        AccountTier accountTier,
+        boolean pro
 ) {
     public static AuthUserResponse from(AuthenticatedUser user) {
         return new AuthUserResponse(
@@ -22,7 +25,9 @@ public record AuthUserResponse(
                 user.email(),
                 user.role(),
                 user.moderator(),
-                user.admin()
+                user.admin(),
+                user.accountTier(),
+                user.pro()
         );
     }
 }

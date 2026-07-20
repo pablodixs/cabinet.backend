@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.repository;
 
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.entity.ReviewLike;
 import com.scriptles.cabinet.media.enums.ExternalSource;
@@ -33,6 +34,9 @@ class ReviewRepositorySearchTest {
     private ReviewRepository reviewRepository;
 
     @Autowired
+    private RatingRepository ratingRepository;
+
+    @Autowired
     private ReviewLikeRepository reviewLikeRepository;
 
     @Test
@@ -51,9 +55,9 @@ class ReviewRepositorySearchTest {
         entityManager.flush();
         entityManager.clear();
 
-        var results = reviewRepository.searchRatedMedia(
+        var results = ratingRepository.searchRatedMedia(
                 "matrix",
-                Set.of(MediaType.MOVIE),
+                Set.of(MediaType.MOVIE.name()),
                 Visibility.PUBLIC,
                 PageRequest.of(0, 20)
         );
@@ -99,7 +103,7 @@ class ReviewRepositorySearchTest {
                 .collect(Collectors.toMap(Review::getId, review -> review));
         List<Review> popular = popularIds.stream().map(reviewsById::get).toList();
         List<Review> recent = reviewRepository
-                .findTop3ByMediaIdAndVisibilityOrderByCreatedAtDescIdDesc(
+                .findTop3ByRatingMediaIdAndRatingVisibilityOrderByCreatedAtDescIdDesc(
                         media.getId(),
                         Visibility.PUBLIC
                 );
@@ -180,10 +184,17 @@ class ReviewRepositorySearchTest {
     }
 
     private Review review(Media media, User user, String rating, Visibility visibility) {
+        Rating ratingEntity = new Rating();
+        ratingEntity.setMedia(media);
+        ratingEntity.setUser(user);
+        ratingEntity.setValue(new BigDecimal(rating));
+        ratingEntity.setVisibility(visibility);
+        entityManager.persist(ratingEntity);
+
         Review review = new Review();
         review.setMedia(media);
         review.setUser(user);
-        review.setRating(new BigDecimal(rating));
+        review.setRatingEntity(ratingEntity);
         review.setVisibility(visibility);
         return entityManager.persist(review);
     }
@@ -197,7 +208,11 @@ class ReviewRepositorySearchTest {
 
     private void setCreatedAt(Review review, Instant createdAt) {
         entityManager.getEntityManager()
-                .createQuery("update Review r set r.createdAt = :createdAt where r.id = :reviewId")
+                .createQuery("""
+                        update Review r
+                        set r.createdAt = :createdAt, r.publishedAt = :createdAt
+                        where r.id = :reviewId
+                        """)
                 .setParameter("createdAt", createdAt)
                 .setParameter("reviewId", review.getId())
                 .executeUpdate();

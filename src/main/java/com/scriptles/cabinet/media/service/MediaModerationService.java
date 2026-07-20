@@ -4,8 +4,11 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpdateMediaMetadataRequest;
 import com.scriptles.cabinet.media.dto.response.ModerationMediaResponse;
+import com.scriptles.cabinet.media.entity.AlbumDetails;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaMetadataRevision;
+import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.MediaMetadataRevisionRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
@@ -29,6 +32,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MediaModerationService {
     private final MediaRepository mediaRepository;
+    private final AlbumDetailsRepository albumDetailsRepository;
     private final MediaMetadataRevisionRepository revisionRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -42,7 +46,21 @@ public class MediaModerationService {
                 ? mediaRepository.findAll(pageable)
                 : mediaRepository.findByTitleContainingIgnoreCaseOrOriginalTitleContainingIgnoreCase(
                         normalizedQuery, normalizedQuery, pageable);
-        return PageResponse.from(media.map(ModerationMediaResponse::from));
+        Map<UUID, String> animatedCoverUrls = albumDetailsRepository.findAllById(
+                        media.stream()
+                                .filter(item -> item.getType() == MediaType.ALBUM)
+                                .map(Media::getId)
+                                .toList())
+                .stream()
+                .filter(details -> details.getAnimatedCoverUrl() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        AlbumDetails::getId,
+                        AlbumDetails::getAnimatedCoverUrl
+                ));
+        return PageResponse.from(media.map(item -> ModerationMediaResponse.from(
+                item,
+                animatedCoverUrls.get(item.getId())
+        )));
     }
 
     @Transactional
@@ -59,7 +77,14 @@ public class MediaModerationService {
         User editor = userRepository.findById(editorId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Usuário não encontrado"));
 
-        String beforeState = snapshot(media);
+        AlbumDetails albumDetails = media.getType() == MediaType.ALBUM
+                ? albumDetailsRepository.findById(mediaId).orElseGet(() -> {
+                    AlbumDetails details = new AlbumDetails();
+                    details.setMedia(media);
+                    return details;
+                })
+                : null;
+        String beforeState = snapshot(media, albumDetails);
         media.setTitle(request.title().trim());
         media.setOriginalTitle(trimToNull(request.originalTitle()));
         media.setDescription(trimToNull(request.description()));
@@ -76,24 +101,32 @@ public class MediaModerationService {
                         .map(String::trim)
                         .filter(value -> !value.isBlank())
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+        if (albumDetails != null) {
+            albumDetails.setAnimatedCoverUrl(trimToNull(request.animatedCoverUrl()));
+            albumDetailsRepository.save(albumDetails);
+        }
 
         Media saved = mediaRepository.saveAndFlush(media);
         MediaMetadataRevision revision = new MediaMetadataRevision();
         revision.setMedia(saved);
         revision.setEditedBy(editor);
         revision.setBeforeState(beforeState);
-        revision.setAfterState(snapshot(saved));
+        revision.setAfterState(snapshot(saved, albumDetails));
         revisionRepository.save(revision);
-        return ModerationMediaResponse.from(saved);
+        return ModerationMediaResponse.from(
+                saved,
+                albumDetails == null ? null : albumDetails.getAnimatedCoverUrl()
+        );
     }
 
-    private String snapshot(Media media) {
+    private String snapshot(Media media, AlbumDetails albumDetails) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("title", media.getTitle());
         state.put("originalTitle", media.getOriginalTitle());
         state.put("description", media.getDescription());
         state.put("tagline", media.getTagline());
         state.put("coverUrl", media.getCoverUrl());
+        state.put("animatedCoverUrl", albumDetails == null ? null : albumDetails.getAnimatedCoverUrl());
         state.put("backdropUrl", media.getBackdropUrl());
         state.put("logoUrl", media.getLogoUrl());
         state.put("releaseDate", media.getReleaseDate());

@@ -13,6 +13,7 @@ public record UpdateMediaMetadataRequest(
         @Size(max = 20000) String description,
         @Size(max = 500) String tagline,
         @Size(max = 5000) String coverUrl,
+        @Size(max = 5000) String animatedCoverUrl,
         @Size(max = 5000) String backdropUrl,
         @Size(max = 5000) String logoUrl,
         LocalDate releaseDate,

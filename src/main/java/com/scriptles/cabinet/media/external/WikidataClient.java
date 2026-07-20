@@ -2,13 +2,17 @@ package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.config.ExternalApiProperties;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.AwardDatePrecision;
+import com.scriptles.cabinet.media.enums.AwardResult;
 import com.scriptles.cabinet.media.enums.MediaRelationType;
 import com.scriptles.cabinet.media.enums.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriUtils;
 import tools.jackson.databind.JsonNode;
 
@@ -18,7 +22,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,6 +38,8 @@ public class WikidataClient {
     private static final Duration HIT_TTL = Duration.ofHours(6);
     private static final Duration MISS_TTL = Duration.ofMinutes(15);
     private static final Duration STALE_TTL = Duration.ofDays(7);
+    private static final Duration MAX_RATE_LIMIT_BACKOFF = Duration.ofSeconds(30);
+    private static final int MAX_RATE_LIMIT_RETRIES = 2;
     private static final int MAX_CACHE_ENTRIES = 2_000;
 
     private final RestClient.Builder restClientBuilder;
@@ -145,6 +153,63 @@ public class WikidataClient {
         return new WikidataRelations(true, List.of());
     }
 
+    public WikidataAwards findAwards(String wikidataId) {
+        if (!validQid(wikidataId)) {
+            return new WikidataAwards(false, List.of());
+        }
+
+        String query = """
+                SELECT ?statement ?result ?award ?awardLabel
+                       ?program ?programLabel ?ceremony ?ceremonyLabel
+                       ?date ?datePrecision ?work ?workLabel
+                WHERE {
+                  BIND(wd:%s AS ?item)
+                  {
+                    ?item p:P166 ?statement.
+                    ?statement ps:P166 ?award.
+                    BIND("WIN" AS ?result)
+                  }
+                  UNION
+                  {
+                    ?item p:P1411 ?statement.
+                    ?statement ps:P1411 ?award.
+                    BIND("NOMINATION" AS ?result)
+                  }
+
+                  VALUES ?root { wd:Q4220917 wd:Q1407225 wd:Q378427 wd:Q1364556 }
+                  FILTER EXISTS { ?award (wdt:P31|wdt:P279)* ?root. }
+
+                  OPTIONAL {
+                    ?award wdt:P31 ?directProgram.
+                    ?directProgram wdt:P31 wd:Q107655869.
+                  }
+                  OPTIONAL { ?statement pq:P805 ?ceremony. }
+                  OPTIONAL { ?ceremony wdt:P1269 ?ceremonyProgram. }
+                  BIND(COALESCE(?directProgram, ?ceremonyProgram) AS ?program)
+                  OPTIONAL {
+                    ?statement psv:P585 ?dateValue.
+                    ?dateValue wikibase:timeValue ?date;
+                               wikibase:timePrecision ?datePrecision.
+                  }
+                  OPTIONAL { ?statement pq:P1686 ?work. }
+                  SERVICE wikibase:label {
+                    bd:serviceParam wikibase:language "pt,en".
+                    ?award rdfs:label ?awardLabel.
+                    ?program rdfs:label ?programLabel.
+                    ?ceremony rdfs:label ?ceremonyLabel.
+                    ?work rdfs:label ?workLabel.
+                  }
+                }
+                ORDER BY ?statement
+                """.formatted(wikidataId);
+        try {
+            return new WikidataAwards(false, parseAwards(execute(query)));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Wikidata awards query failed for {}: {}", wikidataId, exception.getMessage());
+            return new WikidataAwards(true, List.of());
+        }
+    }
+
     private Optional<WikidataEnrichment> cached(String key, String subjectClause, String language) {
         Instant now = Instant.now(clock);
         CacheEntry cached = cache.get(key);
@@ -248,11 +313,52 @@ public class WikidataClient {
                 + "query="
                 + UriUtils.encodeQueryParam(query, StandardCharsets.UTF_8)
                 + "&format=json");
-        return restClientBuilder.clone().baseUrl(properties.wikidata().sparqlUrl()).build().get()
-                .uri(uri)
-                .header("User-Agent", properties.wikidata().userAgent())
-                .retrieve()
-                .body(JsonNode.class);
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return restClientBuilder.clone().baseUrl(properties.wikidata().sparqlUrl()).build().get()
+                        .uri(uri)
+                        .header("User-Agent", properties.wikidata().userAgent())
+                        .retrieve()
+                        .body(JsonNode.class);
+            } catch (RestClientResponseException exception) {
+                if (exception.getStatusCode().value() != 429 || attempt >= MAX_RATE_LIMIT_RETRIES) {
+                    throw exception;
+                }
+                waitBeforeRetry(exception, attempt);
+            }
+        }
+    }
+
+    private void waitBeforeRetry(RestClientResponseException exception, int attempt) {
+        long fallbackMillis = Duration.ofSeconds(1L << attempt).toMillis();
+        long delayMillis = retryAfterMillis(exception).orElse(fallbackMillis);
+        delayMillis = Math.max(0, Math.min(delayMillis, MAX_RATE_LIMIT_BACKOFF.toMillis()));
+        try {
+            Thread.sleep(delayMillis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Wikidata retry was interrupted", interrupted);
+        }
+    }
+
+    private Optional<Long> retryAfterMillis(RestClientResponseException exception) {
+        if (exception.getResponseHeaders() == null) {
+            return Optional.empty();
+        }
+        String value = exception.getResponseHeaders().getFirst(HttpHeaders.RETRY_AFTER);
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Duration.ofSeconds(Long.parseLong(value.trim())).toMillis());
+        } catch (NumberFormatException ignored) {
+            try {
+                Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+                return Optional.of(Math.max(0, Duration.between(Instant.now(clock), retryAt).toMillis()));
+            } catch (DateTimeParseException invalidDate) {
+                return Optional.empty();
+            }
+        }
     }
 
     private Optional<WikidataEnrichment> parse(JsonNode body) {
@@ -327,6 +433,66 @@ public class WikidataClient {
             ));
         }
         return new ArrayList<>(related.values());
+    }
+
+    private List<WikidataAward> parseAwards(JsonNode body) {
+        JsonNode bindings = body.path("results").path("bindings");
+        if (!bindings.isArray() || bindings.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, WikidataAward> awards = new LinkedHashMap<>();
+        for (JsonNode binding : bindings) {
+            String statementId = value(binding, "statement");
+            String categoryQid = qid(value(binding, "award"));
+            String categoryName = value(binding, "awardLabel");
+            if (statementId == null || !validQid(categoryQid) || categoryName == null) {
+                continue;
+            }
+            AwardResult result;
+            try {
+                result = AwardResult.valueOf(value(binding, "result"));
+            } catch (IllegalArgumentException | NullPointerException exception) {
+                continue;
+            }
+
+            String rawDate = value(binding, "date");
+            Integer precisionValue = integer(value(binding, "datePrecision"));
+            AwardDatePrecision precision = precision(precisionValue);
+            LocalDate eventDate = precision == AwardDatePrecision.DAY ? date(rawDate) : null;
+            Integer eventYear = year(rawDate);
+            WikidataAward candidate = new WikidataAward(
+                    statementId,
+                    result,
+                    qid(value(binding, "program")),
+                    value(binding, "programLabel"),
+                    categoryQid,
+                    categoryName,
+                    qid(value(binding, "ceremony")),
+                    value(binding, "ceremonyLabel"),
+                    eventDate,
+                    eventYear,
+                    precision,
+                    qid(value(binding, "work")),
+                    value(binding, "workLabel"),
+                    sourceUrl(statementId)
+            );
+            awards.merge(statementId, candidate, this::preferMoreCompleteAward);
+        }
+        return new ArrayList<>(awards.values());
+    }
+
+    private WikidataAward preferMoreCompleteAward(WikidataAward current, WikidataAward candidate) {
+        return completeness(candidate) > completeness(current) ? candidate : current;
+    }
+
+    private int completeness(WikidataAward award) {
+        int score = 0;
+        if (award.programQid() != null) score++;
+        if (award.ceremonyQid() != null) score++;
+        if (award.eventYear() != null) score++;
+        if (award.workQid() != null) score++;
+        return score;
     }
 
     private ProviderIdentity providerIdentity(
@@ -487,6 +653,37 @@ public class WikidataClient {
         return value == null ? null : value.substring(value.lastIndexOf('/') + 1);
     }
 
+    private Integer integer(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private String sourceUrl(String statementId) {
+        String statementKey = qid(statementId);
+        int separator = statementKey == null ? -1 : statementKey.indexOf('-');
+        String subjectQid = separator < 0 ? null : statementKey.substring(0, separator);
+        return validQid(subjectQid) ? "https://www.wikidata.org/wiki/" + subjectQid : null;
+    }
+
+    private Integer year(String value) {
+        LocalDate parsed = date(value);
+        return parsed == null ? null : parsed.getYear();
+    }
+
+    private AwardDatePrecision precision(Integer value) {
+        if (value == null) return null;
+        if (value >= 11) return AwardDatePrecision.DAY;
+        if (value == 10) return AwardDatePrecision.MONTH;
+        if (value == 9) return AwardDatePrecision.YEAR;
+        return null;
+    }
+
     private String secure(String value) {
         return value == null ? null : value.replaceFirst("^http://", "https://");
     }
@@ -535,6 +732,27 @@ public class WikidataClient {
     }
 
     public record WikidataRelations(boolean incomplete, List<RelatedMedia> items) {
+    }
+
+    public record WikidataAwards(boolean incomplete, List<WikidataAward> items) {
+    }
+
+    public record WikidataAward(
+            String statementId,
+            AwardResult result,
+            String programQid,
+            String programName,
+            String categoryQid,
+            String categoryName,
+            String ceremonyQid,
+            String ceremonyName,
+            LocalDate eventDate,
+            Integer eventYear,
+            AwardDatePrecision datePrecision,
+            String workQid,
+            String workName,
+            String sourceUrl
+    ) {
     }
 
     public record RelatedMedia(

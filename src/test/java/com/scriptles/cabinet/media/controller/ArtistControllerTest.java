@@ -3,10 +3,14 @@ package com.scriptles.cabinet.media.controller;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.response.ArtistResponse;
 import com.scriptles.cabinet.media.dto.response.ArtistWorkResponse;
+import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
+import com.scriptles.cabinet.media.enums.AwardSectionState;
+import com.scriptles.cabinet.media.enums.AwardSubjectType;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ArtistService;
+import com.scriptles.cabinet.media.service.AwardQueryService;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ArtistController.class)
@@ -33,6 +38,9 @@ class ArtistControllerTest {
 
     @MockitoBean
     private ArtistService artistService;
+
+    @MockitoBean
+    private AwardQueryService awardQueryService;
 
     @Test
     void returnsPublicArtistDetails() throws Exception {
@@ -50,6 +58,7 @@ class ArtistControllerTest {
 
         mockMvc.perform(get("/v1/artists/{artistId}", artistId))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Deprecation", "true"))
                 .andExpect(jsonPath("$.id").value(artistId.toString()))
                 .andExpect(jsonPath("$.name").value("David Fincher"))
                 .andExpect(jsonPath("$.workCount").value(3))
@@ -86,5 +95,21 @@ class ArtistControllerTest {
                         .param("page", "-1")
                         .param("size", "41"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void keepsAwardsAliasWithDeprecationAndSuccessorHeaders() throws Exception {
+        UUID artistId = UUID.randomUUID();
+        when(awardQueryService.findPerson(artistId, null, 0, 20)).thenReturn(new AwardPageResponse(
+                artistId, AwardSubjectType.PERSON, AwardSectionState.PENDING,
+                null, null, 0, 0, List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/v1/artists/{artistId}/awards", artistId))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "2"))
+                .andExpect(header().string("Deprecation", "true"))
+                .andExpect(header().string(
+                        "Link", "</v1/people/" + artistId + "/awards>; rel=\"successor-version\""))
+                .andExpect(jsonPath("$.state").value("PENDING"));
     }
 }

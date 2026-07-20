@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.repository;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.media.enums.ExternalSource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,6 +18,12 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
     List<MediaList> findAllByOwnerIdOrderByUpdatedAtDesc(UUID ownerId);
 
     Optional<MediaList> findByIdAndOwnerId(UUID id, UUID ownerId);
+
+    Optional<MediaList> findByOwnerIdAndOriginSourceAndOriginKey(
+            UUID ownerId,
+            ExternalSource originSource,
+            String originKey
+    );
 
     @Query("""
             select list
@@ -65,4 +72,23 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
             @Param("visibility") Visibility visibility,
             Pageable pageable
     );
+
+    @Query("""
+            select list.id as listId, count(listLike.id) as likeCount
+            from MediaList list
+            left join MediaListLike listLike on listLike.list = list
+            where list.visibility = :visibility
+            group by list.id, list.updatedAt
+            order by count(listLike.id) desc, list.updatedAt desc, list.id desc
+            """)
+    List<PopularListProjection> findPopularPublicLists(
+            @Param("visibility") Visibility visibility,
+            Pageable pageable
+    );
+
+    interface PopularListProjection {
+        UUID getListId();
+
+        long getLikeCount();
+    }
 }

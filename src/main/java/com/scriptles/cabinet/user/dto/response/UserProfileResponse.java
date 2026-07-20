@@ -14,6 +14,7 @@ public record UserProfileResponse(
         long libraryCount,
         long completedCount,
         long inProgressCount,
+        ProfileStatsResponse stats,
         List<LibraryMediaResponse> recentItems
 ) {
 }

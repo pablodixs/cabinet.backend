@@ -3,15 +3,21 @@ package com.scriptles.cabinet.media.controller;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.MediaExternalInfoResponse;
 import com.scriptles.cabinet.media.dto.response.MoreByResponse;
+import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalInfoSectionState;
+import com.scriptles.cabinet.media.enums.AwardSectionState;
+import com.scriptles.cabinet.media.enums.AwardSubjectType;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MoreByState;
 import com.scriptles.cabinet.media.service.MediaExternalInfoService;
 import com.scriptles.cabinet.media.service.MediaQueryService;
 import com.scriptles.cabinet.media.service.MoreByService;
+import com.scriptles.cabinet.media.service.SeasonEpisodeService;
+import com.scriptles.cabinet.media.service.AwardQueryService;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MediaQueryController.class)
@@ -44,6 +51,35 @@ class MediaQueryControllerTest {
 
     @MockitoBean
     private MoreByService moreByService;
+
+    @MockitoBean
+    private SeasonEpisodeService seasonEpisodeService;
+
+    @MockitoBean
+    private AwardQueryService awardQueryService;
+
+    @Test
+    void returnsSeasonEpisodesWithoutAuthentication() throws Exception {
+        UUID seriesId = UUID.randomUUID();
+        UUID seasonId = UUID.randomUUID();
+        UUID episodeId = UUID.randomUUID();
+        var response = new SeasonEpisodesResponse(
+                seriesId, "1396", seasonId, 1, 4.25, 8, null, 0, 10,
+                List.of(new SeasonEpisodesResponse.EpisodeResponse(
+                        episodeId, "62085", 1, "Piloto", null, null,
+                        null, 58, 4.5, 6, null, true, false, 0)));
+        when(seasonEpisodeService.find(seriesId, 1, "pt-BR", null)).thenReturn(response);
+
+        mockMvc.perform(get("/v1/media/{seriesId}/seasons/{seasonNumber}/episodes", seriesId, 1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seriesId").value(seriesId.toString()))
+                .andExpect(jsonPath("$.averageRating").value(4.25))
+                .andExpect(jsonPath("$.myRating").doesNotExist())
+                .andExpect(jsonPath("$.episodes[0].id").value(episodeId.toString()))
+                .andExpect(jsonPath("$.episodes[0].myRating").doesNotExist());
+
+        verify(seasonEpisodeService).find(seriesId, 1, "pt-BR", null);
+    }
 
     @Test
     void returnsPublicPaginatedActorsWithDefaultPagination() throws Exception {
@@ -167,5 +203,19 @@ class MediaQueryControllerTest {
                 .andExpect(jsonPath("$.ratings.state").value("NOT_CONFIGURED"));
 
         verify(mediaExternalInfoService).find(mediaId, "br");
+    }
+
+    @Test
+    void returnsAcceptedWhileMediaAwardsAreLoading() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(awardQueryService.findMedia(mediaId, null, 0, 20)).thenReturn(new AwardPageResponse(
+                mediaId, AwardSubjectType.MEDIA, AwardSectionState.PENDING,
+                null, null, 0, 0, List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/v1/media/{mediaId}/awards", mediaId))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Retry-After", "2"))
+                .andExpect(jsonPath("$.subjectType").value("MEDIA"))
+                .andExpect(jsonPath("$.state").value("PENDING"));
     }
 }

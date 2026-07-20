@@ -1,0 +1,8 @@
+spring:
+  flyway:
+    enabled: false
+  jpa:
+    properties:
+      hibernate:
+        type:
+          prefer_native_enum_types: false

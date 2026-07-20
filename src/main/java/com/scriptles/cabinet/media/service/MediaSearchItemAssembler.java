@@ -6,7 +6,7 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
-import com.scriptles.cabinet.media.repository.ReviewRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.enums.Visibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -24,10 +24,15 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class MediaSearchItemAssembler {
     private final ExternalReferenceRepository externalReferenceRepository;
-    private final ReviewRepository reviewRepository;
+    private final RatingRepository ratingRepository;
     private final MediaCreditService mediaCreditService;
+    private final UserArtworkResolver userArtworkResolver;
 
     public List<MediaSearchItemResponse> fromExternal(List<ExternalMedia> results) {
+        return fromExternal(results, null);
+    }
+
+    public List<MediaSearchItemResponse> fromExternal(List<ExternalMedia> results, UUID viewerId) {
         if (results == null || results.isEmpty()) {
             return List.of();
         }
@@ -49,11 +54,13 @@ public class MediaSearchItemAssembler {
                 .toList();
         Map<UUID, RatingSummary> ratings = ratings(imported);
         Map<UUID, MediaCreditService.CreditSummary> creditSummaries = mediaCreditService.summaries(imported);
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = userArtworkResolver.resolve(viewerId, imported);
 
         return results.stream().map(result -> {
             ExternalReference reference = references.get(new ExternalKey(result.source(), result.externalId()));
             Media media = reference == null ? null : reference.getMedia();
             RatingSummary rating = media == null ? null : ratings.get(media.getId());
+            UserArtworkResolver.ResolvedArtwork artwork = media == null ? null : artworks.get(media.getId());
             return new MediaSearchItemResponse(
                     media == null ? null : media.getId(),
                     result.externalId(),
@@ -65,7 +72,9 @@ public class MediaSearchItemAssembler {
                             : creditSummaries.getOrDefault(
                                     media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
                     result.description(),
-                    result.coverUrl() != null || media == null ? result.coverUrl() : media.getCoverUrl(),
+                    artwork != null && artwork.customCover()
+                            ? artwork.coverUrl()
+                            : result.coverUrl() != null || media == null ? result.coverUrl() : media.getCoverUrl(),
                     result.releaseDate(),
                     media != null,
                     rating == null ? null : rating.average(),
@@ -75,6 +84,10 @@ public class MediaSearchItemAssembler {
     }
 
     public List<MediaSearchItemResponse> fromImported(List<Media> mediaItems) {
+        return fromImported(mediaItems, null);
+    }
+
+    public List<MediaSearchItemResponse> fromImported(List<Media> mediaItems, UUID viewerId) {
         if (mediaItems == null || mediaItems.isEmpty()) {
             return List.of();
         }
@@ -89,6 +102,7 @@ public class MediaSearchItemAssembler {
                 ));
         Map<UUID, RatingSummary> ratings = ratings(mediaItems);
         Map<UUID, MediaCreditService.CreditSummary> creditSummaries = mediaCreditService.summaries(mediaItems);
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = userArtworkResolver.resolve(viewerId, mediaItems);
 
         return mediaItems.stream().map(media -> {
             ExternalReference reference = references.get(media.getId());
@@ -101,7 +115,7 @@ public class MediaSearchItemAssembler {
                     media.getTitle(),
                     creditSummaries.getOrDefault(media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
                     media.getDescription(),
-                    media.getCoverUrl(),
+                    artworks.get(media.getId()).coverUrl(),
                     media.getReleaseDate(),
                     true,
                     rating == null ? null : rating.average(),
@@ -115,9 +129,9 @@ public class MediaSearchItemAssembler {
         if (ids.isEmpty()) {
             return Map.of();
         }
-        return reviewRepository.summarizeRatings(ids, Visibility.PUBLIC).stream()
+        return ratingRepository.summarizeRatings(ids, Visibility.PUBLIC).stream()
                 .collect(Collectors.toMap(
-                        ReviewRepository.MediaRatingProjection::getMediaId,
+                        RatingRepository.MediaRatingProjection::getMediaId,
                         projection -> new RatingSummary(
                                 projection.getAverageRating(),
                                 projection.getRatingCount()

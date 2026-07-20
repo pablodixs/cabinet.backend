@@ -3,6 +3,7 @@ package com.scriptles.cabinet.security;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.user.controller.UserController;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileStatsResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.service.UserProfileService;
@@ -48,6 +49,7 @@ class UserProfileSecurityTest {
                 12,
                 7,
                 2,
+                new ProfileStatsResponse(320, 840, 5, 2, 1, 1, 3),
                 List.of()
         );
         when(userProfileService.findByUsername("maria", null)).thenReturn(response);
@@ -56,7 +58,14 @@ class UserProfileSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("maria"))
                 .andExpect(jsonPath("$.email").doesNotExist())
-                .andExpect(jsonPath("$.libraryCount").value(12));
+                .andExpect(jsonPath("$.libraryCount").value(12))
+                .andExpect(jsonPath("$.stats.watchedMinutes").value(320))
+                .andExpect(jsonPath("$.stats.pagesRead").value(840))
+                .andExpect(jsonPath("$.stats.episodesWatched").value(5))
+                .andExpect(jsonPath("$.stats.albumsConsumed").value(2))
+                .andExpect(jsonPath("$.stats.moviesConsumed").value(1))
+                .andExpect(jsonPath("$.stats.seriesConsumed").value(1))
+                .andExpect(jsonPath("$.stats.booksConsumed").value(3));
     }
 
     @Test

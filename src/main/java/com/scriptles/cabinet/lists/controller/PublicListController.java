@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -26,13 +27,26 @@ import java.util.UUID;
 public class PublicListController {
     private final MediaListService mediaListService;
 
+    @GetMapping("/popular")
+    public List<PublicListSearchResponse> findPopular(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(defaultValue = "12") @Min(1) @Max(40) int limit
+    ) {
+        return user == null
+                ? mediaListService.findGloballyPopular(limit)
+                : mediaListService.findGloballyPopular(limit, user.id());
+    }
+
     @GetMapping("/search")
     public PageResponse<PublicListSearchResponse> search(
+            @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam @Size(min = 3, max = 80) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
     ) {
-        return mediaListService.searchPublic(query, page, size);
+        return user == null
+                ? mediaListService.searchPublic(query, page, size)
+                : mediaListService.searchPublic(query, page, size, user.id());
     }
 
     @GetMapping("/{listId}")

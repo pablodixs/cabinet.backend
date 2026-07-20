@@ -6,6 +6,7 @@ import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
+import com.scriptles.cabinet.lists.dto.response.PublicListSearchResponse;
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListItem;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
@@ -278,6 +279,47 @@ class MediaListServiceTest {
                 Visibility.PUBLIC,
                 PageRequest.of(0, 20)
         );
+    }
+
+    @Test
+    void returnsGloballyPopularPublicListsInRepositoryOrder() {
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        owner.setUsername("maria");
+        owner.setDisplayName("Maria");
+        MediaList first = mediaList("Mais curtida");
+        first.setOwner(owner);
+        MediaList second = mediaList("Segunda");
+        second.setOwner(owner);
+        var firstPopularity = org.mockito.Mockito.mock(
+                MediaListRepository.PopularListProjection.class);
+        var secondPopularity = org.mockito.Mockito.mock(
+                MediaListRepository.PopularListProjection.class);
+        var firstCount = org.mockito.Mockito.mock(
+                MediaListItemRepository.MediaListItemCount.class);
+
+        when(firstPopularity.getListId()).thenReturn(first.getId());
+        when(firstPopularity.getLikeCount()).thenReturn(12L);
+        when(secondPopularity.getListId()).thenReturn(second.getId());
+        when(secondPopularity.getLikeCount()).thenReturn(7L);
+        when(mediaListRepository.findPopularPublicLists(
+                Visibility.PUBLIC, PageRequest.of(0, 12)))
+                .thenReturn(List.of(firstPopularity, secondPopularity));
+        when(mediaListRepository.findAllWithOwnerByIdIn(List.of(first.getId(), second.getId())))
+                .thenReturn(List.of(second, first));
+        when(mediaListItemRepository.countByListIds(List.of(first.getId(), second.getId())))
+                .thenReturn(List.of(firstCount));
+        when(firstCount.getListId()).thenReturn(first.getId());
+        when(firstCount.getItemCount()).thenReturn(5L);
+
+        List<PublicListSearchResponse> response = mediaListService.findGloballyPopular(12);
+
+        assertThat(response).extracting(PublicListSearchResponse::name)
+                .containsExactly("Mais curtida", "Segunda");
+        assertThat(response).extracting(PublicListSearchResponse::likeCount)
+                .containsExactly(12L, 7L);
+        assertThat(response).extracting(PublicListSearchResponse::itemCount)
+                .containsExactly(5L, 0L);
     }
 
     @Test

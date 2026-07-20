@@ -4,15 +4,17 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileStatsResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
-import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -35,7 +37,9 @@ public class UserProfileService {
 
     private final UserRepository userRepository;
     private final UserMediaRepository userMediaRepository;
+    private final UserMediaActivityRepository userMediaActivityRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
+    private final UserArtworkResolver userArtworkResolver;
 
     @Transactional(readOnly = true)
     public PageResponse<UserSearchResponse> search(String query, int page, int size) {
@@ -68,18 +72,25 @@ public class UserProfileService {
                 Sort.by(Sort.Direction.DESC, "lastInteractionAt")
                         .and(Sort.by(Sort.Direction.DESC, "createdAt"))
         );
-        Page<UserMedia> recentEntries = userMediaRepository.findProfileLibrary(
+        List<UserMedia> recentEntries = userMediaRepository.findRecentProfileLibrary(
                 profileUser.getId(),
                 ownProfile,
                 recentItemsPage
         );
         Map<UUID, ExternalReference> referencesByMediaId = findReferences(recentEntries);
-        List<LibraryMediaResponse> recentItems = recentEntries.getContent().stream()
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
+                viewerId,
+                recentEntries.stream().map(UserMedia::getMedia).toList()
+        );
+        List<LibraryMediaResponse> recentItems = recentEntries.stream()
                 .map(entry -> LibraryMediaResponse.from(
                         entry,
-                        referencesByMediaId.get(entry.getMedia().getId())
+                        referencesByMediaId.get(entry.getMedia().getId()),
+                        artworks.get(entry.getMedia().getId()).coverUrl()
                 ))
                 .toList();
+        UserMediaRepository.ProfileStatisticsProjection statistics =
+                userMediaRepository.findProfileStatistics(profileUser.getId(), ownProfile);
 
         return new UserProfileResponse(
                 profileUser.getId(),
@@ -89,16 +100,17 @@ public class UserProfileService {
                 profileUser.getAvatarUlr(),
                 ownProfile ? profileUser.getEmail() : null,
                 ownProfile,
-                userMediaRepository.countProfileLibrary(profileUser.getId(), null, ownProfile),
-                userMediaRepository.countProfileLibrary(
-                        profileUser.getId(),
-                        UserMediaStatus.COMPLETED,
-                        ownProfile
-                ),
-                userMediaRepository.countProfileLibrary(
-                        profileUser.getId(),
-                        UserMediaStatus.IN_PROGRESS,
-                        ownProfile
+                statistics.getLibraryCount(),
+                statistics.getCompletedCount(),
+                statistics.getInProgressCount(),
+                new ProfileStatsResponse(
+                        statistics.getWatchedMinutes(),
+                        statistics.getPagesRead(),
+                        statistics.getEpisodesWatched(),
+                        statistics.getAlbumsConsumed(),
+                        statistics.getMoviesConsumed(),
+                        statistics.getSeriesConsumed(),
+                        statistics.getBooksConsumed()
                 ),
                 recentItems
         );
@@ -112,17 +124,49 @@ public class UserProfileService {
             int size
     ) {
         ProfileAccess access = findProfileAccess(username, viewerId);
-        Page<UserMedia> entries = userMediaRepository.findProfileActivities(
+        Page<com.scriptles.cabinet.user.entity.UserMediaActivity> entries = userMediaActivityRepository.findProfileActivities(
                 access.user().getId(),
                 access.ownProfile(),
+                Visibility.PUBLIC,
                 PageRequest.of(page, size)
         );
-        Map<UUID, ExternalReference> referencesByMediaId = findReferences(entries.getContent());
+        Map<UUID, ExternalReference> referencesByMediaId = findActivityReferences(entries.getContent());
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
+                viewerId,
+                entries.getContent().stream().map(entry -> entry.getMedia()).toList()
+        );
 
         return PageResponse.from(entries.map(entry -> ProfileActivityResponse.from(
                 entry,
-                referencesByMediaId.get(entry.getMedia().getId())
+                referencesByMediaId.get(entry.getMedia().getId()),
+                artworks.get(entry.getMedia().getId()).coverUrl()
         )));
+    }
+
+    private Map<UUID, ExternalReference> findActivityReferences(
+            List<com.scriptles.cabinet.user.entity.UserMediaActivity> entries
+    ) {
+        if (entries.isEmpty()) return Map.of();
+        return externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(
+                        entries.stream().map(entry -> entry.getMedia().getId()).toList())
+                .stream()
+                .collect(Collectors.toMap(
+                        reference -> reference.getMedia().getId(),
+                        Function.identity(),
+                        (first, ignored) -> first
+                ));
+    }
+
+    private Map<UUID, UserArtworkResolver.ResolvedArtwork> resolveArtwork(
+            UUID viewerId,
+            java.util.Collection<com.scriptles.cabinet.media.entity.Media> mediaItems
+    ) {
+        if (userArtworkResolver != null) return userArtworkResolver.resolve(viewerId, mediaItems);
+        return mediaItems.stream().collect(Collectors.toMap(
+                com.scriptles.cabinet.media.entity.Media::getId,
+                media -> new UserArtworkResolver.ResolvedArtwork(
+                        media.getCoverUrl(), media.getBackdropUrl(), false, false)
+        ));
     }
 
     private Map<UUID, ExternalReference> findReferences(Page<UserMedia> entries) {

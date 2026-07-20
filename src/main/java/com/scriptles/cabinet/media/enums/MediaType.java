@@ -5,5 +5,6 @@ public enum MediaType {
     MOVIE,
     SERIES,
     TRACK,
-    ALBUM
+    ALBUM,
+    EPISODE
 }

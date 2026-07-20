@@ -5,17 +5,26 @@ import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.event.SeriesTrackingRequestedEvent;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.dto.response.LibraryEntryResponse;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
+import com.scriptles.cabinet.user.entity.UserMediaActivity;
+import com.scriptles.cabinet.user.enums.ProfileActivityType;
+import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -34,9 +43,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserMediaService {
     private final UserMediaRepository userMediaRepository;
+    private final UserMediaActivityRepository userMediaActivityRepository;
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
+    private final MediaConsumptionPolicy mediaConsumptionPolicy;
+    private final ApplicationEventPublisher eventPublisher;
+    private final UserArtworkResolver userArtworkResolver;
 
     @Transactional(readOnly = true)
     public PageResponse<LibraryMediaResponse> findLibrary(
@@ -72,11 +85,26 @@ public class UserMediaService {
                                 Function.identity(),
                                 (first, ignored) -> first
                         ));
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
+                userId, entries.getContent().stream().map(UserMedia::getMedia).toList());
 
         return PageResponse.from(entries.map(entry -> LibraryMediaResponse.from(
                 entry,
-                referencesByMediaId.get(entry.getMedia().getId())
+                referencesByMediaId.get(entry.getMedia().getId()),
+                artworks.get(entry.getMedia().getId()).coverUrl()
         )));
+    }
+
+    private Map<UUID, UserArtworkResolver.ResolvedArtwork> resolveArtwork(
+            UUID viewerId,
+            java.util.Collection<Media> mediaItems
+    ) {
+        if (userArtworkResolver != null) return userArtworkResolver.resolve(viewerId, mediaItems);
+        return mediaItems.stream().collect(Collectors.toMap(
+                Media::getId,
+                media -> new UserArtworkResolver.ResolvedArtwork(
+                        media.getCoverUrl(), media.getBackdropUrl(), false, false)
+        ));
     }
 
     @Transactional(readOnly = true)
@@ -91,9 +119,18 @@ public class UserMediaService {
         Media media = findMedia(mediaId);
         UserMedia entry = userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
                 .orElseGet(() -> newEntry(user, media));
+        boolean recordActivity = entry.getId() == null || entry.getStatus() != status;
 
+        if (status != UserMediaStatus.PLANNED) {
+            mediaConsumptionPolicy.ensureReleased(media);
+        }
         applyStatus(entry, status, Instant.now());
-        return LibraryEntryResponse.from(userMediaRepository.saveAndFlush(entry));
+        UserMedia saved = userMediaRepository.saveAndFlush(entry);
+        if (recordActivity) recordActivity(saved, status);
+        if (media.getType() == MediaType.SERIES && status == UserMediaStatus.IN_PROGRESS) {
+            eventPublisher.publishEvent(new SeriesTrackingRequestedEvent(mediaId));
+        }
+        return LibraryEntryResponse.from(saved);
     }
 
     @Transactional
@@ -104,10 +141,19 @@ public class UserMediaService {
 
     @Transactional
     public UserMedia markCompleted(User user, Media media) {
+        return markCompleted(user, media, true);
+    }
+
+    @Transactional
+    public UserMedia markCompleted(User user, Media media, boolean recordCompletionActivity) {
+        mediaConsumptionPolicy.ensureReleased(media);
         UserMedia entry = userMediaRepository.findByUserIdAndMediaId(user.getId(), media.getId())
                 .orElseGet(() -> newEntry(user, media));
+        boolean recordActivity = entry.getId() == null || entry.getStatus() != UserMediaStatus.COMPLETED;
         applyStatus(entry, UserMediaStatus.COMPLETED, Instant.now());
-        return userMediaRepository.save(entry);
+        UserMedia saved = userMediaRepository.save(entry);
+        if (recordCompletionActivity && recordActivity) recordActivity(saved, UserMediaStatus.COMPLETED);
+        return saved;
     }
 
     private UserMedia newEntry(User user, Media media) {
@@ -146,6 +192,23 @@ public class UserMediaService {
         entry.setLastInteractionAt(now);
     }
 
+    private void recordActivity(UserMedia entry, UserMediaStatus status) {
+        UserMediaActivity activity = new UserMediaActivity();
+        activity.setUser(entry.getUser());
+        activity.setMedia(entry.getMedia());
+        activity.setType(switch (status) {
+            case PLANNED -> ProfileActivityType.ADDED_TO_LIBRARY;
+            case IN_PROGRESS -> ProfileActivityType.STARTED;
+            case COMPLETED -> ProfileActivityType.COMPLETED;
+            case PAUSED -> ProfileActivityType.PAUSED;
+            case DROPPED -> ProfileActivityType.DROPPED;
+        });
+        activity.setOccurredOn(CabinetTime.today());
+        activity.setVisibility(Boolean.TRUE.equals(entry.getPrivateEntry()) ? Visibility.PRIVATE : Visibility.PUBLIC);
+        activity.setSourceKey("cabinet:" + UUID.randomUUID());
+        userMediaActivityRepository.save(activity);
+    }
+
     private void validateStatus(MediaType mediaType, UserMediaStatus status) {
         EnumSet<UserMediaStatus> allowed = switch (mediaType) {
             case MOVIE, TRACK -> EnumSet.of(UserMediaStatus.PLANNED, UserMediaStatus.COMPLETED);
@@ -155,6 +218,7 @@ public class UserMediaService {
                     UserMediaStatus.COMPLETED
             );
             case BOOK, SERIES -> EnumSet.allOf(UserMediaStatus.class);
+            case EPISODE -> EnumSet.noneOf(UserMediaStatus.class);
         };
 
         if (!allowed.contains(status)) {
