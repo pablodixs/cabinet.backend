@@ -9,10 +9,13 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.util.UriUtils;
 import tools.jackson.databind.JsonNode;
 
@@ -27,10 +30,13 @@ import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Component
 public class WikidataClient {
@@ -40,22 +46,28 @@ public class WikidataClient {
     private static final Duration STALE_TTL = Duration.ofDays(7);
     private static final Duration MAX_RATE_LIMIT_BACKOFF = Duration.ofSeconds(30);
     private static final int MAX_RATE_LIMIT_RETRIES = 2;
+    private static final int MAX_TRANSIENT_RETRIES = 1;
     private static final int MAX_CACHE_ENTRIES = 2_000;
 
     private final RestClient.Builder restClientBuilder;
-    private final ExternalApiProperties properties;
+    private final ExternalApiProperties.Wikidata wikidata;
     private final Clock clock;
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private final Map<String, RelationCacheEntry> relationCache = new ConcurrentHashMap<>();
 
     @Autowired
-    public WikidataClient(RestClient.Builder restClientBuilder, ExternalApiProperties properties) {
+    public WikidataClient(
+            @Qualifier("wikidataRestClientBuilder") RestClient.Builder restClientBuilder,
+            ExternalApiProperties properties
+    ) {
         this(restClientBuilder, properties, Clock.systemUTC());
     }
 
     WikidataClient(RestClient.Builder restClientBuilder, ExternalApiProperties properties, Clock clock) {
         this.restClientBuilder = restClientBuilder;
-        this.properties = properties;
+        this.wikidata = properties.wikidata() == null
+                ? ExternalApiProperties.Wikidata.defaults()
+                : properties.wikidata();
         this.clock = clock;
     }
 
@@ -158,33 +170,80 @@ public class WikidataClient {
             return new WikidataAwards(false, List.of());
         }
 
+        String candidateQuery = """
+                SELECT DISTINCT ?award WHERE {
+                  {
+                    wd:%s p:P166 ?statement.
+                    ?statement ps:P166 ?award.
+                  }
+                  UNION
+                  {
+                    wd:%s p:P1411 ?statement.
+                    ?statement ps:P1411 ?award.
+                  }
+                }
+                """.formatted(wikidataId, wikidataId);
+        try {
+            List<String> candidateAwardQids = awardQids(execute(candidateQuery));
+            if (candidateAwardQids.isEmpty()) {
+                return new WikidataAwards(false, List.of());
+            }
+            List<String> relevantAwardQids = awardQids(execute(awardClassificationQuery(candidateAwardQids)));
+            if (relevantAwardQids.isEmpty()) {
+                return new WikidataAwards(false, List.of());
+            }
+            return new WikidataAwards(false, parseAwards(execute(awardDetailsQuery(
+                    wikidataId,
+                    relevantAwardQids
+            ))));
+        } catch (RuntimeException exception) {
+            logFailure("awards", wikidataId, exception);
+            return new WikidataAwards(true, List.of());
+        }
+    }
+
+    private String awardClassificationQuery(List<String> candidateAwardQids) {
+        return """
+                SELECT DISTINCT ?award WHERE {
+                  hint:Query hint:optimizer "None".
+                  VALUES ?award { %s }
+                  VALUES ?root { wd:Q4220917 wd:Q1407225 wd:Q378427 wd:Q1364556 }
+                  ?award (wdt:P31|wdt:P279)* ?root.
+                  hint:Prior hint:gearing "forward".
+                }
+                """.formatted(awardValues(candidateAwardQids));
+    }
+
+    private String awardDetailsQuery(String wikidataId, List<String> candidateAwardQids) {
         String query = """
                 SELECT ?statement ?result ?award ?awardLabel
                        ?program ?programLabel ?ceremony ?ceremonyLabel
                        ?date ?datePrecision ?work ?workLabel
                 WHERE {
                   BIND(wd:%s AS ?item)
+                  VALUES ?award { %s }
                   {
-                    ?item p:P166 ?statement.
-                    ?statement ps:P166 ?award.
-                    BIND("WIN" AS ?result)
+                    {
+                      ?item p:P166 ?statement.
+                      ?statement ps:P166 ?award.
+                      BIND("WIN" AS ?result)
+                    }
+                    UNION
+                    {
+                      ?item p:P1411 ?statement.
+                      ?statement ps:P1411 ?award.
+                      BIND("NOMINATION" AS ?result)
+                    }
                   }
-                  UNION
-                  {
-                    ?item p:P1411 ?statement.
-                    ?statement ps:P1411 ?award.
-                    BIND("NOMINATION" AS ?result)
-                  }
-
-                  VALUES ?root { wd:Q4220917 wd:Q1407225 wd:Q378427 wd:Q1364556 }
-                  FILTER EXISTS { ?award (wdt:P31|wdt:P279)* ?root. }
 
                   OPTIONAL {
                     ?award wdt:P31 ?directProgram.
                     ?directProgram wdt:P31 wd:Q107655869.
                   }
-                  OPTIONAL { ?statement pq:P805 ?ceremony. }
-                  OPTIONAL { ?ceremony wdt:P1269 ?ceremonyProgram. }
+                  OPTIONAL {
+                    ?statement pq:P805 ?ceremony.
+                    OPTIONAL { ?ceremony wdt:P1269 ?ceremonyProgram. }
+                  }
                   BIND(COALESCE(?directProgram, ?ceremonyProgram) AS ?program)
                   OPTIONAL {
                     ?statement psv:P585 ?dateValue.
@@ -201,13 +260,14 @@ public class WikidataClient {
                   }
                 }
                 ORDER BY ?statement
-                """.formatted(wikidataId);
-        try {
-            return new WikidataAwards(false, parseAwards(execute(query)));
-        } catch (RuntimeException exception) {
-            LOGGER.warn("Wikidata awards query failed for {}: {}", wikidataId, exception.getMessage());
-            return new WikidataAwards(true, List.of());
-        }
+                """.formatted(wikidataId, awardValues(candidateAwardQids));
+        return query;
+    }
+
+    private String awardValues(List<String> awardQids) {
+        return awardQids.stream()
+                .map(qid -> "wd:" + qid)
+                .collect(Collectors.joining(" "));
     }
 
     private Optional<WikidataEnrichment> cached(String key, String subjectClause, String language) {
@@ -256,7 +316,7 @@ public class WikidataClient {
             JsonNode body = execute(query);
             return new EnrichmentQueryResult(true, parse(body));
         } catch (RuntimeException exception) {
-            LOGGER.warn("Wikidata enrichment query failed: {}", exception.getMessage());
+            logFailure("enrichment", null, exception);
             return new EnrichmentQueryResult(false, Optional.empty());
         }
     }
@@ -301,37 +361,54 @@ public class WikidataClient {
         try {
             return Optional.of(parseRelations(execute(query)));
         } catch (RuntimeException exception) {
-            LOGGER.warn("Wikidata relation query failed: {}", exception.getMessage());
+            logFailure("relation", lookup.wikidataId(), exception);
             return Optional.empty();
         }
     }
 
     private JsonNode execute(String query) {
-        String separator = properties.wikidata().sparqlUrl().contains("?") ? "&" : "?";
-        URI uri = URI.create(properties.wikidata().sparqlUrl()
+        String separator = wikidata.sparqlUrl().contains("?") ? "&" : "?";
+        URI uri = URI.create(wikidata.sparqlUrl()
                 + separator
                 + "query="
                 + UriUtils.encodeQueryParam(query, StandardCharsets.UTF_8)
                 + "&format=json");
         for (int attempt = 0; ; attempt++) {
             try {
-                return restClientBuilder.clone().baseUrl(properties.wikidata().sparqlUrl()).build().get()
+                return restClientBuilder.clone().baseUrl(wikidata.sparqlUrl()).build().get()
                         .uri(uri)
-                        .header("User-Agent", properties.wikidata().userAgent())
+                        .header("User-Agent", wikidata.userAgent())
                         .retrieve()
                         .body(JsonNode.class);
             } catch (RestClientResponseException exception) {
-                if (exception.getStatusCode().value() != 429 || attempt >= MAX_RATE_LIMIT_RETRIES) {
+                int maxRetries = maxRetries(exception.getStatusCode());
+                if (attempt >= maxRetries) {
                     throw exception;
                 }
                 waitBeforeRetry(exception, attempt);
+            } catch (ResourceAccessException exception) {
+                if (attempt >= MAX_TRANSIENT_RETRIES) {
+                    throw exception;
+                }
+                waitBeforeRetry(null, attempt);
             }
         }
     }
 
+    private int maxRetries(HttpStatusCode statusCode) {
+        if (statusCode.value() == 429) {
+            return MAX_RATE_LIMIT_RETRIES;
+        }
+        return statusCode.value() == 502 || statusCode.value() == 503 || statusCode.value() == 504
+                ? MAX_TRANSIENT_RETRIES
+                : 0;
+    }
+
     private void waitBeforeRetry(RestClientResponseException exception, int attempt) {
         long fallbackMillis = Duration.ofSeconds(1L << attempt).toMillis();
-        long delayMillis = retryAfterMillis(exception).orElse(fallbackMillis);
+        long delayMillis = exception == null
+                ? fallbackMillis
+                : retryAfterMillis(exception).orElse(fallbackMillis);
         delayMillis = Math.max(0, Math.min(delayMillis, MAX_RATE_LIMIT_BACKOFF.toMillis()));
         try {
             Thread.sleep(delayMillis);
@@ -339,6 +416,38 @@ public class WikidataClient {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Wikidata retry was interrupted", interrupted);
         }
+    }
+
+    private List<String> awardQids(JsonNode body) {
+        JsonNode bindings = body.path("results").path("bindings");
+        if (!bindings.isArray() || bindings.isEmpty()) {
+            return List.of();
+        }
+        Set<String> qids = new LinkedHashSet<>();
+        for (JsonNode binding : bindings) {
+            String awardQid = qid(value(binding, "award"));
+            if (validQid(awardQid)) {
+                qids.add(awardQid);
+            }
+        }
+        return List.copyOf(qids);
+    }
+
+    private void logFailure(String queryType, String subject, RuntimeException exception) {
+        Throwable rootCause = exception;
+        while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+            rootCause = rootCause.getCause();
+        }
+        String subjectSuffix = subject == null ? "" : " for " + subject;
+        String detail = rootCause.getMessage() == null ? "no detail" : rootCause.getMessage();
+        LOGGER.warn(
+                "Wikidata {} query failed{} ({}: {})",
+                queryType,
+                subjectSuffix,
+                rootCause.getClass().getSimpleName(),
+                detail
+        );
+        LOGGER.debug("Wikidata {} query failure stack trace", queryType, exception);
     }
 
     private Optional<Long> retryAfterMillis(RestClientResponseException exception) {

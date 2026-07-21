@@ -71,3 +71,4 @@ external:
   wikidata:
     sparql-url: https://query.wikidata.org/sparql
     user-agent: ${WIKIDATA_USER_AGENT:cabinet/1.0 (https://github.com/scriptles/cabinet)}
+    read-timeout: ${WIKIDATA_READ_TIMEOUT:30s}

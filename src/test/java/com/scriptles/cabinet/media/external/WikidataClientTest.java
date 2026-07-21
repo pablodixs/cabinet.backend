@@ -22,6 +22,7 @@ import java.time.ZoneId;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
@@ -46,7 +47,7 @@ class WikidataClientTest {
                 null,
                 null,
                 null,
-                new ExternalApiProperties.Wikidata(SPARQL_URL, "cabinet-test/1.0")
+                new ExternalApiProperties.Wikidata(SPARQL_URL, "cabinet-test/1.0", Duration.ofSeconds(30))
         );
         clock = new MutableClock(Instant.parse("2026-07-14T12:00:00Z"));
         client = new WikidataClient(builder, properties, clock);
@@ -296,13 +297,40 @@ class WikidataClientTest {
     @Test
     void findsStructuredRelevantAwardsAndPreservesDatePrecision() {
         expectQuery(allOf(
+                containsString("SELECT%20DISTINCT"),
                 containsString("p:P166"),
-                containsString("p:P1411"),
+                containsString("p:P1411")
+        ), """
+                {
+                  "results": {"bindings": [
+                    {"award": {"value": "http://www.wikidata.org/entity/Q103916"}},
+                    {"award": {"value": "http://www.wikidata.org/entity/Q106291"}},
+                    {"award": {"value": "http://www.wikidata.org/entity/Q103916"}}
+                  ]}
+                }
+                """);
+        expectQuery(allOf(
+                containsString("SELECT%20DISTINCT"),
+                containsString("hint:optimizer%20%22None%22"),
+                containsString("VALUES%20?award%20%7B%20wd:Q103916%20wd:Q106291%20%7D"),
                 containsString("Q4220917"),
                 containsString("Q1407225"),
                 containsString("Q378427"),
                 containsString("Q1364556"),
-                containsString("FILTER%20EXISTS"),
+                containsString("hint:gearing%20%22forward%22")
+        ), """
+                {
+                  "results": {"bindings": [
+                    {"award": {"value": "http://www.wikidata.org/entity/Q103916"}},
+                    {"award": {"value": "http://www.wikidata.org/entity/Q106291"}}
+                  ]}
+                }
+                """);
+        expectQuery(allOf(
+                containsString("p:P166"),
+                containsString("p:P1411"),
+                containsString("VALUES%20?award%20%7B%20wd:Q103916%20wd:Q106291%20%7D"),
+                not(containsString("Q4220917")),
                 containsString("pq:P805"),
                 containsString("pq:P1686"),
                 containsString("wdt:P1269"),
@@ -374,6 +402,22 @@ class WikidataClientTest {
                 .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
                         .header(HttpHeaders.RETRY_AFTER, "0"));
         expectQuery(containsString("p:P166"), """
+                {"results":{"bindings":[]}}
+                """);
+
+        WikidataClient.WikidataAwards result = client.findAwards("Q38111");
+
+        assertThat(result.incomplete()).isFalse();
+        assertThat(result.items()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void retriesAwardQueryAfterTransientGatewayFailure() {
+        server.expect(requestTo(startsWith(SPARQL_URL)))
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY)
+                        .header(HttpHeaders.RETRY_AFTER, "0"));
+        expectQuery(containsString("SELECT%20DISTINCT"), """
                 {"results":{"bindings":[]}}
                 """);
 
