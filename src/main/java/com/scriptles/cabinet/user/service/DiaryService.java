@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -57,6 +58,7 @@ public class DiaryService {
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final UserMediaService userMediaService;
     private final EpisodeTrackingService episodeTrackingService;
+    private final SocialAccessPolicy socialAccessPolicy;
 
     @Transactional
     public DiaryEntryResponse create(UUID userId, CreateDiaryEntryRequest request) {
@@ -101,7 +103,7 @@ public class DiaryService {
     @Transactional(readOnly = true)
     public PageResponse<DiaryEntryResponse> findMine(UUID userId, int page, int size) {
         findUser(userId);
-        return findEntries(userId, true, page, size);
+        return findEntries(userId, true, false, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -115,10 +117,16 @@ public class DiaryService {
                 .filter(candidate -> Boolean.TRUE.equals(candidate.getActive()))
                 .orElseThrow(() -> notFound("USER_PROFILE_NOT_FOUND", "Perfil não encontrado"));
         boolean ownProfile = viewerId != null && viewerId.equals(user.getId());
-        if (!ownProfile && user.getProfileVisibility() != Visibility.PUBLIC) {
+        boolean accessible = socialAccessPolicy == null
+                ? ownProfile || user.getProfileVisibility() == Visibility.PUBLIC
+                : socialAccessPolicy.canViewProfile(user, viewerId);
+        if (!accessible) {
             throw notFound("USER_PROFILE_NOT_FOUND", "Perfil não encontrado");
         }
-        return findEntries(user.getId(), ownProfile, page, size);
+        boolean followerAccess = !ownProfile && viewerId != null
+                && socialAccessPolicy != null
+                && socialAccessPolicy.isAcceptedFollower(viewerId, user.getId());
+        return findEntries(user.getId(), ownProfile, followerAccess, page, size);
     }
 
     @Transactional
@@ -138,11 +146,17 @@ public class DiaryService {
     private PageResponse<DiaryEntryResponse> findEntries(
             UUID userId,
             boolean includePrivate,
+            boolean includeFollowers,
             int page,
             int size
     ) {
-        Page<UserMediaActivity> entries = activityRepository.findDiaryEntries(
-                userId, DIARY_TYPES, includePrivate, Visibility.PUBLIC, PageRequest.of(page, size));
+        Page<UserMediaActivity> entries = includeFollowers && !includePrivate
+                ? activityRepository.findDiaryEntriesVisibleToFollower(
+                        userId, DIARY_TYPES, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
+                        PageRequest.of(page, size))
+                : activityRepository.findDiaryEntries(
+                        userId, DIARY_TYPES, includePrivate, Visibility.PUBLIC,
+                        PageRequest.of(page, size));
         Map<UUID, ExternalReference> references = findReferences(entries);
         return PageResponse.from(entries.map(entry -> DiaryEntryResponse.from(
                 entry, references.get(entry.getMedia().getId()))));
@@ -200,7 +214,9 @@ public class DiaryService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DIARY_DATE",
                     "A data do registro não pode estar no futuro");
         }
-        if (request.visibility() != Visibility.PUBLIC && request.visibility() != Visibility.PRIVATE) {
+        if (request.visibility() != Visibility.PUBLIC
+                && request.visibility() != Visibility.FOLLOWERS
+                && request.visibility() != Visibility.PRIVATE) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DIARY_VISIBILITY",
                     "O registro deve ser público ou privado");
         }

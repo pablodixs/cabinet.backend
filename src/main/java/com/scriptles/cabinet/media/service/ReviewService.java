@@ -23,6 +23,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
+import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -54,6 +55,7 @@ public class ReviewService {
     private final UserMediaService userMediaService;
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
+    private final SocialAccessPolicy socialAccessPolicy;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -64,16 +66,15 @@ public class ReviewService {
     ) {
         validateMediaExists(mediaId);
 
-        Page<Review> reviews = reviewRepository.findByMediaIdAndVisibility(
-                mediaId,
-                Visibility.PUBLIC,
-                PageRequest.of(
+        PageRequest pageable = PageRequest.of(
                         page,
                         size,
                         Sort.by(Sort.Direction.DESC, "publishedAt")
                                 .and(Sort.by(Sort.Direction.DESC, "id"))
-                )
-        );
+                );
+        Page<Review> reviews = userId == null
+                ? reviewRepository.findByMediaIdAndVisibility(mediaId, Visibility.PUBLIC, pageable)
+                : reviewRepository.findAccessibleByMediaId(mediaId, userId, pageable);
         return new PageResponse<>(
                 responses(reviews.getContent(), userId),
                 reviews.getNumber(),
@@ -86,11 +87,9 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public List<ReviewResponse> findPopular(UUID userId, UUID mediaId) {
         validateMediaExists(mediaId);
-        List<UUID> reviewIds = reviewRepository.findPopularIds(
-                mediaId,
-                Visibility.PUBLIC,
-                PageRequest.of(0, 3)
-        );
+        List<UUID> reviewIds = userId == null
+                ? reviewRepository.findPopularIds(mediaId, Visibility.PUBLIC, PageRequest.of(0, 3))
+                : reviewRepository.findAccessiblePopularIds(mediaId, userId, PageRequest.of(0, 3));
         if (reviewIds.isEmpty()) {
             return List.of();
         }
@@ -108,10 +107,9 @@ public class ReviewService {
 
     @Transactional(readOnly = true)
     public List<PopularReviewResponse> findGloballyPopular(UUID userId, int limit) {
-        List<UUID> reviewIds = reviewRepository.findGloballyPopularIds(
-                Visibility.PUBLIC,
-                PageRequest.of(0, limit)
-        );
+        List<UUID> reviewIds = userId == null
+                ? reviewRepository.findGloballyPopularIds(Visibility.PUBLIC, PageRequest.of(0, limit))
+                : reviewRepository.findGloballyAccessiblePopularIds(userId, PageRequest.of(0, limit));
         if (reviewIds.isEmpty()) {
             return List.of();
         }
@@ -147,13 +145,11 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public List<ReviewResponse> findRecent(UUID userId, UUID mediaId) {
         validateMediaExists(mediaId);
-        return responses(
-                reviewRepository.findTop3ByRatingMediaIdAndRatingVisibilityOrderByCreatedAtDescIdDesc(
-                        mediaId,
-                        Visibility.PUBLIC
-                ),
-                userId
-        );
+        List<Review> reviews = userId == null
+                ? reviewRepository.findTop3ByRatingMediaIdAndRatingVisibilityOrderByCreatedAtDescIdDesc(
+                        mediaId, Visibility.PUBLIC)
+                : reviewRepository.findAccessibleRecent(mediaId, userId, PageRequest.of(0, 3));
+        return responses(reviews, userId);
     }
 
     @Transactional(readOnly = true)
@@ -164,7 +160,13 @@ public class ReviewService {
 
     @Transactional(readOnly = true)
     public ReviewResponse findPublicById(UUID userId, UUID reviewId) {
-        Review review = reviewRepository.findByIdAndVisibility(reviewId, Visibility.PUBLIC)
+        Review review = reviewRepository.findById(reviewId)
+                .filter(candidate -> userId == null
+                        ? candidate.getVisibility() == Visibility.PUBLIC
+                        : socialAccessPolicy == null
+                            ? candidate.getVisibility() == Visibility.PUBLIC
+                            : socialAccessPolicy.canViewContent(
+                                    candidate.getUser().getId(), userId, candidate.getVisibility()))
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "Review não encontrada"));
         return response(review, userId);
@@ -244,7 +246,9 @@ public class ReviewService {
     }
 
     private void validateVisibility(Visibility visibility) {
-        if (visibility != Visibility.PUBLIC && visibility != Visibility.PRIVATE) {
+        if (visibility != Visibility.PUBLIC
+                && visibility != Visibility.FOLLOWERS
+                && visibility != Visibility.PRIVATE) {
             throw new ApiException(
                     HttpStatus.BAD_REQUEST,
                     "INVALID_REVIEW_VISIBILITY",
@@ -309,7 +313,7 @@ public class ReviewService {
                 userId != null && reviewLikeRepository.existsByUserIdAndReviewId(userId, reviewId),
                 reviewId == null
                         ? List.of()
-                        : recentLikers(List.of(reviewId)).getOrDefault(reviewId, List.of())
+                        : recentLikers(List.of(reviewId), userId).getOrDefault(reviewId, List.of())
         );
     }
 
@@ -328,7 +332,7 @@ public class ReviewService {
         Set<UUID> likedReviewIds = userId == null
                 ? Set.of()
                 : Set.copyOf(reviewLikeRepository.findLikedReviewIds(userId, reviewIds));
-        Map<UUID, List<ReviewLikerResponse>> recentLikers = recentLikers(reviewIds);
+        Map<UUID, List<ReviewLikerResponse>> recentLikers = recentLikers(reviewIds, userId);
 
         return reviews.stream()
                 .map(review -> ReviewResponse.from(
@@ -340,8 +344,12 @@ public class ReviewService {
                 .toList();
     }
 
-    private Map<UUID, List<ReviewLikerResponse>> recentLikers(List<UUID> reviewIds) {
-        return reviewLikeRepository.findRecentLikers(reviewIds)
+    private Map<UUID, List<ReviewLikerResponse>> recentLikers(
+            List<UUID> reviewIds, UUID viewerId) {
+        var rows = viewerId == null
+                ? reviewLikeRepository.findRecentLikers(reviewIds)
+                : reviewLikeRepository.findRecentLikersVisibleTo(reviewIds, viewerId);
+        return rows
                 .stream()
                 .collect(Collectors.groupingBy(
                         liker -> UUID.fromString(liker.getReviewId()),

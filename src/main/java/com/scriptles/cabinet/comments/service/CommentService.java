@@ -15,6 +15,7 @@ import com.scriptles.cabinet.notifications.service.NotificationService;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -35,24 +36,29 @@ public class CommentService {
     private final ReviewRepository reviewRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final SocialAccessPolicy socialAccessPolicy;
 
     @Transactional(readOnly = true)
     public PageResponse<CommentResponse> findForList(UUID viewerId, UUID listId, int page, int size) {
-        requirePublicList(listId);
-        return responses(commentRepository.findByMediaListIdAndParentIsNull(
-                listId, pageRequest(page, size)), viewerId);
+        requireAccessibleList(viewerId, listId);
+        Page<Comment> comments = viewerId == null
+                ? commentRepository.findByMediaListIdAndParentIsNull(listId, pageRequest(page, size))
+                : commentRepository.findVisibleByMediaListId(listId, viewerId, pageRequest(page, size));
+        return responses(comments, viewerId);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<CommentResponse> findForReview(UUID viewerId, UUID reviewId, int page, int size) {
-        requirePublicReview(reviewId);
-        return responses(commentRepository.findByReviewIdAndParentIsNull(
-                reviewId, pageRequest(page, size)), viewerId);
+        requireAccessibleReview(viewerId, reviewId);
+        Page<Comment> comments = viewerId == null
+                ? commentRepository.findByReviewIdAndParentIsNull(reviewId, pageRequest(page, size))
+                : commentRepository.findVisibleByReviewId(reviewId, viewerId, pageRequest(page, size));
+        return responses(comments, viewerId);
     }
 
     @Transactional
     public CommentResponse createForList(UUID authorId, UUID listId, CommentRequest request) {
-        MediaList list = requirePublicList(listId);
+        MediaList list = requireAccessibleList(authorId, listId);
         Comment comment = newComment(authorId, request);
         comment.setMediaList(list);
         applyParent(comment, request.parentId(), listId, null);
@@ -61,7 +67,7 @@ public class CommentService {
 
     @Transactional
     public CommentResponse createForReview(UUID authorId, UUID reviewId, CommentRequest request) {
-        Review review = requirePublicReview(reviewId);
+        Review review = requireAccessibleReview(authorId, reviewId);
         Comment comment = newComment(authorId, request);
         comment.setReview(review);
         applyParent(comment, request.parentId(), null, reviewId);
@@ -114,13 +120,20 @@ public class CommentService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_COMMENT_PARENT",
                     "A resposta deve apontar para um comentário raiz ativo do mesmo conteúdo");
         }
+        if (socialAccessPolicy != null
+                && socialAccessPolicy.isBlocked(comment.getAuthor().getId(), parent.getAuthor().getId())) {
+            throw notFound("COMMENT_NOT_FOUND", "Comentário não encontrado");
+        }
         comment.setParent(parent);
     }
 
     private PageResponse<CommentResponse> responses(Page<Comment> roots, UUID viewerId) {
         List<UUID> rootIds = roots.getContent().stream().map(Comment::getId).toList();
-        Map<UUID, List<Comment>> replies = rootIds.isEmpty() ? Map.of()
-                : commentRepository.findByParentIdInOrderByCreatedAtAscIdAsc(rootIds).stream()
+        List<Comment> replyRows = rootIds.isEmpty() ? List.of()
+                : viewerId == null
+                    ? commentRepository.findByParentIdInOrderByCreatedAtAscIdAsc(rootIds)
+                    : commentRepository.findVisibleReplies(rootIds, viewerId);
+        Map<UUID, List<Comment>> replies = replyRows.stream()
                 .collect(Collectors.groupingBy(reply -> reply.getParent().getId(), LinkedHashMap::new, Collectors.toList()));
         List<CommentResponse> items = roots.getContent().stream()
                 .map(root -> CommentResponse.from(
@@ -138,14 +151,21 @@ public class CommentService {
                 .and(Sort.by(Sort.Direction.DESC, "id")));
     }
 
-    private MediaList requirePublicList(UUID listId) {
+    private MediaList requireAccessibleList(UUID viewerId, UUID listId) {
         return mediaListRepository.findWithOwnerById(listId)
-                .filter(list -> list.getVisibility() == Visibility.PUBLIC)
+                .filter(list -> socialAccessPolicy == null
+                        ? list.getVisibility() == Visibility.PUBLIC
+                        : socialAccessPolicy.canViewContent(
+                                list.getOwner().getId(), viewerId, list.getVisibility()))
                 .orElseThrow(() -> notFound("LIST_NOT_FOUND", "Lista não encontrada"));
     }
 
-    private Review requirePublicReview(UUID reviewId) {
-        return reviewRepository.findByIdAndVisibility(reviewId, Visibility.PUBLIC)
+    private Review requireAccessibleReview(UUID viewerId, UUID reviewId) {
+        return (socialAccessPolicy == null
+                ? reviewRepository.findByIdAndVisibility(reviewId, Visibility.PUBLIC)
+                : reviewRepository.findById(reviewId)
+                    .filter(review -> socialAccessPolicy.canViewContent(
+                            review.getUser().getId(), viewerId, review.getVisibility())))
                 .orElseThrow(() -> notFound("REVIEW_NOT_FOUND", "Review não encontrada"));
     }
 

@@ -35,6 +35,39 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
                                             @Param("visibility") Visibility visibility,
                                             Pageable pageable);
 
+    @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
+    @Query(value = """
+            select review from Review review
+            where review.media.id = :mediaId
+              and (review.user.id = :viewerId
+                or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = review.user.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = review.user.id)
+                     or (block.blocker.id = review.user.id and block.blocked.id = :viewerId))
+            """, countQuery = """
+            select count(review) from Review review
+            where review.media.id = :mediaId
+              and (review.user.id = :viewerId
+                or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = review.user.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = review.user.id)
+                     or (block.blocker.id = review.user.id and block.blocked.id = :viewerId))
+            """)
+    Page<Review> findAccessibleByMediaId(
+            @Param("mediaId") UUID mediaId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable);
+
     @Query("""
             select review.id
             from Review review
@@ -53,6 +86,28 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     );
 
     @Query("""
+            select review.id from Review review
+            left join ReviewLike reviewLike on reviewLike.review = review
+            where review.media.id = :mediaId
+              and (review.user.id = :viewerId
+                or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId and follow.followed.id = review.user.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = review.user.id)
+                     or (block.blocker.id = review.user.id and block.blocked.id = :viewerId))
+            group by review.id, review.publishedAt, review.createdAt
+            order by count(reviewLike.id) desc,
+              coalesce(review.publishedAt, review.createdAt) desc, review.id desc
+            """)
+    List<UUID> findAccessiblePopularIds(
+            @Param("mediaId") UUID mediaId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable);
+
+    @Query("""
             select review.id
             from Review review
             left join ReviewLike reviewLike on reviewLike.review = review
@@ -69,6 +124,27 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             Pageable pageable
     );
 
+    @Query("""
+            select review.id from Review review
+            left join ReviewLike reviewLike on reviewLike.review = review
+            where review.content is not null and trim(review.content) <> ''
+              and (review.user.id = :viewerId
+                or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId and follow.followed.id = review.user.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = review.user.id)
+                     or (block.blocker.id = review.user.id and block.blocked.id = :viewerId))
+            group by review.id, review.publishedAt, review.createdAt
+            order by count(reviewLike.id) desc,
+              coalesce(review.publishedAt, review.createdAt) desc, review.id desc
+            """)
+    List<UUID> findGloballyAccessiblePopularIds(
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable);
+
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
     List<Review> findAllByIdIn(Collection<UUID> reviewIds);
 
@@ -83,6 +159,26 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             @Param("visibility") Visibility visibility,
             Pageable pageable
     );
+
+    @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
+    @Query("""
+            select review from Review review
+            where review.media.id = :mediaId
+              and (review.user.id = :viewerId
+                or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId and follow.followed.id = review.user.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = review.user.id)
+                     or (block.blocker.id = review.user.id and block.blocked.id = :viewerId))
+            order by coalesce(review.publishedAt, review.createdAt) desc, review.id desc
+            """)
+    List<Review> findAccessibleRecent(
+            @Param("mediaId") UUID mediaId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable);
 
     default List<Review> findTop3ByRatingMediaIdAndRatingVisibilityOrderByCreatedAtDescIdDesc(
             UUID mediaId,

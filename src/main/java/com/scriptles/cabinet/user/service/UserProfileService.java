@@ -10,9 +10,11 @@ import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileStatsResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
+import com.scriptles.cabinet.user.dto.response.UserSummaryResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.FollowState;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
@@ -40,6 +42,8 @@ public class UserProfileService {
     private final UserMediaActivityRepository userMediaActivityRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final UserArtworkResolver userArtworkResolver;
+    private final SocialAccessPolicy socialAccessPolicy;
+    private final SocialGraphService socialGraphService;
 
     @Transactional(readOnly = true)
     public PageResponse<UserSearchResponse> search(String query, int page, int size) {
@@ -58,6 +62,50 @@ public class UserProfileService {
                 pageable
         );
         return PageResponse.from(users.map(UserSearchResponse::from));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<UserSearchResponse> search(
+            String query, UUID viewerId, int page, int size) {
+        String normalizedQuery = normalizeSearchQuery(query);
+        PageRequest pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Order.asc("displayName"), Sort.Order.asc("username"))
+        );
+        Page<User> users = userRepository.searchProfiles(
+                normalizedQuery, Visibility.PUBLIC, viewerId, pageable);
+        SocialGraphService.RelationshipBatch relationships = socialGraphService.relationships(
+                viewerId, users.stream().map(User::getId).toList());
+        return PageResponse.from(users.map(user -> {
+            boolean privateProfile = isPrivateProfile(user);
+            FollowState state = relationships.states().getOrDefault(user.getId(), FollowState.NONE);
+            boolean accessible = !privateProfile || state == FollowState.FOLLOWING;
+            return new UserSearchResponse(
+                    user.getId(), user.getUsername(), user.getDisplayName(),
+                    accessible ? user.getBiography() : null, user.getAvatarUlr(),
+                    privateProfile, accessible, state,
+                    relationships.followingViewer().contains(user.getId())
+            );
+        }));
+    }
+
+    @Transactional(readOnly = true)
+    public UserSummaryResponse findSummary(String username, UUID viewerId) {
+        User user = userRepository.findByUsernameIgnoreCase(username.trim())
+                .filter(candidate -> Boolean.TRUE.equals(candidate.getActive()))
+                .orElseThrow(this::profileNotFound);
+        if (socialAccessPolicy.isBlocked(viewerId, user.getId())) throw profileNotFound();
+        boolean ownProfile = viewerId.equals(user.getId());
+        boolean accessible = socialAccessPolicy.canViewProfile(user, viewerId);
+        SocialAccessPolicy.Relationship relationship = socialAccessPolicy.relationship(
+                viewerId, user.getId());
+        return new UserSummaryResponse(
+                user.getId(), user.getUsername(), user.getDisplayName(),
+                accessible ? user.getBiography() : null, user.getAvatarUlr(), ownProfile,
+                isPrivateProfile(user), accessible, user.getFollowersCount(),
+                user.getFollowingCount(), relationship.state(), relationship.followsViewer()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -92,6 +140,10 @@ public class UserProfileService {
         UserMediaRepository.ProfileStatisticsProjection statistics =
                 userMediaRepository.findProfileStatistics(profileUser.getId(), ownProfile);
 
+        SocialAccessPolicy.Relationship relationship = socialAccessPolicy == null
+                ? new SocialAccessPolicy.Relationship(FollowState.NONE, false)
+                : socialAccessPolicy.relationship(viewerId, profileUser.getId());
+
         return new UserProfileResponse(
                 profileUser.getId(),
                 profileUser.getUsername(),
@@ -112,7 +164,12 @@ public class UserProfileService {
                         statistics.getSeriesConsumed(),
                         statistics.getBooksConsumed()
                 ),
-                recentItems
+                recentItems,
+                profileUser.getFollowersCount(),
+                profileUser.getFollowingCount(),
+                isPrivateProfile(profileUser),
+                relationship.state(),
+                relationship.followsViewer()
         );
     }
 
@@ -124,12 +181,16 @@ public class UserProfileService {
             int size
     ) {
         ProfileAccess access = findProfileAccess(username, viewerId);
-        Page<com.scriptles.cabinet.user.entity.UserMediaActivity> entries = userMediaActivityRepository.findProfileActivities(
-                access.user().getId(),
-                access.ownProfile(),
-                Visibility.PUBLIC,
-                PageRequest.of(page, size)
-        );
+        Page<com.scriptles.cabinet.user.entity.UserMediaActivity> entries = access.followerAccess()
+                ? userMediaActivityRepository.findProfileActivitiesVisibleToFollower(
+                        access.user().getId(),
+                        List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
+                        PageRequest.of(page, size))
+                : userMediaActivityRepository.findProfileActivities(
+                        access.user().getId(),
+                        access.ownProfile(),
+                        Visibility.PUBLIC,
+                        PageRequest.of(page, size));
         Map<UUID, ExternalReference> referencesByMediaId = findActivityReferences(entries.getContent());
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
                 viewerId,
@@ -198,13 +259,18 @@ public class UserProfileService {
                 .orElseThrow(this::profileNotFound);
         boolean ownProfile = viewerId != null && viewerId.equals(profileUser.getId());
 
-        if (!ownProfile
-                && profileUser.getProfileVisibility() != null
-                && profileUser.getProfileVisibility() != Visibility.PUBLIC) {
+        boolean accessible = socialAccessPolicy == null
+                ? ownProfile || profileUser.getProfileVisibility() == null
+                    || profileUser.getProfileVisibility() == Visibility.PUBLIC
+                : socialAccessPolicy.canViewProfile(profileUser, viewerId);
+        if (!accessible) {
             throw profileNotFound();
         }
 
-        return new ProfileAccess(profileUser, ownProfile);
+        boolean followerAccess = !ownProfile && viewerId != null
+                && socialAccessPolicy != null
+                && socialAccessPolicy.isAcceptedFollower(viewerId, profileUser.getId());
+        return new ProfileAccess(profileUser, ownProfile, followerAccess);
     }
 
     private ApiException profileNotFound() {
@@ -215,6 +281,17 @@ public class UserProfileService {
         );
     }
 
-    private record ProfileAccess(User user, boolean ownProfile) {
+    private record ProfileAccess(User user, boolean ownProfile, boolean followerAccess) {
+    }
+
+    private String normalizeSearchQuery(String query) {
+        String normalized = query.trim();
+        if (normalized.startsWith("@")) normalized = normalized.substring(1).trim();
+        return normalized;
+    }
+
+    private boolean isPrivateProfile(User user) {
+        return user.getProfileVisibility() != null
+                && user.getProfileVisibility() != Visibility.PUBLIC;
     }
 }

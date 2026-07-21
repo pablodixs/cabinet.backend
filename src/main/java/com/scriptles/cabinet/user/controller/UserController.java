@@ -1,13 +1,17 @@
 package com.scriptles.cabinet.user.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.common.api.CursorPageResponse;
 import com.scriptles.cabinet.user.dto.request.CreateUserRequest;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
+import com.scriptles.cabinet.user.dto.response.UserSummaryResponse;
+import com.scriptles.cabinet.user.dto.response.SocialUserResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.service.UserProfileService;
 import com.scriptles.cabinet.user.service.UserService;
+import com.scriptles.cabinet.user.service.SocialGraphService;
 import lombok.RequiredArgsConstructor;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -31,14 +35,26 @@ import org.springframework.validation.annotation.Validated;
 public class UserController {
     private final UserService userService;
     private final UserProfileService userProfileService;
+    private final SocialGraphService socialGraphService;
 
     @GetMapping("/search")
     public PageResponse<UserSearchResponse> search(
+            @AuthenticationPrincipal AuthenticatedUser viewer,
             @RequestParam @Size(min = 3, max = 80) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
     ) {
-        return userProfileService.search(query, page, size);
+        return viewer == null
+                ? userProfileService.search(query, page, size)
+                : userProfileService.search(query, viewer.id(), page, size);
+    }
+
+    @GetMapping("/{username}/summary")
+    public UserSummaryResponse findSummary(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer
+    ) {
+        return userProfileService.findSummary(username, viewer.id());
     }
 
     @GetMapping("/{username}/profile")
@@ -50,6 +66,28 @@ public class UserController {
                 username,
                 viewer == null ? null : viewer.id()
         );
+    }
+
+    @GetMapping("/{username}/followers")
+    public CursorPageResponse<SocialUserResponse> followers(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
+    ) {
+        return socialGraphService.followers(
+                username, viewer == null ? null : viewer.id(), cursor, size);
+    }
+
+    @GetMapping("/{username}/following")
+    public CursorPageResponse<SocialUserResponse> following(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
+    ) {
+        return socialGraphService.following(
+                username, viewer == null ? null : viewer.id(), cursor, size);
     }
 
     @GetMapping("/{username}/activities")

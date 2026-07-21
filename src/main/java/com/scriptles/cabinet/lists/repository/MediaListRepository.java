@@ -73,6 +73,48 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
             Pageable pageable
     );
 
+    @Query(value = """
+            select list
+            from MediaList list
+            join fetch list.owner
+            where (list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or list.owner.id = :viewerId
+                or (list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = list.owner.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = list.owner.id)
+                     or (block.blocker.id = list.owner.id and block.blocked.id = :viewerId))
+              and (lower(list.name) like lower(concat('%', :query, '%'))
+                or lower(coalesce(list.description, '')) like lower(concat('%', :query, '%')))
+            order by case
+                when lower(list.name) = lower(:query) then 0
+                when lower(list.name) like lower(concat(:query, '%')) then 1
+                else 2 end,
+              list.updatedAt desc, list.name asc
+            """, countQuery = """
+            select count(list) from MediaList list
+            where (list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or list.owner.id = :viewerId
+                or (list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = list.owner.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = list.owner.id)
+                     or (block.blocker.id = list.owner.id and block.blocked.id = :viewerId))
+              and (lower(list.name) like lower(concat('%', :query, '%'))
+                or lower(coalesce(list.description, '')) like lower(concat('%', :query, '%')))
+            """)
+    Page<MediaList> searchAccessibleLists(
+            @Param("query") String query,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable
+    );
+
     @Query("""
             select list.id as listId, count(listLike.id) as likeCount
             from MediaList list
@@ -83,6 +125,28 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
             """)
     List<PopularListProjection> findPopularPublicLists(
             @Param("visibility") Visibility visibility,
+            Pageable pageable
+    );
+
+    @Query("""
+            select list.id as listId, count(listLike.id) as likeCount
+            from MediaList list
+            left join MediaListLike listLike on listLike.list = list
+            where (list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or list.owner.id = :viewerId
+                or (list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = list.owner.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = list.owner.id)
+                     or (block.blocker.id = list.owner.id and block.blocked.id = :viewerId))
+            group by list.id, list.updatedAt
+            order by count(listLike.id) desc, list.updatedAt desc, list.id desc
+            """)
+    List<PopularListProjection> findPopularAccessibleLists(
+            @Param("viewerId") UUID viewerId,
             Pageable pageable
     );
 

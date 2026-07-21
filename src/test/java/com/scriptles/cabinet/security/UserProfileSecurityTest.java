@@ -8,6 +8,7 @@ import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.service.UserProfileService;
 import com.scriptles.cabinet.user.service.UserService;
+import com.scriptles.cabinet.user.service.SocialGraphService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -35,6 +36,9 @@ class UserProfileSecurityTest {
 
     @MockitoBean
     private UserProfileService userProfileService;
+
+    @MockitoBean
+    private SocialGraphService socialGraphService;
 
     @Test
     void allowsAnonymousUsersToReadPublicProfiles() throws Exception {

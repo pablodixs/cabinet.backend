@@ -55,6 +55,15 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     long deleteByCommentId(UUID commentId);
 
     @Modifying
+    @Query("""
+            delete from Notification notification
+            where notification.actor is not null
+              and ((notification.recipient.id = :firstId and notification.actor.id = :secondId)
+                or (notification.recipient.id = :secondId and notification.actor.id = :firstId))
+            """)
+    int deleteBetweenUsers(@Param("firstId") UUID firstId, @Param("secondId") UUID secondId);
+
+    @Modifying
     @Query("delete from Notification notification where notification.activityAt < :cutoff")
     int deleteOlderThan(@Param("cutoff") Instant cutoff);
 }

@@ -44,6 +44,24 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             UserMediaStatus status
     );
 
+    @EntityGraph(attributePaths = "user")
+    @Query("""
+            select entry from UserMedia entry
+            where entry.media.id = :mediaId
+              and entry.status = :status
+              and entry.privateEntry = false
+              and entry.completedAt is not null
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = entry.user.id)
+                     or (block.blocker.id = entry.user.id and block.blocked.id = :viewerId))
+            order by entry.completedAt desc, entry.id desc
+            """)
+    List<UserMedia> findRecentVisibleCompleters(
+            @Param("mediaId") UUID mediaId,
+            @Param("status") UserMediaStatus status,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable);
+
     @Query(
             value = """
                     select userMedia

@@ -79,7 +79,7 @@ public class MediaQueryService {
                 .filter(ExternalReference::isPrimaryReference)
                 .findFirst()
                 .orElseGet(() -> references.stream().findFirst().orElse(null));
-        CommunityStats community = communityStats(mediaId);
+        CommunityStats community = communityStats(mediaId, userId);
 
         ExternalSource source = primaryReference == null ? ExternalSource.MANUAL : primaryReference.getSource();
         String externalId = primaryReference == null ? mediaId.toString() : primaryReference.getExternalId();
@@ -270,7 +270,7 @@ public class MediaQueryService {
         );
     }
 
-    private CommunityStats communityStats(UUID mediaId) {
+    private CommunityStats communityStats(UUID mediaId, UUID viewerId) {
         Double averageRating = ratingRepository.summarizeRatings(List.of(mediaId), Visibility.PUBLIC)
                 .stream()
                 .findFirst()
@@ -292,10 +292,21 @@ public class MediaQueryService {
             ));
         }
 
+        var recentLikes = viewerId == null
+                ? mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId)
+                : mediaLikeRepository.findRecentVisibleLikers(
+                        mediaId, viewerId, org.springframework.data.domain.PageRequest.of(0, 3));
+        var recentCompletions = viewerId == null
+                ? userMediaRepository
+                    .findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
+                            mediaId, UserMediaStatus.COMPLETED)
+                : userMediaRepository.findRecentVisibleCompleters(
+                        mediaId, UserMediaStatus.COMPLETED, viewerId,
+                        org.springframework.data.domain.PageRequest.of(0, 3));
+
         return new CommunityStats(
                 mediaLikeRepository.countByMediaId(mediaId),
-                mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId)
-                        .stream()
+                recentLikes.stream()
                         .map(like -> toCommunityUser(like.getUser()))
                         .toList(),
                 averageRating,
@@ -305,12 +316,7 @@ public class MediaQueryService {
                         mediaId,
                         UserMediaStatus.COMPLETED
                 ),
-                userMediaRepository
-                        .findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
-                                mediaId,
-                                UserMediaStatus.COMPLETED
-                        )
-                        .stream()
+                recentCompletions.stream()
                         .map(entry -> toCommunityUser(entry.getUser()))
                         .toList()
         );

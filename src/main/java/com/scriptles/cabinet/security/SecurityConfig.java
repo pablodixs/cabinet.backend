@@ -93,6 +93,8 @@ public class SecurityConfig {
                                 "/v1/people/**",
                                 "/v1/users/search",
                                 "/v1/users/*/profile",
+                                "/v1/users/*/followers",
+                                "/v1/users/*/following",
                                 "/v1/users/*/activities",
                                 "/v1/users/*/diary"
                         ).permitAll()

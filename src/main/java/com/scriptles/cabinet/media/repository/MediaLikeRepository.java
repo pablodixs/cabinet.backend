@@ -46,6 +46,20 @@ public interface MediaLikeRepository extends JpaRepository<MediaLike, UUID> {
     @EntityGraph(attributePaths = "user")
     List<MediaLike> findTop3ByMediaIdOrderByLikedAtDescIdDesc(UUID mediaId);
 
+    @EntityGraph(attributePaths = "user")
+    @Query("""
+            select mediaLike from MediaLike mediaLike
+            where mediaLike.media.id = :mediaId
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = mediaLike.user.id)
+                     or (block.blocker.id = mediaLike.user.id and block.blocked.id = :viewerId))
+            order by mediaLike.likedAt desc, mediaLike.id desc
+            """)
+    List<MediaLike> findRecentVisibleLikers(
+            @Param("mediaId") UUID mediaId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable);
+
     @Query("""
             select mediaLike.media.id as mediaId, count(mediaLike.id) as activityCount
             from MediaLike mediaLike

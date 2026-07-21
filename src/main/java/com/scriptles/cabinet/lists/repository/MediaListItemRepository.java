@@ -71,6 +71,43 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
             Pageable pageable
     );
 
+    @Query(value = """
+            select item as item, item.list.id as listId, count(listLike) as likeCount
+            from MediaListItem item
+            left join MediaListLike listLike on listLike.list = item.list
+            where item.media.id = :mediaId
+              and (item.list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or item.list.owner.id = :viewerId
+                or (item.list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = item.list.owner.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = item.list.owner.id)
+                     or (block.blocker.id = item.list.owner.id and block.blocked.id = :viewerId))
+            group by item
+            order by count(listLike) desc, max(item.list.updatedAt) desc, item.createdAt desc
+            """, countQuery = """
+            select count(item) from MediaListItem item
+            where item.media.id = :mediaId
+              and (item.list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or item.list.owner.id = :viewerId
+                or (item.list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = item.list.owner.id
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED)))
+              and not exists (select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = item.list.owner.id)
+                     or (block.blocker.id = item.list.owner.id and block.blocked.id = :viewerId))
+            """)
+    Page<MediaListPopularity> findAllAccessibleByMediaId(
+            @Param("mediaId") UUID mediaId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable
+    );
+
     boolean existsByListIdAndMediaId(UUID listId, UUID mediaId);
 
     Optional<MediaListItem> findByIdAndListId(UUID id, UUID listId);

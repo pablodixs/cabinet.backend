@@ -63,4 +63,45 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             @Param("publicVisibility") Visibility publicVisibility,
             Pageable pageable
     );
+
+    @Query(value = """
+            select activity
+            from UserMediaActivity activity
+            join fetch activity.media
+            where activity.user.id = :userId
+              and activity.visibility in :visibilities
+            order by activity.occurredOn desc, activity.createdAt desc, activity.id desc
+            """, countQuery = """
+            select count(activity)
+            from UserMediaActivity activity
+            where activity.user.id = :userId
+              and activity.visibility in :visibilities
+            """)
+    Page<UserMediaActivity> findProfileActivitiesVisibleToFollower(
+            @Param("userId") UUID userId,
+            @Param("visibilities") Collection<Visibility> visibilities,
+            Pageable pageable
+    );
+
+    @Query(value = """
+            select activity
+            from UserMediaActivity activity
+            join fetch activity.media
+            where activity.user.id = :userId
+              and activity.type in :types
+              and activity.visibility in :visibilities
+            order by activity.occurredOn desc, activity.createdAt desc, activity.id desc
+            """, countQuery = """
+            select count(activity)
+            from UserMediaActivity activity
+            where activity.user.id = :userId
+              and activity.type in :types
+              and activity.visibility in :visibilities
+            """)
+    Page<UserMediaActivity> findDiaryEntriesVisibleToFollower(
+            @Param("userId") UUID userId,
+            @Param("types") Collection<com.scriptles.cabinet.user.enums.ProfileActivityType> types,
+            @Param("visibilities") Collection<Visibility> visibilities,
+            Pageable pageable
+    );
 }

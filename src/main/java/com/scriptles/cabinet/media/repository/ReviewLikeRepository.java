@@ -80,6 +80,36 @@ public interface ReviewLikeRepository extends JpaRepository<ReviewLike, UUID> {
             """, nativeQuery = true)
     List<RecentReviewLiker> findRecentLikers(@Param("reviewIds") Collection<UUID> reviewIds);
 
+    @Query(value = """
+            select cast(ranked.review_id as varchar) as "reviewId",
+                   cast(ranked.user_id as varchar) as "userId",
+                   ranked.username as "username",
+                   ranked.avatar_url as "avatarUrl"
+            from (
+                select review_like.review_id,
+                       review_like.user_id,
+                       reviewer.username,
+                       reviewer.avatar_ulr as avatar_url,
+                       row_number() over (
+                           partition by review_like.review_id
+                           order by review_like.created_at desc, review_like.id desc
+                       ) as liker_position
+                from review_likes review_like
+                join users reviewer on reviewer.id = review_like.user_id
+                where review_like.review_id in (:reviewIds)
+                  and not exists (
+                      select 1 from user_blocks block
+                      where (block.blocker_id = :viewerId and block.blocked_id = review_like.user_id)
+                         or (block.blocker_id = review_like.user_id and block.blocked_id = :viewerId)
+                  )
+            ) ranked
+            where ranked.liker_position <= 5
+            order by ranked.review_id, ranked.liker_position
+            """, nativeQuery = true)
+    List<RecentReviewLiker> findRecentLikersVisibleTo(
+            @Param("reviewIds") Collection<UUID> reviewIds,
+            @Param("viewerId") UUID viewerId);
+
     interface ReviewLikeCount {
         UUID getReviewId();
 

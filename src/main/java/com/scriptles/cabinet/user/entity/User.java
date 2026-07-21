@@ -58,6 +58,12 @@ public class User {
             columnDefinition = "varchar(20) default 'FREE'")
     private AccountTier accountTier = AccountTier.FREE;
 
+    @Column(name = "followers_count", nullable = false)
+    private long followersCount;
+
+    @Column(name = "following_count", nullable = false)
+    private long followingCount;
+
     @CreationTimestamp
     private Instant createdAt;
 

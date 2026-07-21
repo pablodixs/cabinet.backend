@@ -25,6 +25,7 @@ import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -53,6 +54,7 @@ public class MediaListService {
     private final MediaRepository mediaRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final UserArtworkResolver userArtworkResolver;
+    private final SocialAccessPolicy socialAccessPolicy;
 
     @Transactional(readOnly = true)
     public List<MediaListResponse> findMine(UUID userId) {
@@ -98,12 +100,11 @@ public class MediaListService {
             int size,
             UUID viewerId
     ) {
-        Page<MediaListItemRepository.MediaListPopularity> memberships = mediaListItemRepository
-                .findAllByMediaIdAndListVisibility(
-                        mediaId,
-                        Visibility.PUBLIC,
-                        PageRequest.of(page, size)
-                );
+        Page<MediaListItemRepository.MediaListPopularity> memberships = viewerId == null
+                ? mediaListItemRepository.findAllByMediaIdAndListVisibility(
+                        mediaId, Visibility.PUBLIC, PageRequest.of(page, size))
+                : mediaListItemRepository.findAllAccessibleByMediaId(
+                        mediaId, viewerId, PageRequest.of(page, size));
 
         if (memberships.isEmpty()) {
             return new PageResponse<>(
@@ -165,11 +166,11 @@ public class MediaListService {
             int size,
             UUID viewerId
     ) {
-        Page<MediaList> lists = mediaListRepository.searchPublicLists(
-                query.trim(),
-                Visibility.PUBLIC,
-                PageRequest.of(page, size)
-        );
+        Page<MediaList> lists = viewerId == null
+                ? mediaListRepository.searchPublicLists(
+                        query.trim(), Visibility.PUBLIC, PageRequest.of(page, size))
+                : mediaListRepository.searchAccessibleLists(
+                        query.trim(), viewerId, PageRequest.of(page, size));
         if (lists.isEmpty()) {
             return PageResponse.from(lists.map(list -> PublicListSearchResponse.from(
                     list,
@@ -209,8 +210,11 @@ public class MediaListService {
 
     @Transactional(readOnly = true)
     public List<PublicListSearchResponse> findGloballyPopular(int limit, UUID viewerId) {
-        List<MediaListRepository.PopularListProjection> popular = mediaListRepository
-                .findPopularPublicLists(Visibility.PUBLIC, PageRequest.of(0, limit));
+        List<MediaListRepository.PopularListProjection> popular = viewerId == null
+                ? mediaListRepository.findPopularPublicLists(
+                        Visibility.PUBLIC, PageRequest.of(0, limit))
+                : mediaListRepository.findPopularAccessibleLists(
+                        viewerId, PageRequest.of(0, limit));
         if (popular.isEmpty()) {
             return List.of();
         }
@@ -252,7 +256,11 @@ public class MediaListService {
                 .orElseThrow(() -> listNotFound());
         boolean ownList = userId != null && list.getOwner().getId().equals(userId);
 
-        if (list.getVisibility() != Visibility.PUBLIC && !ownList) {
+        boolean accessible = socialAccessPolicy == null
+                ? list.getVisibility() == Visibility.PUBLIC || ownList
+                : socialAccessPolicy.canViewContent(
+                        list.getOwner().getId(), userId, list.getVisibility());
+        if (!accessible) {
             throw listNotFound();
         }
 

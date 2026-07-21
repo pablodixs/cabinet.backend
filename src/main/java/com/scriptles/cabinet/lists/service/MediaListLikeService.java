@@ -9,6 +9,7 @@ import com.scriptles.cabinet.notifications.service.NotificationService;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,16 +24,17 @@ public class MediaListLikeService {
     private final MediaListRepository mediaListRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final SocialAccessPolicy socialAccessPolicy;
 
     @Transactional(readOnly = true)
     public MediaListLikeResponse find(UUID userId, UUID listId) {
-        findPublicList(listId);
+        findAccessibleList(userId, listId);
         return response(userId, listId);
     }
 
     @Transactional
     public MediaListLikeResponse like(UUID userId, UUID listId) {
-        MediaList list = findPublicList(listId);
+        MediaList list = findAccessibleList(userId, listId);
         if (mediaListLikeRepository.existsByUserIdAndListId(userId, listId)) {
             return response(userId, listId);
         }
@@ -47,7 +49,7 @@ public class MediaListLikeService {
 
     @Transactional
     public MediaListLikeResponse unlike(UUID userId, UUID listId) {
-        MediaList list = findPublicList(listId);
+        MediaList list = findAccessibleList(userId, listId);
         long deleted = mediaListLikeRepository.deleteByUserIdAndListId(userId, listId);
         if (deleted > 0 && notificationService != null) {
             notificationService.syncListLike(list, findUser(userId));
@@ -62,9 +64,12 @@ public class MediaListLikeService {
         );
     }
 
-    private MediaList findPublicList(UUID listId) {
+    private MediaList findAccessibleList(UUID userId, UUID listId) {
         return mediaListRepository.findById(listId)
-                .filter(list -> list.getVisibility() == Visibility.PUBLIC)
+                .filter(list -> socialAccessPolicy == null
+                        ? list.getVisibility() == Visibility.PUBLIC
+                        : socialAccessPolicy.canViewContent(
+                                list.getOwner().getId(), userId, list.getVisibility()))
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND,
                         "LIST_NOT_FOUND",
