@@ -4,7 +4,6 @@ create table if not exists user_interest_preferences (
     target_type varchar(20) not null,
     preference varchar(20) not null,
     genre_key varchar(100),
-    genre_label varchar(100),
     person_id uuid references people(id) on delete cascade,
     media_id uuid references media(id) on delete cascade,
     created_at timestamptz not null default now(),
@@ -14,12 +13,9 @@ create table if not exists user_interest_preferences (
     constraint ck_user_interest_preference
         check (preference in ('POSITIVE', 'NEGATIVE')),
     constraint ck_user_interest_exact_target check (
-        (target_type = 'GENRE' and genre_key is not null and genre_label is not null
-            and person_id is null and media_id is null)
-        or (target_type = 'PERSON' and genre_key is null and genre_label is null
-            and person_id is not null and media_id is null)
-        or (target_type = 'MEDIA' and genre_key is null and genre_label is null
-            and person_id is null and media_id is not null)
+        (target_type = 'GENRE' and genre_key is not null and person_id is null and media_id is null)
+        or (target_type = 'PERSON' and genre_key is null and person_id is not null and media_id is null)
+        or (target_type = 'MEDIA' and genre_key is null and person_id is null and media_id is not null)
     )
 );
 

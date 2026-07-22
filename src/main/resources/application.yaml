@@ -18,7 +18,7 @@ spring:
       hibernate:
         format_sql: true
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     database-platform: org.hibernate.dialect.PostgreSQLDialect
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
@@ -39,6 +39,12 @@ server:
         http-only: true
         secure: ${SESSION_COOKIE_SECURE:false}
         same-site: lax
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
 
 app:
   cors:
