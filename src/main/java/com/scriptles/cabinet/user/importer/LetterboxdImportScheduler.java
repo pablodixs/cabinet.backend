@@ -1,6 +1,6 @@
 package com.scriptles.cabinet.user.importer;
 
-import lombok.RequiredArgsConstructor;
+import com.scriptles.cabinet.notifications.service.NotificationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -25,6 +25,7 @@ public class LetterboxdImportScheduler {
     private final LetterboxdImportMatcher matcher;
     private final LetterboxdImportApplier applier;
     private final LetterboxdImportService service;
+    private final NotificationService notificationService;
 
     public LetterboxdImportScheduler(
             @Qualifier("letterboxdImportExecutor") Executor executor,
@@ -32,7 +33,8 @@ public class LetterboxdImportScheduler {
             LetterboxdImportItemRepository itemRepository,
             LetterboxdImportMatcher matcher,
             LetterboxdImportApplier applier,
-            LetterboxdImportService service
+            LetterboxdImportService service,
+            NotificationService notificationService
     ) {
         this.executor = executor;
         this.jobRepository = jobRepository;
@@ -40,6 +42,7 @@ public class LetterboxdImportScheduler {
         this.matcher = matcher;
         this.applier = applier;
         this.service = service;
+        this.notificationService = notificationService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -87,6 +90,7 @@ public class LetterboxdImportScheduler {
             job.setState(LetterboxdImportJobState.READY);
             service.refreshCounts(job);
             jobRepository.save(job);
+            notifyReady(job);
             double automaticRate = job.getTotalItems() == 0
                     ? 0
                     : (double) job.getMatchedItems() / job.getTotalItems();
@@ -146,6 +150,7 @@ public class LetterboxdImportScheduler {
             job.setCompletedAt(Instant.now());
             job.setExpiresAt(Instant.now().plus(java.time.Duration.ofDays(7)));
             jobRepository.save(job);
+            notifyCompleted(job);
             log.info("Letterboxd import application metrics: job={}, durationMs={}, importedItems={}, preservedItems={}, failedItems={}",
                     jobId, elapsedMillis(startedAt), job.getImportedItems(), job.getPreservedItems(), job.getFailedItems());
         } catch (RuntimeException exception) {
@@ -162,6 +167,22 @@ public class LetterboxdImportScheduler {
             jobRepository.save(job);
         });
         log.error("Letterboxd import job {} failed", jobId, exception);
+    }
+
+    private void notifyReady(LetterboxdImportJob job) {
+        try {
+            notificationService.letterboxdImportReady(job);
+        } catch (RuntimeException exception) {
+            log.error("Could not notify that Letterboxd import job {} is ready", job.getId(), exception);
+        }
+    }
+
+    private void notifyCompleted(LetterboxdImportJob job) {
+        try {
+            notificationService.letterboxdImportCompleted(job);
+        } catch (RuntimeException exception) {
+            log.error("Could not notify that Letterboxd import job {} is completed", job.getId(), exception);
+        }
     }
 
     private String safeMessage(RuntimeException exception) {

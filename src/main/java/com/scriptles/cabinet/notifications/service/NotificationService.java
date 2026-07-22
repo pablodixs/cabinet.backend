@@ -21,6 +21,7 @@ import com.scriptles.cabinet.notifications.repository.NotificationRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.importer.LetterboxdImportJob;
 import com.scriptles.cabinet.user.repository.UserEpisodeWatchRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.RequiredArgsConstructor;
@@ -179,6 +180,16 @@ public class NotificationService {
         changed(recipient.getId());
     }
 
+    @Transactional
+    public void letterboxdImportReady(LetterboxdImportJob job) {
+        notifyLetterboxdImport(job, NotificationType.LETTERBOXD_IMPORT_READY);
+    }
+
+    @Transactional
+    public void letterboxdImportCompleted(LetterboxdImportJob job) {
+        notifyLetterboxdImport(job, NotificationType.LETTERBOXD_IMPORT_COMPLETED);
+    }
+
     @Scheduled(cron = "0 0 8 * * *", zone = "America/Sao_Paulo")
     @Transactional
     public void notifyEpisodeReleases() {
@@ -213,6 +224,16 @@ public class NotificationService {
         notification.setType(type);
         notification.setActivityAt(Instant.now());
         return notification;
+    }
+
+    private void notifyLetterboxdImport(LetterboxdImportJob job, NotificationType type) {
+        User recipient = job.getUser();
+        if (notificationRepository.existsByRecipientIdAndTypeAndLetterboxdImportJobId(
+                recipient.getId(), type, job.getId())) return;
+        Notification notification = notification(recipient, type);
+        notification.setLetterboxdImportJob(job);
+        notificationRepository.save(notification);
+        changed(recipient.getId());
     }
 
     private void changed(UUID recipientId) {

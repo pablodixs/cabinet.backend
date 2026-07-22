@@ -10,6 +10,10 @@ import java.time.Instant;
 
 public interface LetterboxdImportJobRepository extends JpaRepository<LetterboxdImportJob, UUID> {
     Optional<LetterboxdImportJob> findByIdAndUserId(UUID id, UUID userId);
+    Optional<LetterboxdImportJob> findFirstByUserIdAndStateInOrderByCreatedAtDesc(
+            UUID userId,
+            Collection<LetterboxdImportJobState> states
+    );
     boolean existsByUserIdAndStateIn(UUID userId, Collection<LetterboxdImportJobState> states);
     List<LetterboxdImportJob> findAllByStateIn(Collection<LetterboxdImportJobState> states);
     List<LetterboxdImportJob> findAllByExpiresAtBeforeAndStateIn(

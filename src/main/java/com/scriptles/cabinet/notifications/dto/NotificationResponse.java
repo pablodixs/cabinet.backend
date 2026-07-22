@@ -68,6 +68,13 @@ public record NotificationResponse(
                     notification.getSeriesEpisode().getSeason().getSeries().getTitle()
             );
         }
+        if (notification.getLetterboxdImportJob() != null) {
+            return new SubjectResponse(
+                    "LETTERBOXD_IMPORT",
+                    notification.getLetterboxdImportJob().getId(),
+                    "Importação do Letterboxd"
+            );
+        }
         return null;
     }
 
@@ -86,6 +93,9 @@ public record NotificationResponse(
             return "/media/" + episode.getSeason().getSeries().getId()
                     + "?tab=episodes&season=" + episode.getSeason().getSeasonNumber()
                     + "#episode-" + episode.getEpisodeMedia().getId();
+        }
+        if (notification.getLetterboxdImportJob() != null) {
+            return "/importacoes/letterboxd/" + notification.getLetterboxdImportJob().getId();
         }
         return "/notificacoes";
     }

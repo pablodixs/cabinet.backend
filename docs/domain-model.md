@@ -150,9 +150,9 @@ Activity types are `ADDED_TO_LIBRARY`, `STARTED`, `COMPLETED`, `PAUSED`, `DROPPE
 
 ## Notifications
 
-`Notification` belongs to a recipient and may reference an actor, list, review, comment, report, or series episode. It stores notification type, aggregated actor count, read time, activity time, and audit timestamps.
+`Notification` belongs to a recipient and may reference an actor, list, review, comment, report, series episode, or Letterboxd import job. It stores notification type, aggregated actor count, read time, activity time, and audit timestamps.
 
-Types are `LIST_LIKED`, `REVIEW_LIKED`, `LIST_COMMENTED`, `REVIEW_COMMENTED`, `COMMENT_REPLIED`, `REPORT_RESOLVED`, and `EPISODE_RELEASED`. Subject columns are nullable because each type uses a different combination; service logic maintains the valid combination.
+Types are `LIST_LIKED`, `REVIEW_LIKED`, `LIST_COMMENTED`, `REVIEW_COMMENTED`, `COMMENT_REPLIED`, `REPORT_RESOLVED`, `EPISODE_RELEASED`, `LETTERBOXD_IMPORT_READY`, and `LETTERBOXD_IMPORT_COMPLETED`. Subject columns are nullable because each type uses a different combination; service logic maintains the valid combination.
 
 ## External information and awards
 

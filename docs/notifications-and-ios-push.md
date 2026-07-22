@@ -32,6 +32,9 @@ As ações do próprio destinatário nunca geram uma notificação para ele.
 | `REVIEW_COMMENTED` | Comentário ou resposta em review pública | Autor da review | Não agrupado |
 | `COMMENT_REPLIED` | Resposta a comentário | Autor do comentário-pai | Não agrupado |
 | `REPORT_RESOLVED` | Reporte sai de `PENDING` | Autor do reporte | Uma entrada por reporte |
+| `EPISODE_RELEASED` | Episódio acompanhado é lançado | Usuário acompanhando a série | Uma entrada por episódio |
+| `LETTERBOXD_IMPORT_READY` | Importação chega a `READY` | Autor da importação | Uma entrada por job |
+| `LETTERBOXD_IMPORT_COMPLETED` | Importação chega a `COMPLETED` ou `COMPLETED_WITH_ERRORS` | Autor da importação | Uma entrada por job |
 
 Uma resposta pode ter o dono do conteúdo e o autor do comentário-pai como destinatários. Destinatários repetidos são eliminados; se a mesma pessoa ocupar os dois papéis, ela recebe uma única entrada do tipo `COMMENT_REPLIED`.
 
@@ -54,6 +57,10 @@ Uma resposta pode ter o dono do conteúdo e o autor do comentário-pai como dest
 ### Reportes
 
 Uma notificação `REPORT_RESOLVED` é criada uma única vez quando a moderação aprova ou rejeita um reporte ainda pendente. A resposta contém `reportStatus` com `APPROVED` ou `REJECTED` e pode conter `resolutionNote`.
+
+### Importação do Letterboxd
+
+O usuário recebe `LETTERBOXD_IMPORT_READY` quando o matching termina e o job pode ser revisado, e `LETTERBOXD_IMPORT_COMPLETED` quando a aplicação termina, inclusive com erros parciais. As entradas apontam para o job e não são duplicadas em recuperações ou novas tentativas.
 
 ### Retenção e consistência
 

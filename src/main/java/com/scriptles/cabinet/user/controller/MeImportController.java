@@ -3,6 +3,7 @@ package com.scriptles.cabinet.user.controller;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.dto.request.ResolveLetterboxdImportItemRequest;
+import com.scriptles.cabinet.user.dto.response.ActiveLetterboxdImportResponse;
 import com.scriptles.cabinet.user.dto.response.LetterboxdImportItemResponse;
 import com.scriptles.cabinet.user.dto.response.LetterboxdImportJobResponse;
 import com.scriptles.cabinet.user.importer.LetterboxdImportItemState;
@@ -42,6 +43,13 @@ public class MeImportController {
             @RequestPart("file") MultipartFile file
     ) {
         return importService.start(user.id(), file);
+    }
+
+    @GetMapping("/letterboxd/active")
+    public ActiveLetterboxdImportResponse active(
+            @org.springframework.security.core.annotation.AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return importService.findActive(user.id());
     }
 
     @GetMapping("/{jobId}")

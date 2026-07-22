@@ -29,7 +29,8 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             "seriesEpisode",
             "seriesEpisode.episodeMedia",
             "seriesEpisode.season",
-            "seriesEpisode.season.series"
+            "seriesEpisode.season.series",
+            "letterboxdImportJob"
     })
     Page<Notification> findByRecipientIdOrderByActivityAtDescIdDesc(UUID recipientId, Pageable pageable);
 
@@ -48,6 +49,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     boolean existsByRecipientIdAndReportId(UUID recipientId, UUID reportId);
 
     boolean existsByRecipientIdAndSeriesEpisodeId(UUID recipientId, UUID seriesEpisodeId);
+
+    boolean existsByRecipientIdAndTypeAndLetterboxdImportJobId(
+            UUID recipientId, NotificationType type, UUID letterboxdImportJobId);
 
     List<Notification> findByCommentId(UUID commentId);
 

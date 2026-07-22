@@ -7,6 +7,7 @@ import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.importer.LetterboxdImportJob;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -70,6 +71,11 @@ public class Notification {
     @JoinColumn(name = "series_episode_id")
     @OnDelete(action = OnDeleteAction.CASCADE)
     private SeriesEpisode seriesEpisode;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "letterboxd_import_job_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    private LetterboxdImportJob letterboxdImportJob;
 
     private Instant readAt;
 

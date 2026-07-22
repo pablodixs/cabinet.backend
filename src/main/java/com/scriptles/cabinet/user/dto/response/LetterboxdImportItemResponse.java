@@ -12,6 +12,8 @@ public record LetterboxdImportItemResponse(
         Integer releaseYear,
         LetterboxdImportItemState state,
         UUID selectedMediaId,
+        String selectedMediaTitle,
+        String selectedMediaCoverUrl,
         String selectedTmdbId,
         String payload,
         String matchCandidates,
@@ -27,6 +29,8 @@ public record LetterboxdImportItemResponse(
         return new LetterboxdImportItemResponse(item.getId(), item.getLetterboxdUri(), item.getTitle(),
                 item.getReleaseYear(), item.getState(),
                 item.getSelectedMedia() == null ? null : item.getSelectedMedia().getId(),
+                item.getSelectedMedia() == null ? null : item.getSelectedMedia().getTitle(),
+                item.getSelectedMedia() == null ? null : item.getSelectedMedia().getCoverUrl(),
                 item.getSelectedTmdbId(), item.getPayload(), item.getMatchCandidates(),
                 item.isOverrideStatus(), item.isOverrideRating(), item.isOverrideReview(),
                 item.isStatusConflict(), item.isRatingConflict(), item.isReviewConflict(), item.getErrorMessage());

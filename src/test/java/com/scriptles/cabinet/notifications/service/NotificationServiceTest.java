@@ -12,12 +12,14 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.enums.MediaReportStatus;
 import com.scriptles.cabinet.notifications.entity.Notification;
+import com.scriptles.cabinet.notifications.dto.NotificationResponse;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.notifications.event.NotificationChangedEvent;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.importer.LetterboxdImportJob;
 import com.scriptles.cabinet.user.repository.UserEpisodeWatchRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import org.junit.jupiter.api.Test;
@@ -173,6 +175,42 @@ class NotificationServiceTest {
     }
 
     @Test
+    void notifiesWhenLetterboxdImportIsReadyForReview() {
+        User recipient = user("recipient");
+        LetterboxdImportJob job = letterboxdJob(recipient);
+
+        notificationService.letterboxdImportReady(job);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(NotificationType.LETTERBOXD_IMPORT_READY);
+        assertThat(captor.getValue().getLetterboxdImportJob()).isSameAs(job);
+        NotificationResponse response = NotificationResponse.from(captor.getValue());
+        assertThat(response.subject()).isEqualTo(new NotificationResponse.SubjectResponse(
+                "LETTERBOXD_IMPORT", job.getId(), "Importação do Letterboxd"));
+        assertThat(response.href()).isEqualTo("/importacoes/letterboxd/" + job.getId());
+        verify(eventPublisher).publishEvent(new NotificationChangedEvent(recipient.getId()));
+    }
+
+    @Test
+    void notifiesOnlyOnceWhenLetterboxdImportIsCompleted() {
+        User recipient = user("recipient");
+        LetterboxdImportJob job = letterboxdJob(recipient);
+        when(notificationRepository.existsByRecipientIdAndTypeAndLetterboxdImportJobId(
+                recipient.getId(), NotificationType.LETTERBOXD_IMPORT_COMPLETED, job.getId()))
+                .thenReturn(false, true);
+
+        notificationService.letterboxdImportCompleted(job);
+        notificationService.letterboxdImportCompleted(job);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo(NotificationType.LETTERBOXD_IMPORT_COMPLETED);
+        assertThat(captor.getValue().getLetterboxdImportJob()).isSameAs(job);
+        verify(eventPublisher, times(1)).publishEvent(new NotificationChangedEvent(recipient.getId()));
+    }
+
+    @Test
     void marksOnlyTheRecipientsRequestedUnreadNotifications() {
         User recipient = user("recipient");
         List<UUID> ids = List.of(UUID.randomUUID(), UUID.randomUUID());
@@ -197,5 +235,12 @@ class NotificationServiceTest {
         user.setUsername(username);
         user.setDisplayName(username);
         return user;
+    }
+
+    private LetterboxdImportJob letterboxdJob(User user) {
+        LetterboxdImportJob job = new LetterboxdImportJob();
+        job.setId(UUID.randomUUID());
+        job.setUser(user);
+        return job;
     }
 }

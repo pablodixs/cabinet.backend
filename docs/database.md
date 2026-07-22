@@ -53,6 +53,9 @@ Do not rewrite applied migrations. Add a new versioned migration and update the 
 | `V20` | Add account tiers and PRO artwork preferences with audit table. |
 | `V21` | Add follows, blocks, denormalized counts, social/search indexes, and `pg_trgm`. |
 | `V22` | Add explicit interest preferences and normalized genre index. |
+| `V23` | Add normalized genre labels to interest preferences. |
+| `V24` | Link persistent notifications to Letterboxd import jobs. |
+| `V25` | Allow `LETTERBOXD` in database checks for external-source columns. |
 
 ## PostgreSQL-specific features
 

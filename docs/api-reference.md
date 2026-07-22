@@ -197,6 +197,7 @@ Targets are `GENRE`, `PERSON`, or `MEDIA`; explicit preferences are `POSITIVE` o
 | Method and path | Access | Purpose |
 | --- | --- | --- |
 | `POST /v1/me/imports/letterboxd` | User | Multipart part `file`; starts parse/match and returns `202`. |
+| `GET /v1/me/imports/letterboxd/active` | User | Returns `{ active, job }`; `job` is null when no import is active. |
 | `GET /v1/me/imports/{jobId}` | User | Current job state and counters. |
 | `GET /v1/me/imports/{jobId}/items` | User | Optional `state`; `page=0`, `size=50` (max 100). |
 | `PUT /v1/me/imports/{jobId}/items/{itemId}/resolution` | User | Select internal `mediaId` or `tmdbId`, ignore, and choose conflict overrides. |

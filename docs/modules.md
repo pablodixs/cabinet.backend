@@ -122,7 +122,7 @@ Deletion is soft when a root has replies so the thread remains readable as a tom
 
 ## Notifications (`notifications`)
 
-Notifications are durable rows scoped to a recipient. Current event types cover list/review likes, list/review comments, comment replies, resolved reports, and released episodes. Like notifications aggregate actors; comment and report notifications are individual.
+Notifications are durable rows scoped to a recipient. Current event types cover list/review likes, list/review comments, comment replies, resolved reports, released episodes, and Letterboxd imports ready for review or completed. Like notifications aggregate actors; comment, report, and import notifications are individual.
 
 REST is the source of truth. SSE emits `connected`, `notifications-changed`, and heartbeat events only as invalidation signals. Retention and episode-release notifications are scheduled. Detailed behavior is in [Notifications and iOS push](notifications-and-ios-push.md).
 

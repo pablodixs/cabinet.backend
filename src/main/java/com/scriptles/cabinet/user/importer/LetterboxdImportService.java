@@ -5,6 +5,7 @@ import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.dto.request.ResolveLetterboxdImportItemRequest;
+import com.scriptles.cabinet.user.dto.response.ActiveLetterboxdImportResponse;
 import com.scriptles.cabinet.user.dto.response.LetterboxdImportItemResponse;
 import com.scriptles.cabinet.user.dto.response.LetterboxdImportJobResponse;
 import com.scriptles.cabinet.user.entity.User;
@@ -77,6 +78,13 @@ public class LetterboxdImportService {
     @Transactional(readOnly = true)
     public LetterboxdImportJobResponse find(UUID userId, UUID jobId) {
         return LetterboxdImportJobResponse.from(findOwned(userId, jobId));
+    }
+
+    @Transactional(readOnly = true)
+    public ActiveLetterboxdImportResponse findActive(UUID userId) {
+        return jobRepository.findFirstByUserIdAndStateInOrderByCreatedAtDesc(userId, ACTIVE_STATES)
+                .map(ActiveLetterboxdImportResponse::from)
+                .orElseGet(ActiveLetterboxdImportResponse::none);
     }
 
     @Transactional(readOnly = true)

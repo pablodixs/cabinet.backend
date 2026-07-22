@@ -42,9 +42,8 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
     @Query("select distinct media from Media media where media.id in :mediaIds")
     List<Media> findAllWithGenresByIdIn(@Param("mediaIds") Collection<UUID> mediaIds);
 
-    @EntityGraph(attributePaths = "genres")
     @Query("""
-            select distinct media from Media media
+            select media from Media media
             where media.typeValue in :types
               and media.id not in :excludedIds
               and (
