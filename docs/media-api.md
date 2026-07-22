@@ -808,6 +808,44 @@ Preferences never modify canonical media metadata. Authenticated reads resolve t
 search, library, lists and profiles. Anonymous and Free viewers receive canonical URLs. Downgrading an account keeps
 the preference stored but inactive.
 
+## Interest graph and recommendations
+
+The authenticated interest graph is private to its owner. It combines ratings, media likes, library states and
+explicit preferences. Explicit changes and new activity are reflected on the next request; no background refresh is
+required.
+
+```http
+GET /v1/me/recommendations?type=MOVIE&limit=20
+GET /v1/me/interests?targetType=GENRE&page=0&size=20
+GET /v1/me/interests/options?targetType=PERSON&query=spielberg&limit=20
+```
+
+Recommendations support `MOVIE`, `SERIES`, `ALBUM` and `BOOK`. Without `type`, those formats are mixed. Items already
+present in the member's library, ratings, likes or explicit media preferences are excluded. Personalized items include
+up to three genre, person or related-work reasons; when the graph cannot fill the requested limit, seven-day trending
+items are appended with source `TRENDING`.
+
+Explicit preferences are idempotently upserted and can target a normalized genre key or the Cabinet UUID of a person
+or imported work:
+
+```http
+PUT /v1/me/interests
+Content-Type: application/json
+
+{
+  "targetType": "GENRE",
+  "targetId": "science fiction",
+  "preference": "POSITIVE"
+}
+```
+
+```http
+DELETE /v1/me/interests?targetType=GENRE&targetId=science%20fiction
+```
+
+Deleting removes only the explicit override. An interest inferred from existing activity may remain visible. Interest
+pages expose a normalized `strength` from 0 to 1, but recommendation responses do not expose the internal score.
+
 ## Front-end types
 
 Ready-to-use TypeScript definitions are available in [`media-api.types.ts`](./media-api.types.ts).

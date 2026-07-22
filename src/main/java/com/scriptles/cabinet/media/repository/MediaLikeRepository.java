@@ -41,6 +41,9 @@ public interface MediaLikeRepository extends JpaRepository<MediaLike, UUID> {
 
     boolean existsByUserIdAndMediaId(UUID userId, UUID mediaId);
 
+    @EntityGraph(attributePaths = "media")
+    List<MediaLike> findAllByUserId(UUID userId);
+
     long countByMediaId(UUID mediaId);
 
     @EntityGraph(attributePaths = "user")

@@ -22,6 +22,9 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             UUID mediaId
     );
 
+    @EntityGraph(attributePaths = "media")
+    List<UserMedia> findAllByUserId(UUID userId);
+
     Page<UserMedia> findByUserId(
             UUID userId,
             Pageable pageable

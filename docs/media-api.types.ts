@@ -126,6 +126,54 @@ export interface TrendingMediaResponse {
   periodDays: number;
 }
 
+export type InterestTargetType = "GENRE" | "PERSON" | "MEDIA";
+export type InterestPreference = "POSITIVE" | "NEGATIVE";
+
+export interface InterestResponse {
+  targetType: InterestTargetType;
+  targetId: string;
+  label: string;
+  polarity: InterestPreference;
+  explicitPreference: InterestPreference | null;
+  inferred: boolean;
+  strength: number;
+}
+
+export type InterestPage = PageResponse<InterestResponse>;
+
+export interface UpsertInterestPreferenceRequest {
+  targetType: InterestTargetType;
+  targetId: string;
+  preference: InterestPreference;
+}
+
+export interface InterestOption {
+  targetType: InterestTargetType;
+  targetId: string;
+  label: string;
+  subtitle: string | null;
+  imageUrl: string | null;
+}
+
+export type RecommendationSource = "PERSONALIZED" | "TRENDING";
+export type RecommendationReasonType = InterestTargetType | "TRENDING";
+
+export interface RecommendationReason {
+  targetType: RecommendationReasonType;
+  targetId: string | null;
+  label: string;
+}
+
+export interface RecommendationItem {
+  media: RankedMediaResult;
+  source: RecommendationSource;
+  reasons: RecommendationReason[];
+}
+
+export interface RecommendationResponse {
+  items: RecommendationItem[];
+}
+
 export type ExternalInfoSectionState =
   | "READY" | "EMPTY" | "PENDING" | "STALE"
   | "ERROR" | "NOT_CONFIGURED" | "NOT_SUPPORTED";

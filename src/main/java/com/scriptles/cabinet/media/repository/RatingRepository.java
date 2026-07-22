@@ -24,6 +24,9 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
     @EntityGraph(attributePaths = {"user", "media"})
     Optional<Rating> findByUserIdAndMediaId(UUID userId, UUID mediaId);
 
+    @EntityGraph(attributePaths = "media")
+    List<Rating> findAllByUserId(UUID userId);
+
     void deleteByUserIdAndMediaId(UUID userId, UUID mediaId);
 
     @EntityGraph(attributePaths = {"user", "media"})
