@@ -21,6 +21,7 @@ The process has no local durable storage requirements. All durable application s
 
 - Set `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD`.
 - Set `SESSION_COOKIE_SECURE=true` when clients use HTTPS.
+- Set `SESSION_COOKIE_SAME_SITE=none` when the browser frontend and API use different sites.
 - Restrict `CORS_ALLOWED_ORIGIN_PATTERNS` to deployed client origins.
 - Configure TMDB and any other provider credentials used by the product.
 - Replace default MusicBrainz/Wikidata user agents with monitored contact details.

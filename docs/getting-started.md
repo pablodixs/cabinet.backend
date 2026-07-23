@@ -36,6 +36,7 @@ The default server port is `8080`. The Docker entrypoint also accepts `PORT` and
 | --- | --- | --- |
 | `FLYWAY_ENABLED` | `true` | Enables PostgreSQL migrations. Disabling it does not disable Hibernate schema update. |
 | `SESSION_COOKIE_SECURE` | `false` | Set to `true` behind production HTTPS. |
+| `SESSION_COOKIE_SAME_SITE` | `lax` | Set to `none` together with `SESSION_COOKIE_SECURE=true` when the frontend and API use different sites. Applies to session and CSRF cookies. |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | local `localhost` and `127.0.0.1` patterns | Comma-separated patterns; credentials are enabled. |
 | `ADMIN_EMAILS` | empty | Bootstrap admin emails. This overrides a persisted role at authentication time. |
 | `SSE_MAX_CONNECTIONS_PER_USER` | `3` | Per-user in-memory SSE connection limit. |

@@ -12,7 +12,7 @@ On successful login, `AuthService`:
 4. ensures a CSRF token is created;
 5. returns a client-safe account representation.
 
-The session cookie is named `CABINET_SESSION`, is HTTP-only, has `SameSite=Lax`, lasts seven days, and uses the `Secure` flag when `SESSION_COOKIE_SECURE=true`. URL rewriting of session IDs is disabled.
+The session cookie is named `CABINET_SESSION`, is HTTP-only, lasts seven days, and uses the `Secure` flag when `SESSION_COOKIE_SECURE=true`. Session and CSRF cookies use `SameSite=Lax` by default. Set `SESSION_COOKIE_SAME_SITE=none` together with `SESSION_COOKIE_SECURE=true` when the frontend and API are on different sites. URL rewriting of session IDs is disabled.
 
 Passwords are hashed with BCrypt. The authenticated principal contains account ID, email, username/display name, password hash, authorities, active flag, role, and tier. Its Spring Security username is the email, although login lookup accepts email or username.
 
@@ -64,6 +64,8 @@ CORS allows credentials, all headers, methods `GET`, `POST`, `PUT`, `PATCH`, `DE
 
 Default patterns allow local hosts on any port. Production must explicitly set trusted HTTPS origins. Because credentials are enabled, avoid broad wildcard patterns.
 
+For a browser frontend hosted on a different site, set the exact frontend origin in `CORS_ALLOWED_ORIGIN_PATTERNS`, set `SESSION_COOKIE_SAME_SITE=none` and `SESSION_COOKIE_SECURE=true`, and send requests with credentials enabled. Browsers or privacy settings that block third-party cookies can still prevent cookie-based cross-site sessions.
+
 ## Visibility and blocking
 
 Content authorization is not expressed solely through URL security:
@@ -93,6 +95,7 @@ Forbidden access returns `403` with code `ACCESS_DENIED`. Invalid login returns 
 ## Security checklist
 
 - Set `SESSION_COOKIE_SECURE=true` in HTTPS environments.
+- Use `SESSION_COOKIE_SAME_SITE=none` only with `SESSION_COOKIE_SECURE=true`.
 - Terminate TLS at a trusted proxy and ensure forwarded-header behavior matches the deployment platform.
 - Restrict CORS to known client origins.
 - Protect database and provider credentials as secrets.

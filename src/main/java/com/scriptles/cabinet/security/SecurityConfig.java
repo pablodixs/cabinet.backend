@@ -37,12 +37,13 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             SecurityContextRepository securityContextRepository,
+            CookieCsrfTokenRepository csrfTokenRepository,
             ObjectMapper objectMapper
     ) throws Exception {
 
         return http
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(csrfTokenRepository())
+                        .csrfTokenRepository(csrfTokenRepository)
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                 )
                 .cors(Customizer.withDefaults())
@@ -147,10 +148,16 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CookieCsrfTokenRepository csrfTokenRepository() {
+    public CookieCsrfTokenRepository csrfTokenRepository(
+            @Value("${server.servlet.session.cookie.same-site:lax}") String sameSite,
+            @Value("${server.servlet.session.cookie.secure:false}") boolean secure
+    ) {
         CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
         repository.setCookiePath("/");
-        repository.setCookieCustomizer(cookie -> cookie.sameSite("Lax"));
+        repository.setCookieCustomizer(cookie -> cookie
+                .sameSite(sameSite)
+                .secure(secure)
+        );
         return repository;
     }
 
