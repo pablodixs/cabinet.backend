@@ -4,6 +4,7 @@ import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
 import com.scriptles.cabinet.lists.service.MediaListService;
@@ -55,6 +56,14 @@ public class MediaListController {
             @PathVariable UUID listId
     ) {
         return mediaListService.findDetails(user.id(), listId);
+    }
+
+    @GetMapping("/{listId}/backdrop-options")
+    public MediaListBackdropOptionsResponse findBackdropOptions(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID listId
+    ) {
+        return mediaListService.findBackdropOptions(user.id(), listId);
     }
 
     @PutMapping("/{listId}")

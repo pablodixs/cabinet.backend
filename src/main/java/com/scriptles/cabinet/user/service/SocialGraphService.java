@@ -234,6 +234,8 @@ public class SocialGraphService {
                 block.getBlocked().getUsername(),
                 block.getBlocked().getDisplayName(),
                 block.getBlocked().getAvatarUlr(),
+                block.getBlocked().getAccountTier()
+                        == com.scriptles.cabinet.user.enums.AccountTier.PRO,
                 block.getCreatedAt()
         )).toList(), next, hasMore);
     }
@@ -256,6 +258,7 @@ public class SocialGraphService {
             User user = users.get(index);
             items.add(new SocialUserResponse(
                     user.getId(), user.getUsername(), user.getDisplayName(), user.getAvatarUlr(),
+                    user.getAccountTier() == com.scriptles.cabinet.user.enums.AccountTier.PRO,
                     isPrivate(user), relationships.states().getOrDefault(user.getId(), FollowState.NONE),
                     relationships.followingViewer().contains(user.getId()), timestampExtractor.apply(row)
             ));

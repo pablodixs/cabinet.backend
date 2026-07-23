@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.dto.response;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListItem;
+import com.scriptles.cabinet.user.enums.AccountTier;
 
 import java.time.Instant;
 import java.util.List;
@@ -13,6 +14,7 @@ public record PublicMediaListResponse(
         String description,
         boolean ordered,
         String coverUrl,
+        String backdropUrl,
         List<MediaListPreviewResponse> previewItems,
         long itemCount,
         long likeCount,
@@ -20,6 +22,23 @@ public record PublicMediaListResponse(
         Instant updatedAt,
         AuthorResponse owner
 ) {
+    public PublicMediaListResponse(
+            UUID id,
+            String name,
+            String description,
+            boolean ordered,
+            String coverUrl,
+            List<MediaListPreviewResponse> previewItems,
+            long itemCount,
+            long likeCount,
+            int mediaPosition,
+            Instant updatedAt,
+            AuthorResponse owner
+    ) {
+        this(id, name, description, ordered, coverUrl, null, previewItems,
+                itemCount, likeCount, mediaPosition, updatedAt, owner);
+    }
+
     public static PublicMediaListResponse from(
             MediaList list,
             MediaListItem item,
@@ -33,6 +52,8 @@ public record PublicMediaListResponse(
                 list.getDescription(),
                 list.isOrdered(),
                 list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
                 itemCount,
                 likeCount,
@@ -42,7 +63,8 @@ public record PublicMediaListResponse(
                         list.getOwner().getId(),
                         list.getOwner().getUsername(),
                         list.getOwner().getDisplayName(),
-                        list.getOwner().getAvatarUlr()
+                        list.getOwner().getAvatarUlr(),
+                        list.getOwner().getAccountTier() == AccountTier.PRO
                 )
         );
     }
@@ -51,7 +73,16 @@ public record PublicMediaListResponse(
             UUID id,
             String username,
             String displayName,
-            String avatarUrl
+            String avatarUrl,
+            boolean pro
     ) {
+        public AuthorResponse(
+                UUID id,
+                String username,
+                String displayName,
+                String avatarUrl
+        ) {
+            this(id, username, displayName, avatarUrl, false);
+        }
     }
 }

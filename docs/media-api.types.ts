@@ -115,6 +115,22 @@ export interface MediaSearchPage {
   nextCursor: string | null;
 }
 
+export type HeaderSearchScope = "ALL" | "MEDIA" | "ARTIST";
+export type HeaderSearchEntityType = "MEDIA" | "ARTIST";
+
+export interface HeaderSearchItem {
+  id: string;
+  entityType: HeaderSearchEntityType;
+  title: string;
+  creator: string | null;
+  coverUrl: string | null;
+  year: number | null;
+}
+
+export interface HeaderSearchResponse {
+  items: HeaderSearchItem[];
+}
+
 export interface RankedMediaResult extends Omit<MediaSearchResult, "type"> {
   type: MediaType;
 }
@@ -124,6 +140,15 @@ export type TopRatedMediaPage = PageResponse<RankedMediaResult>;
 export interface TrendingMediaResponse {
   items: RankedMediaResult[];
   periodDays: number;
+}
+
+export interface AnticipatedMediaResult extends RankedMediaResult {
+  type: "MOVIE";
+  plannedCount: number;
+}
+
+export interface AnticipatedMediaResponse {
+  items: AnticipatedMediaResult[];
 }
 
 export type InterestTargetType = "GENRE" | "PERSON" | "MEDIA";

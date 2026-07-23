@@ -8,6 +8,7 @@ public record BlockedUserResponse(
         String username,
         String displayName,
         String avatarUrl,
+        boolean pro,
         Instant blockedAt
 ) {
 }

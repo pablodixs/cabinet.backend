@@ -6,6 +6,8 @@ import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListPreviewResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
@@ -21,8 +23,10 @@ import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.service.UserMediaArtworkService;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
@@ -54,6 +58,7 @@ public class MediaListService {
     private final MediaRepository mediaRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final UserArtworkResolver userArtworkResolver;
+    private final UserMediaArtworkService userMediaArtworkService;
     private final SocialAccessPolicy socialAccessPolicy;
 
     @Transactional(readOnly = true)
@@ -71,9 +76,7 @@ public class MediaListService {
                         MediaListItemRepository.MediaListItemCount::getListId,
                         MediaListItemRepository.MediaListItemCount::getItemCount
                 ));
-        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(
-                lists.stream().map(MediaList::getId).toList(), userId
-        );
+        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(lists);
 
         return lists.stream()
                 .map(list -> MediaListResponse.from(
@@ -129,7 +132,8 @@ public class MediaListService {
                 .findAllWithOwnerByIdIn(listIds)
                 .stream()
                 .collect(Collectors.toMap(MediaList::getId, Function.identity()));
-        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(listIds, viewerId);
+        Map<UUID, List<MediaListPreviewResponse>> previewItems =
+                previewItems(listsById.values());
 
         return PageResponse.from(memberships.map(membership -> PublicMediaListResponse.from(
                 listsById.get(membership.getListId()),
@@ -193,7 +197,8 @@ public class MediaListService {
                         MediaListLikeRepository.MediaListLikeCount::getListId,
                         MediaListLikeRepository.MediaListLikeCount::getLikeCount
                 ));
-        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(listIds, viewerId);
+        Map<UUID, List<MediaListPreviewResponse>> previewItems =
+                previewItems(lists.getContent());
 
         return PageResponse.from(lists.map(list -> PublicListSearchResponse.from(
                 list,
@@ -231,7 +236,8 @@ public class MediaListService {
                         MediaListItemRepository.MediaListItemCount::getListId,
                         MediaListItemRepository.MediaListItemCount::getItemCount
                 ));
-        Map<UUID, List<MediaListPreviewResponse>> previewItems = previewItems(listIds, viewerId);
+        Map<UUID, List<MediaListPreviewResponse>> previewItems =
+                previewItems(listsById.values());
 
         return popular.stream()
                 .map(item -> {
@@ -264,7 +270,8 @@ public class MediaListService {
             throw listNotFound();
         }
 
-        List<MediaListItemResponse> items = itemResponses(listId, userId);
+        List<MediaListItemResponse> items = itemResponses(
+                listId, list.getOwner().getId());
         boolean liked = userId != null
                 && mediaListLikeRepository.existsByUserIdAndListId(userId, listId);
 
@@ -301,7 +308,7 @@ public class MediaListService {
         MediaList list = findOwnedList(userId, listId);
         return MediaListDetailsResponse.from(
                 list,
-                itemResponses(listId, userId)
+                itemResponses(listId, list.getOwner().getId())
         );
     }
 
@@ -317,11 +324,17 @@ public class MediaListService {
         list.setVisibility(request.visibility());
         list.setOrdered(request.ordered());
         list.setCoverUrl(normalizeOptional(request.coverUrl()));
+        applyBackdrop(
+                list.getOwner(),
+                list,
+                request.backdropMediaId(),
+                normalizeOptional(request.backdropKey())
+        );
 
         return MediaListResponse.from(
                 mediaListRepository.saveAndFlush(list),
                 mediaListItemRepository.countByListId(listId),
-                previewItems(List.of(listId), userId).getOrDefault(listId, List.of())
+                previewItems(List.of(list)).getOrDefault(listId, List.of())
         );
     }
 
@@ -373,9 +386,76 @@ public class MediaListService {
                 ));
 
         int removedPosition = item.getPosition();
+        if (list.getBackdropMedia() != null
+                && list.getBackdropMedia().getId().equals(item.getMedia().getId())) {
+            clearBackdrop(list);
+        }
         mediaListItemRepository.delete(item);
         mediaListItemRepository.decrementPositionsAfter(listId, removedPosition);
         touch(list);
+    }
+
+    @Transactional(readOnly = true)
+    public MediaListBackdropOptionsResponse findBackdropOptions(
+            UUID userId,
+            UUID listId
+    ) {
+        MediaList list = findOwnedList(userId, listId);
+        requirePro(list.getOwner());
+        List<MediaListItem> items = mediaListItemRepository.findAllWithMediaByListId(listId);
+        List<MediaListBackdropOptionResponse> options = items.stream()
+                .filter(item -> item.getMedia().getType()
+                        == com.scriptles.cabinet.media.enums.MediaType.MOVIE
+                        || item.getMedia().getType()
+                        == com.scriptles.cabinet.media.enums.MediaType.SERIES)
+                .flatMap(item -> backdropOptions(
+                        list.getOwner().getId(), item.getMedia()).stream())
+                .toList();
+
+        if (list.getBackdropMedia() != null
+                && list.getBackdropKey() != null
+                && list.getBackdropUrl() != null
+                && options.stream().noneMatch(option ->
+                        option.mediaId().equals(list.getBackdropMedia().getId())
+                                && option.key().equals(list.getBackdropKey()))) {
+            List<MediaListBackdropOptionResponse> withCurrent =
+                    new ArrayList<>(options.size() + 1);
+            withCurrent.add(new MediaListBackdropOptionResponse(
+                    list.getBackdropMedia().getId(),
+                    list.getBackdropMedia().getTitle(),
+                    list.getBackdropKey(),
+                    list.getBackdropUrl(),
+                    list.getBackdropUrl(),
+                    null,
+                    null
+            ));
+            withCurrent.addAll(options);
+            options = List.copyOf(withCurrent);
+        }
+
+        return new MediaListBackdropOptionsResponse(
+                list.getId(),
+                list.getBackdropMedia() == null ? null : list.getBackdropMedia().getId(),
+                list.getBackdropKey(),
+                options
+        );
+    }
+
+    private List<MediaListBackdropOptionResponse> backdropOptions(
+            UUID ownerId,
+            Media media
+    ) {
+        try {
+            return userMediaArtworkService.findOptions(
+                            ownerId, media.getId()
+                    ).backdropOptions().stream()
+                    .filter(option -> option.language() == null)
+                    .map(option -> MediaListBackdropOptionResponse.from(
+                            media.getId(), media.getTitle(), option))
+                    .toList();
+        } catch (ApiException ignored) {
+            return List.of();
+        }
     }
 
     private Map<UUID, ExternalReference> primaryReferences(List<MediaListItem> items) {
@@ -395,36 +475,61 @@ public class MediaListService {
                 ));
     }
 
-    private Map<UUID, List<MediaListPreviewResponse>> previewItems(List<UUID> listIds, UUID viewerId) {
-        if (listIds.isEmpty()) {
+    private Map<UUID, List<MediaListPreviewResponse>> previewItems(
+            java.util.Collection<MediaList> lists
+    ) {
+        if (lists.isEmpty()) {
             return Map.of();
         }
 
-        List<MediaListItemRepository.MediaListCover> covers = mediaListItemRepository.findRecentCoversByListIds(listIds);
+        List<UUID> listIds = lists.stream().map(MediaList::getId).toList();
+        Map<UUID, UUID> ownerByListId = lists.stream().collect(Collectors.toMap(
+                MediaList::getId,
+                list -> list.getOwner().getId(),
+                (first, ignored) -> first,
+                LinkedHashMap::new
+        ));
+        List<MediaListItemRepository.MediaListCover> covers =
+                mediaListItemRepository.findRecentCoversByListIds(listIds);
         Map<UUID, Media> mediaById = mediaRepository.findAllById(
                         covers.stream().map(MediaListItemRepository.MediaListCover::getMediaId)
                                 .filter(Objects::nonNull).distinct().toList())
                 .stream().collect(Collectors.toMap(Media::getId, Function.identity()));
-        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
-                viewerId, mediaById.values());
+        Map<UUID, Map<UUID, UserArtworkResolver.ResolvedArtwork>> artworksByOwner =
+                ownerByListId.values().stream()
+                        .distinct()
+                        .collect(Collectors.toMap(
+                                Function.identity(),
+                                ownerId -> resolveArtwork(
+                                        ownerId,
+                                        covers.stream()
+                                                .filter(cover -> ownerId.equals(
+                                                        ownerByListId.get(cover.getListId())))
+                                                .map(cover -> mediaById.get(cover.getMediaId()))
+                                                .filter(Objects::nonNull)
+                                                .toList()
+                                )
+                        ));
         Map<UUID, List<MediaListPreviewResponse>> previewsByListId = new LinkedHashMap<>();
-        covers.forEach(cover ->
-                previewsByListId
-                        .computeIfAbsent(cover.getListId(), ignored -> new ArrayList<>())
-                        .add(new MediaListPreviewResponse(
-                                artworks.containsKey(cover.getMediaId())
-                                        ? artworks.get(cover.getMediaId()).coverUrl()
-                                        : cover.getCoverUrl(),
-                                cover.getType()))
-        );
+        covers.forEach(cover -> {
+            Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = artworksByOwner
+                    .getOrDefault(ownerByListId.get(cover.getListId()), Map.of());
+            previewsByListId
+                    .computeIfAbsent(cover.getListId(), ignored -> new ArrayList<>())
+                    .add(new MediaListPreviewResponse(
+                            artworks.containsKey(cover.getMediaId())
+                                    ? artworks.get(cover.getMediaId()).coverUrl()
+                                    : cover.getCoverUrl(),
+                            cover.getType()));
+        });
         return previewsByListId;
     }
 
-    private List<MediaListItemResponse> itemResponses(UUID listId, UUID viewerId) {
+    private List<MediaListItemResponse> itemResponses(UUID listId, UUID artworkOwnerId) {
         List<MediaListItem> items = mediaListItemRepository.findAllWithMediaByListId(listId);
         Map<UUID, ExternalReference> referencesByMediaId = primaryReferences(items);
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
-                viewerId, items.stream().map(MediaListItem::getMedia).toList());
+                artworkOwnerId, items.stream().map(MediaListItem::getMedia).toList());
 
         return items.stream()
                 .map(item -> MediaListItemResponse.from(
@@ -476,6 +581,68 @@ public class MediaListService {
     private void touch(MediaList list) {
         list.setUpdatedAt(java.time.Instant.now());
         mediaListRepository.save(list);
+    }
+
+    private void applyBackdrop(
+            User owner,
+            MediaList list,
+            UUID backdropMediaId,
+            String backdropKey
+    ) {
+        if (backdropMediaId == null && backdropKey == null) {
+            clearBackdrop(list);
+            return;
+        }
+        if (backdropMediaId == null || backdropKey == null) {
+            throw invalidBackdrop();
+        }
+        requirePro(owner);
+        if (!mediaListItemRepository.existsByListIdAndMediaId(
+                list.getId(), backdropMediaId)) {
+            throw invalidBackdrop();
+        }
+        if (list.getBackdropMedia() != null
+                && list.getBackdropMedia().getId().equals(backdropMediaId)
+                && backdropKey.equals(list.getBackdropKey())
+                && list.getBackdropUrl() != null) {
+            return;
+        }
+        Media media = findMedia(backdropMediaId);
+        var selected = userMediaArtworkService.findOptions(
+                        owner.getId(), backdropMediaId)
+                .backdropOptions().stream()
+                .filter(option -> option.language() == null)
+                .filter(option -> option.key().equals(backdropKey))
+                .findFirst()
+                .orElseThrow(this::invalidBackdrop);
+        list.setBackdropMedia(media);
+        list.setBackdropKey(selected.key());
+        list.setBackdropUrl(selected.url());
+    }
+
+    private void clearBackdrop(MediaList list) {
+        list.setBackdropMedia(null);
+        list.setBackdropKey(null);
+        list.setBackdropUrl(null);
+    }
+
+    private void requirePro(User owner) {
+        if (!Boolean.TRUE.equals(owner.getActive())
+                || owner.getAccountTier() != AccountTier.PRO) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "PRO_REQUIRED",
+                    "O backdrop personalizável de listas está disponível para usuários Pro"
+            );
+        }
+    }
+
+    private ApiException invalidBackdrop() {
+        return new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_LIST_BACKDROP",
+                "Escolha um backdrop sem idioma de uma mídia contida na lista"
+        );
     }
 
     private String normalizeOptional(String value) {

@@ -225,7 +225,12 @@ public class ExternalMediaService {
     }
 
     private MediaCommunityUserResponse toCommunityUser(User user) {
-        return new MediaCommunityUserResponse(user.getId(), user.getUsername(), user.getAvatarUlr());
+        return new MediaCommunityUserResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getAvatarUlr(),
+                user.getAccountTier() == com.scriptles.cabinet.user.enums.AccountTier.PRO
+        );
     }
 
     @Transactional(readOnly = true)

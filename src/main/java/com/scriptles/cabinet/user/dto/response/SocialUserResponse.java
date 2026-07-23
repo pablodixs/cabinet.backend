@@ -10,6 +10,7 @@ public record SocialUserResponse(
         String username,
         String displayName,
         String avatarUrl,
+        boolean pro,
         boolean privateProfile,
         FollowState followState,
         boolean followsViewer,

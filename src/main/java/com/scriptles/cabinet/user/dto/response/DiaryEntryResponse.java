@@ -35,6 +35,14 @@ public record DiaryEntryResponse(
             UserMediaActivity activity,
             ExternalReference externalReference
     ) {
+        return from(activity, externalReference, activity.getMedia().getCoverUrl());
+    }
+
+    public static DiaryEntryResponse from(
+            UserMediaActivity activity,
+            ExternalReference externalReference,
+            String coverUrl
+    ) {
         Media media = activity.getMedia();
         return new DiaryEntryResponse(
                 activity.getId(),
@@ -44,7 +52,7 @@ public record DiaryEntryResponse(
                 media.getId(),
                 media.getType(),
                 media.getTitle(),
-                media.getCoverUrl(),
+                coverUrl,
                 media.getReleaseDate(),
                 externalReference == null ? null : externalReference.getSource(),
                 externalReference == null ? null : externalReference.getExternalId(),

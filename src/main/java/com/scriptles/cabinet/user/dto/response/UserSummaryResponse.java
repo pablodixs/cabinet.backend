@@ -10,6 +10,7 @@ public record UserSummaryResponse(
         String displayName,
         String biography,
         String avatarUrl,
+        boolean pro,
         boolean ownProfile,
         boolean privateProfile,
         boolean contentAccessible,

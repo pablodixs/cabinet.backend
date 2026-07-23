@@ -60,6 +60,7 @@ Security failures use `AUTHENTICATION_REQUIRED` (`401`) or `ACCESS_DENIED` (`403
 
 | Method and path | Access | Query/body and behavior |
 | --- | --- | --- |
+| `GET /v1/search/header` | Public | Lightweight local search for the header. `query` (2–100), `scope=ALL\|MEDIA\|ARTIST`, optional media `type`; returns at most 5 relevance-ranked media/artists. |
 | `GET /v1/media/search` | Public | `query` (min 3), optional `type`, `sort=RELEVANCE\|RATING`, `cursor`, `limit=20` (1–40). App-facing merged search. |
 | `GET /v1/media/external/search` | Public | Optional `type`; required `query`; `language=pt-BR`, `startIndex=0`, `maxResults=20` (max 40). Searches provider catalogs. |
 | `GET /v1/media/external/{source}/{type}/{externalId}` | Public | `language=pt-BR`. Provider-backed detail preview. |
@@ -68,6 +69,7 @@ Security failures use `AUTHENTICATION_REQUIRED` (`401`) or `ACCESS_DENIED` (`403
 | `POST /v1/media/external/import` | User | `{ source, externalId, mediaType }`; imports/upserts a work and returns `201`. |
 | `GET /v1/media/rankings/top-rated` | Public | Optional `type`; `page=0`, `limit=20` (max 40). |
 | `GET /v1/media/rankings/trending` | Public | Optional `type`; `days=7` (1–30), `limit=12` (max 40). |
+| `GET /v1/media/rankings/anticipated` | Public | `limit=6` (max 40). Future movies ranked by public `PLANNED` entries. |
 
 Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EPISODE`, although a provider or endpoint may support only a subset. Full media examples and provider behavior are in [Media API details](media-api.md).
 
@@ -125,7 +127,8 @@ The same three routes exist under `/v1/artists/{artistId}`. They return `Depreca
 | `GET /v1/me/lists` | User | List all owned lists. |
 | `POST /v1/me/lists` | User | Create `{ name, description?, visibility?, ordered?, coverUrl? }`; returns `201`. |
 | `GET /v1/me/lists/{listId}` | User | Owner-only details and items. |
-| `PUT /v1/me/lists/{listId}` | User | Replace editable list metadata. |
+| `GET /v1/me/lists/{listId}/backdrop-options` | Pro | Owner-only backdrop options without language, sourced from movies and series already in the list. |
+| `PUT /v1/me/lists/{listId}` | User | Replace editable list metadata. Pro users may also send `backdropMediaId` and `backdropKey` from the backdrop-options response; send both as `null` to clear. |
 | `POST /v1/me/lists/{listId}/items` | User | Add `{ mediaId, notes? }`; returns `201`. |
 | `DELETE /v1/me/lists/{listId}/items/{itemId}` | User | Remove item; returns `204`. |
 | `GET /v1/lists/popular` | Public | `limit=12` (max 40). |

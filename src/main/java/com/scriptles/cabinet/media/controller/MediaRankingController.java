@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.dto.response.AnticipatedMediaResponse;
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.TrendingMediaResponse;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -37,5 +38,12 @@ public class MediaRankingController {
             @RequestParam(defaultValue = "12") @Min(1) @Max(40) int limit
     ) {
         return mediaRankingService.trending(type, days, limit);
+    }
+
+    @GetMapping("/anticipated")
+    public AnticipatedMediaResponse anticipated(
+            @RequestParam(defaultValue = "6") @Min(1) @Max(40) int limit
+    ) {
+        return mediaRankingService.anticipated(limit);
     }
 }

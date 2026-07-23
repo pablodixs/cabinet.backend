@@ -73,6 +73,7 @@ public class SecurityConfig {
                                 HttpMethod.GET,
                                 "/v1/media/external/**",
                                 "/v1/media/search",
+                                "/v1/search/header",
                                 "/v1/media/rankings/**",
                                 "/v1/media/*",
                                 "/v1/media/*/community",

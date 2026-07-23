@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.comments.dto;
 
 import com.scriptles.cabinet.comments.entity.Comment;
+import com.scriptles.cabinet.user.enums.AccountTier;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,12 +30,19 @@ public record CommentResponse(
                         comment.getAuthor().getId(),
                         comment.getAuthor().getUsername(),
                         comment.getAuthor().getDisplayName(),
-                        comment.getAuthor().getAvatarUlr()
+                        comment.getAuthor().getAvatarUlr(),
+                        comment.getAuthor().getAccountTier() == AccountTier.PRO
                 ),
                 replies
         );
     }
 
-    public record AuthorResponse(UUID id, String username, String displayName, String avatarUrl) {
+    public record AuthorResponse(
+            UUID id,
+            String username,
+            String displayName,
+            String avatarUrl,
+            boolean pro
+    ) {
     }
 }

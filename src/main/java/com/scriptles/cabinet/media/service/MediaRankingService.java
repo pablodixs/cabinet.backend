@@ -1,6 +1,8 @@
 package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.dto.response.AnticipatedMediaItemResponse;
+import com.scriptles.cabinet.media.dto.response.AnticipatedMediaResponse;
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.TrendingMediaResponse;
 import com.scriptles.cabinet.media.entity.Media;
@@ -9,6 +11,7 @@ import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -18,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -122,6 +126,33 @@ public class MediaRankingService {
                 .limit(limit)
                 .toList();
         return new TrendingMediaResponse(items, periodDays);
+    }
+
+    public AnticipatedMediaResponse anticipated(int limit) {
+        List<UserMediaRepository.AnticipatedMediaProjection> ranking =
+                userMediaRepository.findMostAnticipatedMovies(
+                        UserMediaStatus.PLANNED,
+                        LocalDate.now(),
+                        PageRequest.of(0, limit)
+                );
+        if (ranking.isEmpty()) {
+            return new AnticipatedMediaResponse(List.of());
+        }
+
+        Map<UUID, Long> plannedCounts = ranking.stream().collect(Collectors.toMap(
+                projection -> projection.getMedia().getId(),
+                UserMediaRepository.AnticipatedMediaProjection::getPlannedCount
+        ));
+        List<MediaSearchItemResponse> assembled = mediaSearchItemAssembler.fromImported(
+                ranking.stream().map(UserMediaRepository.AnticipatedMediaProjection::getMedia).toList()
+        );
+        List<AnticipatedMediaItemResponse> items = assembled.stream()
+                .map(item -> AnticipatedMediaItemResponse.from(
+                        item,
+                        plannedCounts.getOrDefault(item.id(), 0L)
+                ))
+                .toList();
+        return new AnticipatedMediaResponse(items);
     }
 
     private Set<String> typeValues(MediaType type) {

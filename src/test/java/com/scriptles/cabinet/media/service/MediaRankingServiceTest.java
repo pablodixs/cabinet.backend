@@ -8,6 +8,7 @@ import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -18,6 +19,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -106,6 +108,32 @@ class MediaRankingServiceTest {
         );
     }
 
+    @Test
+    void returnsFutureMoviesOrderedByPublicPlannedCount() {
+        Media first = media("Mais aguardado");
+        first.setReleaseDate(LocalDate.now().plusMonths(2));
+        Media second = media("Segundo mais aguardado");
+        second.setReleaseDate(LocalDate.now().plusMonths(1));
+        UserMediaRepository.AnticipatedMediaProjection firstProjection =
+                anticipated(first, 12);
+        UserMediaRepository.AnticipatedMediaProjection secondProjection =
+                anticipated(second, 7);
+        when(userMediaRepository.findMostAnticipatedMovies(
+                eq(UserMediaStatus.PLANNED), any(), eq(PageRequest.of(0, 6))))
+                .thenReturn(List.of(firstProjection, secondProjection));
+        when(mediaSearchItemAssembler.fromImported(List.of(first, second)))
+                .thenReturn(List.of(item(first, 0, 0), item(second, 0, 0)));
+
+        var result = mediaRankingService.anticipated(6);
+
+        assertThat(result.items())
+                .extracting(item -> item.title(), item -> item.plannedCount())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("Mais aguardado", 12L),
+                        org.assertj.core.groups.Tuple.tuple("Segundo mais aguardado", 7L)
+                );
+    }
+
     private Media media(String title) {
         Media media = new Media();
         media.setId(UUID.randomUUID());
@@ -145,6 +173,13 @@ class MediaRankingServiceTest {
         var projection = mock(UserMediaRepository.MediaActivityProjection.class);
         when(projection.getMediaId()).thenReturn(mediaId);
         when(projection.getActivityCount()).thenReturn(count);
+        return projection;
+    }
+
+    private UserMediaRepository.AnticipatedMediaProjection anticipated(Media media, long count) {
+        var projection = mock(UserMediaRepository.AnticipatedMediaProjection.class);
+        when(projection.getMedia()).thenReturn(media);
+        when(projection.getPlannedCount()).thenReturn(count);
         return projection;
     }
 }

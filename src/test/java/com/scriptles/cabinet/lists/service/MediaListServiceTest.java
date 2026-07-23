@@ -3,6 +3,9 @@ package com.scriptles.cabinet.lists.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
+import com.scriptles.cabinet.media.dto.response.ArtworkOptionResponse;
+import com.scriptles.cabinet.media.dto.response.ArtworkOptionsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
@@ -13,13 +16,18 @@ import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.lists.repository.MediaListLikeRepository;
 import com.scriptles.cabinet.lists.repository.MediaListRepository;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.enums.ArtworkProvider;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.service.UserMediaArtworkService;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -29,6 +37,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,6 +47,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class MediaListServiceTest {
@@ -53,9 +63,32 @@ class MediaListServiceTest {
     private MediaRepository mediaRepository;
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
+    @Mock
+    private UserArtworkResolver userArtworkResolver;
+    @Mock
+    private UserMediaArtworkService userMediaArtworkService;
 
     @InjectMocks
     private MediaListService mediaListService;
+
+    @BeforeEach
+    void resolveCanonicalArtworkByDefault() {
+        lenient().when(userArtworkResolver.resolve(
+                any(UUID.class),
+                org.mockito.ArgumentMatchers.<java.util.Collection<Media>>any()
+        )).thenAnswer(invocation -> {
+            java.util.Collection<Media> mediaItems = invocation.getArgument(1);
+            return mediaItems.stream().collect(java.util.stream.Collectors.toMap(
+                    Media::getId,
+                    media -> new UserArtworkResolver.ResolvedArtwork(
+                            media.getCoverUrl(),
+                            media.getBackdropUrl(),
+                            false,
+                            false
+                    )
+            ));
+        });
+    }
 
     @Test
     void createsListForAuthenticatedOwnerWithSafeDefaults() {
@@ -92,6 +125,153 @@ class MediaListServiceTest {
         assertThat(saved.getCoverUrl()).isNull();
         assertThat(response.id()).isNotNull();
         assertThat(response.itemCount()).isZero();
+    }
+
+    @Test
+    void allowsProOwnerToSetAListBackdrop() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User owner = new User();
+        owner.setId(userId);
+        owner.setActive(true);
+        owner.setAccountTier(AccountTier.PRO);
+        MediaList list = mediaList("Cinema");
+        list.setOwner(owner);
+        Media media = new Media();
+        media.setId(mediaId);
+        media.setType(MediaType.MOVIE);
+        media.setTitle("Paris, Texas");
+
+        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+                .thenReturn(Optional.of(list));
+        when(mediaListItemRepository.existsByListIdAndMediaId(list.getId(), mediaId))
+                .thenReturn(true);
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(userMediaArtworkService.findOptions(userId, mediaId))
+                .thenReturn(artworkOptions(mediaId, List.of(
+                        new ArtworkOptionResponse(
+                                "tmdb:backdrop:/clean.jpg",
+                                "https://images.example/clean.jpg",
+                                "https://images.example/clean-preview.jpg",
+                                1280,
+                                720,
+                                null
+                        ),
+                        new ArtworkOptionResponse(
+                                "tmdb:backdrop:/pt.jpg",
+                                "https://images.example/pt.jpg",
+                                "https://images.example/pt-preview.jpg",
+                                1280,
+                                720,
+                                "pt"
+                        )
+                )));
+        when(mediaListRepository.saveAndFlush(any(MediaList.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(mediaListItemRepository.findRecentCoversByListIds(List.of(list.getId())))
+                .thenReturn(List.of());
+
+        MediaListResponse response = mediaListService.update(
+                userId,
+                list.getId(),
+                new UpdateMediaListRequest(
+                        "Cinema",
+                        null,
+                        Visibility.PUBLIC,
+                        true,
+                        null,
+                        mediaId,
+                        "tmdb:backdrop:/clean.jpg"
+                )
+        );
+
+        assertThat(response.backdropUrl())
+                .isEqualTo("https://images.example/clean.jpg");
+        assertThat(list.getBackdropMedia()).isSameAs(media);
+        assertThat(list.getBackdropKey()).isEqualTo("tmdb:backdrop:/clean.jpg");
+    }
+
+    @Test
+    void rejectsListBackdropForFreeOwner() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User owner = new User();
+        owner.setId(userId);
+        owner.setActive(true);
+        owner.setAccountTier(AccountTier.FREE);
+        MediaList list = mediaList("Cinema");
+        list.setOwner(owner);
+        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+                .thenReturn(Optional.of(list));
+
+        assertThatThrownBy(() -> mediaListService.update(
+                userId,
+                list.getId(),
+                new UpdateMediaListRequest(
+                        "Cinema",
+                        null,
+                        Visibility.PUBLIC,
+                        true,
+                        null,
+                        mediaId,
+                        "tmdb:backdrop:/clean.jpg"
+                )
+        )).isInstanceOfSatisfying(ApiException.class, exception -> {
+            assertThat(exception.getStatus()).isEqualTo(
+                    org.springframework.http.HttpStatus.FORBIDDEN);
+            assertThat(exception.getCode()).isEqualTo("PRO_REQUIRED");
+        });
+
+        verify(mediaListRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsListBackdropThatHasALanguage() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User owner = new User();
+        owner.setId(userId);
+        owner.setActive(true);
+        owner.setAccountTier(AccountTier.PRO);
+        MediaList list = mediaList("Cinema");
+        list.setOwner(owner);
+        Media media = new Media();
+        media.setId(mediaId);
+        media.setType(MediaType.MOVIE);
+
+        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+                .thenReturn(Optional.of(list));
+        when(mediaListItemRepository.existsByListIdAndMediaId(list.getId(), mediaId))
+                .thenReturn(true);
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(userMediaArtworkService.findOptions(userId, mediaId))
+                .thenReturn(artworkOptions(mediaId, List.of(
+                        new ArtworkOptionResponse(
+                                "tmdb:backdrop:/pt.jpg",
+                                "https://images.example/pt.jpg",
+                                "https://images.example/pt-preview.jpg",
+                                1280,
+                                720,
+                                "pt"
+                        )
+                )));
+
+        assertThatThrownBy(() -> mediaListService.update(
+                userId,
+                list.getId(),
+                new UpdateMediaListRequest(
+                        "Cinema",
+                        null,
+                        Visibility.PUBLIC,
+                        true,
+                        null,
+                        mediaId,
+                        "tmdb:backdrop:/pt.jpg"
+                )
+        )).isInstanceOfSatisfying(ApiException.class, exception ->
+                assertThat(exception.getCode()).isEqualTo("INVALID_LIST_BACKDROP"));
+
+        verify(mediaListRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -348,6 +528,50 @@ class MediaListServiceTest {
     }
 
     @Test
+    void usesListOwnersCustomCoverForPublicItems() {
+        UUID listId = UUID.randomUUID();
+        UUID viewerId = UUID.randomUUID();
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        MediaList list = mediaList("Cinema");
+        list.setId(listId);
+        list.setOwner(owner);
+        Media media = new Media();
+        media.setId(UUID.randomUUID());
+        media.setType(MediaType.MOVIE);
+        media.setTitle("Ainda Estou Aqui");
+        media.setCoverUrl("https://images.example/default.jpg");
+        MediaListItem item = new MediaListItem();
+        item.setId(UUID.randomUUID());
+        item.setList(list);
+        item.setMedia(media);
+        item.setPosition(1);
+
+        when(mediaListRepository.findWithOwnerById(listId))
+                .thenReturn(Optional.of(list));
+        when(mediaListItemRepository.findAllWithMediaByListId(listId))
+                .thenReturn(List.of(item));
+        when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(
+                List.of(media.getId()))).thenReturn(List.of());
+        when(userArtworkResolver.resolve(owner.getId(), List.of(media)))
+                .thenReturn(Map.of(
+                        media.getId(),
+                        new UserArtworkResolver.ResolvedArtwork(
+                                "https://images.example/custom.jpg",
+                                null,
+                                true,
+                                false
+                        )
+                ));
+
+        var response = mediaListService.findAccessibleDetails(viewerId, listId);
+
+        assertThat(response.items().getFirst().coverUrl())
+                .isEqualTo("https://images.example/custom.jpg");
+        verify(userArtworkResolver).resolve(owner.getId(), List.of(media));
+    }
+
+    @Test
     void hidesPrivateDetailsFromOtherUsers() {
         UUID listId = UUID.randomUUID();
         User owner = new User();
@@ -437,10 +661,29 @@ class MediaListServiceTest {
 
     private MediaList mediaList(String name) {
         MediaList list = new MediaList();
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        list.setOwner(owner);
         list.setId(UUID.randomUUID());
         list.setName(name);
         list.setVisibility(Visibility.PUBLIC);
         list.setOrdered(true);
         return list;
+    }
+
+    private ArtworkOptionsResponse artworkOptions(
+            UUID mediaId,
+            List<ArtworkOptionResponse> backdropOptions
+    ) {
+        return new ArtworkOptionsResponse(
+                mediaId,
+                ArtworkProvider.TMDB,
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                backdropOptions
+        );
     }
 }

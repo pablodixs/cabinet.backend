@@ -19,6 +19,28 @@ public interface PersonRepository extends JpaRepository<Person, UUID> {
     List<Person> findAllByNameIgnoreCase(String name);
 
     @Query("""
+            select person from Person person
+            where lower(person.name) like lower(concat('%', :query, '%'))
+              and (:type is null or exists (
+                select credit.id from MediaCredit credit
+                where credit.person = person and credit.media.typeValue = :type
+              ))
+            order by
+              case
+                when lower(person.name) = lower(:query) then 0
+                when lower(person.name) like lower(concat(:query, '%')) then 1
+                else 2
+              end,
+              lower(person.name),
+              person.id
+            """)
+    List<Person> findHeaderSearchCandidates(
+            @Param("query") String query,
+            @Param("type") String type,
+            Pageable pageable
+    );
+
+    @Query("""
             select distinct person from Person person
             where lower(person.name) like lower(concat('%', :query, '%'))
               and (:type is null or exists (select credit.id from MediaCredit credit

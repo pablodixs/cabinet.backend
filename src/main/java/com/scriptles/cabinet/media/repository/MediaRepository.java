@@ -33,6 +33,30 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
             Pageable pageable
     );
 
+    @Query("""
+            select media from Media media
+            where (:type is null or media.typeValue = :type)
+              and (
+                lower(media.title) like lower(concat('%', :query, '%'))
+                or lower(coalesce(media.originalTitle, '')) like lower(concat('%', :query, '%'))
+              )
+            order by
+              case
+                when lower(media.title) = lower(:query) then 0
+                when lower(coalesce(media.originalTitle, '')) = lower(:query) then 0
+                when lower(media.title) like lower(concat(:query, '%')) then 1
+                when lower(coalesce(media.originalTitle, '')) like lower(concat(:query, '%')) then 1
+                else 2
+              end,
+              lower(media.title),
+              media.id
+            """)
+    List<Media> findHeaderSearchCandidates(
+            @Param("query") String query,
+            @Param("type") String type,
+            Pageable pageable
+    );
+
     Optional<Media> findFirstByWikidataId(String wikidataId);
 
     @Query("select b.media from BookDetails b where b.canonicalWorkWikidataId = :wikidataId")

@@ -70,7 +70,8 @@ public class ReviewLikeService {
                         .map(liker -> new ReviewLikerResponse(
                                 UUID.fromString(liker.getUserId()),
                                 liker.getUsername(),
-                                liker.getAvatarUrl()
+                                liker.getAvatarUrl(),
+                                "PRO".equals(liker.getAccountTier())
                         ))
                         .toList()
         );

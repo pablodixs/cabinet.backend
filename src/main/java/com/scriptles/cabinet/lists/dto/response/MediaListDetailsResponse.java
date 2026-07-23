@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.lists.dto.response;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
 
 import java.time.Instant;
@@ -14,6 +15,7 @@ public record MediaListDetailsResponse(
         Visibility visibility,
         boolean ordered,
         String coverUrl,
+        String backdropUrl,
         long itemCount,
         Instant createdAt,
         Instant updatedAt,
@@ -30,6 +32,8 @@ public record MediaListDetailsResponse(
                 list.getVisibility(),
                 list.isOrdered(),
                 list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getBackdropUrl() : null,
                 items.size(),
                 list.getCreatedAt(),
                 list.getUpdatedAt(),

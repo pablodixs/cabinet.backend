@@ -14,6 +14,7 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.media.validation.RatingValue;
 import com.scriptles.cabinet.user.dto.request.CreateDiaryEntryRequest;
 import com.scriptles.cabinet.user.dto.response.DiaryEntryResponse;
@@ -59,6 +60,7 @@ public class DiaryService {
     private final UserMediaService userMediaService;
     private final EpisodeTrackingService episodeTrackingService;
     private final SocialAccessPolicy socialAccessPolicy;
+    private final UserArtworkResolver userArtworkResolver;
 
     @Transactional
     public DiaryEntryResponse create(UUID userId, CreateDiaryEntryRequest request) {
@@ -97,7 +99,11 @@ public class DiaryService {
         } else {
             userMediaService.markCompleted(user, media, false);
         }
-        return DiaryEntryResponse.from(activity, findReference(media.getId()));
+        return DiaryEntryResponse.from(
+                activity,
+                findReference(media.getId()),
+                resolveArtwork(userId, List.of(media)).get(media.getId()).coverUrl()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -158,8 +164,29 @@ public class DiaryService {
                         userId, DIARY_TYPES, includePrivate, Visibility.PUBLIC,
                         PageRequest.of(page, size));
         Map<UUID, ExternalReference> references = findReferences(entries);
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
+                userId,
+                entries.getContent().stream().map(UserMediaActivity::getMedia).toList()
+        );
         return PageResponse.from(entries.map(entry -> DiaryEntryResponse.from(
-                entry, references.get(entry.getMedia().getId()))));
+                entry,
+                references.get(entry.getMedia().getId()),
+                artworks.get(entry.getMedia().getId()).coverUrl()
+        )));
+    }
+
+    private Map<UUID, UserArtworkResolver.ResolvedArtwork> resolveArtwork(
+            UUID ownerId,
+            java.util.Collection<Media> mediaItems
+    ) {
+        if (userArtworkResolver != null) {
+            return userArtworkResolver.resolve(ownerId, mediaItems);
+        }
+        return mediaItems.stream().collect(Collectors.toMap(
+                Media::getId,
+                media -> new UserArtworkResolver.ResolvedArtwork(
+                        media.getCoverUrl(), media.getBackdropUrl(), false, false)
+        ));
     }
 
     private Rating upsertCanonicalRating(User user, Media media, java.math.BigDecimal value) {

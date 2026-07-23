@@ -44,6 +44,16 @@ public class MediaList {
     @Column(length = 500, columnDefinition = "TEXT")
     private String coverUrl;
 
+    @Column(length = 500, columnDefinition = "TEXT")
+    private String backdropUrl;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "backdrop_media_id")
+    private com.scriptles.cabinet.media.entity.Media backdropMedia;
+
+    @Column(name = "backdrop_key", columnDefinition = "TEXT")
+    private String backdropKey;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 30)
     private ExternalSource originSource;

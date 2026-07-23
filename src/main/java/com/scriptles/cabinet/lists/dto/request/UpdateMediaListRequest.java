@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.UUID;
+
 public record UpdateMediaListRequest(
         @NotBlank(message = "Informe um nome para a lista")
         @Size(max = 120, message = "O nome deve ter no máximo 120 caracteres")
@@ -20,6 +22,20 @@ public record UpdateMediaListRequest(
         Boolean ordered,
 
         @Size(max = 500, message = "A URL da capa deve ter no máximo 500 caracteres")
-        String coverUrl
+        String coverUrl,
+
+        UUID backdropMediaId,
+
+        @Size(max = 500, message = "A chave do backdrop deve ter no máximo 500 caracteres")
+        String backdropKey
 ) {
+    public UpdateMediaListRequest(
+            String name,
+            String description,
+            Visibility visibility,
+            Boolean ordered,
+            String coverUrl
+    ) {
+        this(name, description, visibility, ordered, coverUrl, null, null);
+    }
 }

@@ -39,8 +39,14 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
                        ) as cover_position
                 from media_list_items item
                 join media on media.id = item.media_id
+                join media_lists list on list.id = item.list_id
+                join users owner on owner.id = list.owner_id
+                left join user_media_artwork_preferences artwork
+                  on artwork.user_id = list.owner_id
+                 and artwork.media_id = item.media_id
                 where item.list_id in (:listIds)
-                  and media.cover_url is not null
+                  and (media.cover_url is not null
+                    or (owner.account_tier = 'PRO' and artwork.cover_url is not null))
             ) ranked
             where ranked.cover_position <= 4
             order by ranked.list_id, ranked.cover_position

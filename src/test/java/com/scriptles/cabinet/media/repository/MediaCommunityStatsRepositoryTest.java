@@ -13,6 +13,8 @@ import com.scriptles.cabinet.media.entity.ReviewLike;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.user.entity.UserMediaArtworkPreference;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
@@ -316,6 +318,30 @@ class MediaCommunityStatsRepositoryTest {
         assertThat(covers).filteredOn(cover -> cover.getListId().equals(secondList.getId()))
                 .extracting(MediaListItemRepository.MediaListCover::getCoverUrl)
                 .containsExactly("https://example.com/other.jpg");
+    }
+
+    @Test
+    void includesCoverlessMediaWhenProListOwnerSelectedACustomCover() {
+        User owner = user("pro-cover-owner");
+        owner.setAccountTier(AccountTier.PRO);
+        Media media = media("Sem capa canônica", null);
+        MediaList list = mediaList(owner, "Personalizada", Visibility.PUBLIC);
+        listItem(media, list, 1);
+
+        UserMediaArtworkPreference preference = new UserMediaArtworkPreference();
+        preference.setUser(owner);
+        preference.setMedia(media);
+        preference.setCoverUrl("https://example.com/custom.jpg");
+        entityManager.persist(preference);
+        entityManager.flush();
+        entityManager.clear();
+
+        var covers = mediaListItemRepository.findRecentCoversByListIds(
+                List.of(list.getId()));
+
+        assertThat(covers)
+                .extracting(MediaListItemRepository.MediaListCover::getMediaId)
+                .containsExactly(media.getId());
     }
 
     private Media media() {

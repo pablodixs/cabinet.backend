@@ -61,12 +61,14 @@ public interface ReviewLikeRepository extends JpaRepository<ReviewLike, UUID> {
             select cast(ranked.review_id as varchar) as "reviewId",
                    cast(ranked.user_id as varchar) as "userId",
                    ranked.username as "username",
-                   ranked.avatar_url as "avatarUrl"
+                   ranked.avatar_url as "avatarUrl",
+                   ranked.account_tier as "accountTier"
             from (
                 select review_like.review_id,
                        review_like.user_id,
                        reviewer.username,
                        reviewer.avatar_ulr as avatar_url,
+                       reviewer.account_tier,
                        row_number() over (
                            partition by review_like.review_id
                            order by review_like.created_at desc, review_like.id desc
@@ -84,12 +86,14 @@ public interface ReviewLikeRepository extends JpaRepository<ReviewLike, UUID> {
             select cast(ranked.review_id as varchar) as "reviewId",
                    cast(ranked.user_id as varchar) as "userId",
                    ranked.username as "username",
-                   ranked.avatar_url as "avatarUrl"
+                   ranked.avatar_url as "avatarUrl",
+                   ranked.account_tier as "accountTier"
             from (
                 select review_like.review_id,
                        review_like.user_id,
                        reviewer.username,
                        reviewer.avatar_ulr as avatar_url,
+                       reviewer.account_tier,
                        row_number() over (
                            partition by review_like.review_id
                            order by review_like.created_at desc, review_like.id desc
@@ -124,5 +128,7 @@ public interface ReviewLikeRepository extends JpaRepository<ReviewLike, UUID> {
         String getUsername();
 
         String getAvatarUrl();
+
+        String getAccountTier();
     }
 }

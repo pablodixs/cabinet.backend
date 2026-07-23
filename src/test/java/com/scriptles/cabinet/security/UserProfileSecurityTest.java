@@ -62,6 +62,7 @@ class UserProfileSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("maria"))
                 .andExpect(jsonPath("$.email").doesNotExist())
+                .andExpect(jsonPath("$.pro").value(false))
                 .andExpect(jsonPath("$.libraryCount").value(12))
                 .andExpect(jsonPath("$.stats.watchedMinutes").value(320))
                 .andExpect(jsonPath("$.stats.pagesRead").value(840))

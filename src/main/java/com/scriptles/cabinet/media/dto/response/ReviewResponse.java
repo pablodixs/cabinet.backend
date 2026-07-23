@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.dto.response;
 
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.AccountTier;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -67,7 +68,8 @@ public record ReviewResponse(
                         review.getUser().getId(),
                         review.getUser().getUsername(),
                         review.getUser().getDisplayName(),
-                        review.getUser().getAvatarUlr()
+                        review.getUser().getAvatarUlr(),
+                        review.getUser().getAccountTier() == AccountTier.PRO
                 ),
                 review.getActivity() == null ? null : review.getActivity().getId()
         );
@@ -77,7 +79,16 @@ public record ReviewResponse(
             UUID id,
             String username,
             String displayName,
-            String avatarUrl
+            String avatarUrl,
+            boolean pro
     ) {
+        public AuthorResponse(
+                UUID id,
+                String username,
+                String displayName,
+                String avatarUrl
+        ) {
+            this(id, username, displayName, avatarUrl, false);
+        }
     }
 }

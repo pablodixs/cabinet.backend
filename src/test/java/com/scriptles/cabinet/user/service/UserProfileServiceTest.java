@@ -6,12 +6,14 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.ProfileActivityType;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
@@ -19,6 +21,7 @@ import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -32,6 +35,7 @@ import org.springframework.http.HttpStatus;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -40,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -60,8 +65,30 @@ class UserProfileServiceTest {
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
 
+    @Mock
+    private UserArtworkResolver userArtworkResolver;
+
     @InjectMocks
     private UserProfileService userProfileService;
+
+    @BeforeEach
+    void resolveCanonicalArtworkByDefault() {
+        lenient().when(userArtworkResolver.resolve(
+                any(UUID.class),
+                org.mockito.ArgumentMatchers.<java.util.Collection<Media>>any()
+        )).thenAnswer(invocation -> {
+            java.util.Collection<Media> mediaItems = invocation.getArgument(1);
+            return mediaItems.stream().collect(java.util.stream.Collectors.toMap(
+                    Media::getId,
+                    media -> new UserArtworkResolver.ResolvedArtwork(
+                            media.getCoverUrl(),
+                            media.getBackdropUrl(),
+                            false,
+                            false
+                    )
+            ));
+        });
+    }
 
     @Test
     void searchesOnlyVisibleActiveProfilesByName() {
@@ -106,7 +133,7 @@ class UserProfileServiceTest {
         );
 
         assertThat(response.username()).isEqualTo("maria");
-        assertThat(response.email()).isNull();
+        assertThat(response.pro()).isFalse();
         assertThat(response.ownProfile()).isFalse();
         assertThat(response.libraryCount()).isEqualTo(12);
         assertThat(response.completedCount()).isEqualTo(7);
@@ -122,8 +149,9 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void includesPrivateEntriesAndEmailForTheProfileOwner() {
+    void includesPrivateEntriesWithoutExposingEmailForTheProfileOwner() {
         User profileUser = user(Visibility.PRIVATE);
+        profileUser.setAccountTier(AccountTier.PRO);
         when(userRepository.findByUsernameIgnoreCase("maria"))
                 .thenReturn(Optional.of(profileUser));
         when(userMediaRepository.findRecentProfileLibrary(
@@ -143,8 +171,52 @@ class UserProfileServiceTest {
         );
 
         assertThat(response.ownProfile()).isTrue();
-        assertThat(response.email()).isEqualTo("maria@example.com");
+        assertThat(response.pro()).isTrue();
         verify(userMediaRepository).findProfileStatistics(profileUser.getId(), true);
+    }
+
+    @Test
+    void usesProfileOwnersCustomCoverForRecentItems() {
+        User profileUser = user(Visibility.PUBLIC);
+        Media media = new Media();
+        media.setId(UUID.randomUUID());
+        media.setType(MediaType.MOVIE);
+        media.setTitle("Central do Brasil");
+        media.setCoverUrl("https://images.example/default.jpg");
+        UserMedia entry = new UserMedia();
+        entry.setId(UUID.randomUUID());
+        entry.setUser(profileUser);
+        entry.setMedia(media);
+        entry.setStatus(UserMediaStatus.COMPLETED);
+
+        when(userRepository.findByUsernameIgnoreCase("maria"))
+                .thenReturn(Optional.of(profileUser));
+        when(userMediaRepository.findRecentProfileLibrary(
+                eq(profileUser.getId()), eq(false), any(Pageable.class)))
+                .thenReturn(List.of(entry));
+        when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(
+                List.of(media.getId()))).thenReturn(List.of());
+        when(userArtworkResolver.resolve(profileUser.getId(), List.of(media)))
+                .thenReturn(Map.of(
+                        media.getId(),
+                        new UserArtworkResolver.ResolvedArtwork(
+                                "https://images.example/custom.jpg",
+                                null,
+                                true,
+                                false
+                        )
+                ));
+        UserMediaRepository.ProfileStatisticsProjection profileStatistics =
+                statistics(1, 1, 0, 0, 0, 0, 0, 1, 0, 0);
+        when(userMediaRepository.findProfileStatistics(profileUser.getId(), false))
+                .thenReturn(profileStatistics);
+
+        UserProfileResponse response = userProfileService.findByUsername(
+                "maria", UUID.randomUUID());
+
+        assertThat(response.recentItems().getFirst().coverUrl())
+                .isEqualTo("https://images.example/custom.jpg");
+        verify(userArtworkResolver).resolve(profileUser.getId(), List.of(media));
     }
 
     @Test

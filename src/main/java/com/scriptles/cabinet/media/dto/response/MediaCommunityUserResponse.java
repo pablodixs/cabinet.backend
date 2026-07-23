@@ -5,6 +5,10 @@ import java.util.UUID;
 public record MediaCommunityUserResponse(
         UUID id,
         String username,
-        String avatarUrl
+        String avatarUrl,
+        boolean pro
 ) {
+    public MediaCommunityUserResponse(UUID id, String username, String avatarUrl) {
+        this(id, username, avatarUrl, false);
+    }
 }

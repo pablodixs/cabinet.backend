@@ -58,6 +58,41 @@ GET /v1/media/search?query=matrix&sort=RATING&cursor={opaqueCursor}&limit=20
 }
 ```
 
+### Header search
+
+For typeahead in the application header, use the local, fixed-size endpoint:
+
+```http
+GET /v1/search/header?query=matrix&scope=ALL&type=MOVIE
+```
+
+`scope` accepts `ALL`, `MEDIA`, or `ARTIST`; `type` optionally limits media and artists with credits in that media
+type. The endpoint returns at most five items total, ordered by exact match, prefix, and partial match. It does not
+call external catalog providers.
+
+```json
+{
+  "items": [
+    {
+      "id": "6c64fb1f-8af4-4eca-92ec-d086af80b87a",
+      "entityType": "MEDIA",
+      "title": "The Matrix",
+      "creator": "Lana Wachowski, Lilly Wachowski",
+      "coverUrl": "https://image.tmdb.org/t/p/w500/...",
+      "year": 1999
+    },
+    {
+      "id": "e094835b-58fc-468e-b7e8-26aa63a72af7",
+      "entityType": "ARTIST",
+      "title": "Matrix",
+      "creator": null,
+      "coverUrl": "https://image.example/matrix.jpg",
+      "year": null
+    }
+  ]
+}
+```
+
 ## Rankings and trending media
 
 Both discovery endpoints are public and return only Cabinet community data. With no `type` filter they include
@@ -77,6 +112,13 @@ media like has weight 2, and a public library interaction has weight 1. `days` d
 
 ```http
 GET /v1/media/rankings/trending?type=SERIES&days=7&limit=12
+```
+
+The anticipated ranking returns future movies ordered by how many public library entries are marked `PLANNED`.
+`limit` defaults to 6 and accepts 1 through 40.
+
+```http
+GET /v1/media/rankings/anticipated?limit=6
 ```
 
 ```json

@@ -10,7 +10,7 @@ public record UserProfileResponse(
         String displayName,
         String biography,
         String avatarUrl,
-        String email,
+        boolean pro,
         boolean ownProfile,
         long libraryCount,
         long completedCount,
@@ -29,7 +29,7 @@ public record UserProfileResponse(
             String displayName,
             String biography,
             String avatarUrl,
-            String email,
+            String ignoredEmail,
             boolean ownProfile,
             long libraryCount,
             long completedCount,
@@ -37,7 +37,25 @@ public record UserProfileResponse(
             ProfileStatsResponse stats,
             List<LibraryMediaResponse> recentItems
     ) {
-        this(id, username, displayName, biography, avatarUrl, email, ownProfile,
+        this(id, username, displayName, biography, avatarUrl, false, ownProfile,
+                libraryCount, completedCount, inProgressCount, stats, recentItems);
+    }
+
+    public UserProfileResponse(
+            UUID id,
+            String username,
+            String displayName,
+            String biography,
+            String avatarUrl,
+            boolean pro,
+            boolean ownProfile,
+            long libraryCount,
+            long completedCount,
+            long inProgressCount,
+            ProfileStatsResponse stats,
+            List<LibraryMediaResponse> recentItems
+    ) {
+        this(id, username, displayName, biography, avatarUrl, pro, ownProfile,
                 libraryCount, completedCount, inProgressCount, stats, recentItems,
                 0, 0, false, FollowState.NONE, false);
     }

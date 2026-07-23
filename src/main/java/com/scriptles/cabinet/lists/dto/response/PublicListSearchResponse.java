@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.lists.dto.response;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
+import com.scriptles.cabinet.user.enums.AccountTier;
 
 import java.time.Instant;
 import java.util.List;
@@ -12,12 +13,29 @@ public record PublicListSearchResponse(
         String description,
         boolean ordered,
         String coverUrl,
+        String backdropUrl,
         List<MediaListPreviewResponse> previewItems,
         long itemCount,
         long likeCount,
         Instant updatedAt,
         PublicMediaListResponse.AuthorResponse owner
 ) {
+    public PublicListSearchResponse(
+            UUID id,
+            String name,
+            String description,
+            boolean ordered,
+            String coverUrl,
+            List<MediaListPreviewResponse> previewItems,
+            long itemCount,
+            long likeCount,
+            Instant updatedAt,
+            PublicMediaListResponse.AuthorResponse owner
+    ) {
+        this(id, name, description, ordered, coverUrl, null, previewItems,
+                itemCount, likeCount, updatedAt, owner);
+    }
+
     public static PublicListSearchResponse from(
             MediaList list,
             long itemCount,
@@ -30,6 +48,8 @@ public record PublicListSearchResponse(
                 list.getDescription(),
                 list.isOrdered(),
                 list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
                 itemCount,
                 likeCount,
@@ -38,7 +58,8 @@ public record PublicListSearchResponse(
                         list.getOwner().getId(),
                         list.getOwner().getUsername(),
                         list.getOwner().getDisplayName(),
-                        list.getOwner().getAvatarUlr()
+                        list.getOwner().getAvatarUlr(),
+                        list.getOwner().getAccountTier() == AccountTier.PRO
                 )
         );
     }

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.lists.dto.response;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
 
 import java.time.Instant;
@@ -14,11 +15,28 @@ public record MediaListResponse(
         Visibility visibility,
         boolean ordered,
         String coverUrl,
+        String backdropUrl,
         List<MediaListPreviewResponse> previewItems,
         long itemCount,
         Instant createdAt,
         Instant updatedAt
 ) {
+    public MediaListResponse(
+            UUID id,
+            String name,
+            String description,
+            Visibility visibility,
+            boolean ordered,
+            String coverUrl,
+            List<MediaListPreviewResponse> previewItems,
+            long itemCount,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, name, description, visibility, ordered, coverUrl, null,
+                previewItems, itemCount, createdAt, updatedAt);
+    }
+
     public static MediaListResponse from(MediaList list, long itemCount) {
         return from(list, itemCount, List.of());
     }
@@ -35,6 +53,8 @@ public record MediaListResponse(
                 list.getVisibility(),
                 list.isOrdered(),
                 list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
                 itemCount,
                 list.getCreatedAt(),

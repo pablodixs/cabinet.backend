@@ -13,6 +13,7 @@ import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.dto.response.UserSummaryResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.enums.FollowState;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
@@ -84,6 +85,7 @@ public class UserProfileService {
             return new UserSearchResponse(
                     user.getId(), user.getUsername(), user.getDisplayName(),
                     accessible ? user.getBiography() : null, user.getAvatarUlr(),
+                    user.getAccountTier() == AccountTier.PRO,
                     privateProfile, accessible, state,
                     relationships.followingViewer().contains(user.getId())
             );
@@ -102,7 +104,8 @@ public class UserProfileService {
                 viewerId, user.getId());
         return new UserSummaryResponse(
                 user.getId(), user.getUsername(), user.getDisplayName(),
-                accessible ? user.getBiography() : null, user.getAvatarUlr(), ownProfile,
+                accessible ? user.getBiography() : null, user.getAvatarUlr(),
+                user.getAccountTier() == AccountTier.PRO, ownProfile,
                 isPrivateProfile(user), accessible, user.getFollowersCount(),
                 user.getFollowingCount(), relationship.state(), relationship.followsViewer()
         );
@@ -127,7 +130,7 @@ public class UserProfileService {
         );
         Map<UUID, ExternalReference> referencesByMediaId = findReferences(recentEntries);
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
-                viewerId,
+                profileUser.getId(),
                 recentEntries.stream().map(UserMedia::getMedia).toList()
         );
         List<LibraryMediaResponse> recentItems = recentEntries.stream()
@@ -150,7 +153,7 @@ public class UserProfileService {
                 profileUser.getDisplayName(),
                 profileUser.getBiography(),
                 profileUser.getAvatarUlr(),
-                ownProfile ? profileUser.getEmail() : null,
+                profileUser.getAccountTier() == AccountTier.PRO,
                 ownProfile,
                 statistics.getLibraryCount(),
                 statistics.getCompletedCount(),
@@ -193,7 +196,7 @@ public class UserProfileService {
                         PageRequest.of(page, size));
         Map<UUID, ExternalReference> referencesByMediaId = findActivityReferences(entries.getContent());
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
-                viewerId,
+                access.user().getId(),
                 entries.getContent().stream().map(entry -> entry.getMedia()).toList()
         );
 

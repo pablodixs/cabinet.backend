@@ -11,6 +11,7 @@ public record UserSearchResponse(
         String displayName,
         String biography,
         String avatarUrl,
+        boolean pro,
         boolean privateProfile,
         boolean contentAccessible,
         FollowState followState,
@@ -19,7 +20,7 @@ public record UserSearchResponse(
     public UserSearchResponse(
             UUID id, String username, String displayName, String biography, String avatarUrl) {
         this(id, username, displayName, biography, avatarUrl,
-                false, true, FollowState.NONE, false);
+                false, false, true, FollowState.NONE, false);
     }
 
     public static UserSearchResponse from(User user) {
@@ -29,6 +30,7 @@ public record UserSearchResponse(
                 user.getDisplayName(),
                 user.getBiography(),
                 user.getAvatarUlr(),
+                user.getAccountTier() == com.scriptles.cabinet.user.enums.AccountTier.PRO,
                 false,
                 true,
                 FollowState.NONE,

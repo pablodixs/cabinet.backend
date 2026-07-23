@@ -1,6 +1,8 @@
 package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.dto.response.AnticipatedMediaItemResponse;
+import com.scriptles.cabinet.media.dto.response.AnticipatedMediaResponse;
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.TrendingMediaResponse;
 import com.scriptles.cabinet.media.enums.ExternalSource;
@@ -64,14 +66,33 @@ class MediaRankingControllerTest {
     }
 
     @Test
+    void returnsMostAnticipatedMovies() throws Exception {
+        MediaSearchItemResponse media = item("O Agente Secreto 2", null, 0);
+        AnticipatedMediaItemResponse anticipated =
+                AnticipatedMediaItemResponse.from(media, 23);
+        when(mediaRankingService.anticipated(6))
+                .thenReturn(new AnticipatedMediaResponse(List.of(anticipated)));
+
+        mockMvc.perform(get("/v1/media/rankings/anticipated"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].title").value("O Agente Secreto 2"))
+                .andExpect(jsonPath("$.items[0].type").value("MOVIE"))
+                .andExpect(jsonPath("$.items[0].plannedCount").value(23));
+
+        verify(mediaRankingService).anticipated(6);
+    }
+
+    @Test
     void validatesRankingParameters() throws Exception {
         mockMvc.perform(get("/v1/media/rankings/top-rated").param("page", "-1"))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(get("/v1/media/rankings/trending").param("days", "31"))
                 .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/v1/media/rankings/anticipated").param("limit", "41"))
+                .andExpect(status().isBadRequest());
     }
 
-    private MediaSearchItemResponse item(String title, double averageRating, long ratingCount) {
+    private MediaSearchItemResponse item(String title, Double averageRating, long ratingCount) {
         return new MediaSearchItemResponse(
                 UUID.randomUUID(), "123", ExternalSource.TMDB, MediaType.MOVIE, title,
                 "Walter Salles", null, "https://example.com/cover.jpg",

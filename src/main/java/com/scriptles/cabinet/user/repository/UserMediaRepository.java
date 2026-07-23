@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.user.repository;
 
 import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import org.springframework.data.domain.Page;
@@ -12,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -215,9 +217,34 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
                                                             @Param("since") Instant since,
                                                             Pageable pageable);
 
+    @Query("""
+            select media as media, count(userMedia.id) as plannedCount
+            from UserMedia userMedia
+            join userMedia.media media
+            where userMedia.status = :status
+              and userMedia.privateEntry = false
+              and media.typeValue = 'MOVIE'
+              and media.releaseDate > :today
+            group by media
+            order by count(userMedia.id) desc,
+                     media.releaseDate asc,
+                     lower(media.title) asc,
+                     media.id asc
+            """)
+    List<AnticipatedMediaProjection> findMostAnticipatedMovies(
+            @Param("status") UserMediaStatus status,
+            @Param("today") LocalDate today,
+            Pageable pageable
+    );
+
     interface MediaActivityProjection {
         UUID getMediaId();
         long getActivityCount();
+    }
+
+    interface AnticipatedMediaProjection {
+        Media getMedia();
+        long getPlannedCount();
     }
 
     interface ProfileStatisticsProjection {

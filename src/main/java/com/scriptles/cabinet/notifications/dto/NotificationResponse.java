@@ -3,6 +3,7 @@ package com.scriptles.cabinet.notifications.dto;
 import com.scriptles.cabinet.media.enums.MediaReportStatus;
 import com.scriptles.cabinet.notifications.entity.Notification;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
+import com.scriptles.cabinet.user.enums.AccountTier;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -25,7 +26,8 @@ public record NotificationResponse(
                 notification.getActor().getId(),
                 notification.getActor().getUsername(),
                 notification.getActor().getDisplayName(),
-                notification.getActor().getAvatarUlr()
+                notification.getActor().getAvatarUlr(),
+                notification.getActor().getAccountTier() == AccountTier.PRO
         );
 
         SubjectResponse subject = subject(notification);
@@ -100,7 +102,13 @@ public record NotificationResponse(
         return "/notificacoes";
     }
 
-    public record ActorResponse(UUID id, String username, String displayName, String avatarUrl) {
+    public record ActorResponse(
+            UUID id,
+            String username,
+            String displayName,
+            String avatarUrl,
+            boolean pro
+    ) {
     }
 
     public record SubjectResponse(String kind, UUID id, String title) {
