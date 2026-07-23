@@ -35,12 +35,39 @@ class UserSocialRepositoryTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<UserFollow> rows = followRepository.findFollowers(
-                owner.getId(), viewer.getId(), null, null, PageRequest.of(0, 3));
+        List<UserFollow> rows = followRepository.findFirstFollowers(
+                owner.getId(), viewer.getId(), PageRequest.of(0, 3));
 
         assertThat(rows).extracting(row -> row.getFollower().getUsername())
                 .containsExactly("older");
         assertThat(blockRepository.existsEitherDirection(viewer.getId(), newer.getId())).isTrue();
+    }
+
+    @Test
+    void keysetFollowerQueryContinuesAfterTimestampAndUserId() {
+        User owner = user("owner-page");
+        User first = user("first-page");
+        User second = user("second-page");
+        User third = user("third-page");
+        User viewer = user("viewer-page");
+        Instant acceptedAt = Instant.parse("2026-07-21T10:00:00Z");
+        follow(first, owner, acceptedAt);
+        follow(second, owner, acceptedAt);
+        follow(third, owner, acceptedAt);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<UserFollow> firstPage = followRepository.findFirstFollowers(
+                owner.getId(), viewer.getId(), PageRequest.of(0, 2));
+        UserFollow last = firstPage.getLast();
+        List<UserFollow> secondPage = followRepository.findFollowersAfter(
+                owner.getId(), viewer.getId(), last.getAcceptedAt(), last.getFollower().getId(),
+                PageRequest.of(0, 2));
+
+        assertThat(firstPage).hasSize(2);
+        assertThat(secondPage).hasSize(1);
+        assertThat(secondPage.getFirst().getFollower().getId())
+                .isNotIn(firstPage.stream().map(row -> row.getFollower().getId()).toList());
     }
 
     private User user(String username) {

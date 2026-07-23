@@ -19,6 +19,7 @@ import com.scriptles.cabinet.user.service.UserMediaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -45,6 +46,7 @@ public class RatingService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public RatingResponse upsert(UUID userId, UUID mediaId, UpsertRatingRequest request) {
         BigDecimal value = RatingValue.normalize(request.rating());
         User user = userRepository.findById(userId).orElseThrow(() -> notFound("USER_NOT_FOUND", "Usuário não encontrado"));
@@ -75,6 +77,7 @@ public class RatingService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void delete(UUID userId, UUID mediaId) {
         ratingRepository.findByUserIdAndMediaId(userId, mediaId).ifPresent(rating -> {
             var review = reviewRepository.findByRatingId(rating.getId()).orElse(null);

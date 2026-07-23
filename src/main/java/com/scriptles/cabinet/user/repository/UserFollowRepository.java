@@ -26,17 +26,34 @@ public interface UserFollowRepository extends JpaRepository<UserFollow, UserFoll
             select follow from UserFollow follow
             where follow.followed.id = :userId
               and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED
-              and (:cursorTime is null
-                   or follow.acceptedAt < :cursorTime
-                   or (follow.acceptedAt = :cursorTime and follow.follower.id < :cursorUserId))
-              and (:viewerId is null or not exists (
+              and not exists (
                   select block.id from UserBlock block
                   where (block.blocker.id = :viewerId and block.blocked.id = follow.follower.id)
                      or (block.blocker.id = follow.follower.id and block.blocked.id = :viewerId)
-              ))
+              )
             order by follow.acceptedAt desc, follow.follower.id desc
             """)
-    List<UserFollow> findFollowers(
+    List<UserFollow> findFirstFollowers(
+            @Param("userId") UUID userId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "follower")
+    @Query("""
+            select follow from UserFollow follow
+            where follow.followed.id = :userId
+              and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED
+              and (follow.acceptedAt < :cursorTime
+                   or (follow.acceptedAt = :cursorTime and follow.follower.id < :cursorUserId))
+              and not exists (
+                  select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = follow.follower.id)
+                     or (block.blocker.id = follow.follower.id and block.blocked.id = :viewerId)
+              )
+            order by follow.acceptedAt desc, follow.follower.id desc
+            """)
+    List<UserFollow> findFollowersAfter(
             @Param("userId") UUID userId,
             @Param("viewerId") UUID viewerId,
             @Param("cursorTime") Instant cursorTime,
@@ -49,17 +66,34 @@ public interface UserFollowRepository extends JpaRepository<UserFollow, UserFoll
             select follow from UserFollow follow
             where follow.follower.id = :userId
               and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED
-              and (:cursorTime is null
-                   or follow.acceptedAt < :cursorTime
-                   or (follow.acceptedAt = :cursorTime and follow.followed.id < :cursorUserId))
-              and (:viewerId is null or not exists (
+              and not exists (
                   select block.id from UserBlock block
                   where (block.blocker.id = :viewerId and block.blocked.id = follow.followed.id)
                      or (block.blocker.id = follow.followed.id and block.blocked.id = :viewerId)
-              ))
+              )
             order by follow.acceptedAt desc, follow.followed.id desc
             """)
-    List<UserFollow> findFollowing(
+    List<UserFollow> findFirstFollowing(
+            @Param("userId") UUID userId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "followed")
+    @Query("""
+            select follow from UserFollow follow
+            where follow.follower.id = :userId
+              and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED
+              and (follow.acceptedAt < :cursorTime
+                   or (follow.acceptedAt = :cursorTime and follow.followed.id < :cursorUserId))
+              and not exists (
+                  select block.id from UserBlock block
+                  where (block.blocker.id = :viewerId and block.blocked.id = follow.followed.id)
+                     or (block.blocker.id = follow.followed.id and block.blocked.id = :viewerId)
+              )
+            order by follow.acceptedAt desc, follow.followed.id desc
+            """)
+    List<UserFollow> findFollowingAfter(
             @Param("userId") UUID userId,
             @Param("viewerId") UUID viewerId,
             @Param("cursorTime") Instant cursorTime,
@@ -72,12 +106,23 @@ public interface UserFollowRepository extends JpaRepository<UserFollow, UserFoll
             select follow from UserFollow follow
             where follow.followed.id = :userId
               and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.PENDING
-              and (:cursorTime is null
-                   or follow.requestedAt < :cursorTime
+            order by follow.requestedAt desc, follow.follower.id desc
+            """)
+    List<UserFollow> findFirstIncomingRequests(
+            @Param("userId") UUID userId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "follower")
+    @Query("""
+            select follow from UserFollow follow
+            where follow.followed.id = :userId
+              and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.PENDING
+              and (follow.requestedAt < :cursorTime
                    or (follow.requestedAt = :cursorTime and follow.follower.id < :cursorUserId))
             order by follow.requestedAt desc, follow.follower.id desc
             """)
-    List<UserFollow> findIncomingRequests(
+    List<UserFollow> findIncomingRequestsAfter(
             @Param("userId") UUID userId,
             @Param("cursorTime") Instant cursorTime,
             @Param("cursorUserId") UUID cursorUserId,
@@ -89,12 +134,23 @@ public interface UserFollowRepository extends JpaRepository<UserFollow, UserFoll
             select follow from UserFollow follow
             where follow.follower.id = :userId
               and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.PENDING
-              and (:cursorTime is null
-                   or follow.requestedAt < :cursorTime
+            order by follow.requestedAt desc, follow.followed.id desc
+            """)
+    List<UserFollow> findFirstOutgoingRequests(
+            @Param("userId") UUID userId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "followed")
+    @Query("""
+            select follow from UserFollow follow
+            where follow.follower.id = :userId
+              and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.PENDING
+              and (follow.requestedAt < :cursorTime
                    or (follow.requestedAt = :cursorTime and follow.followed.id < :cursorUserId))
             order by follow.requestedAt desc, follow.followed.id desc
             """)
-    List<UserFollow> findOutgoingRequests(
+    List<UserFollow> findOutgoingRequestsAfter(
             @Param("userId") UUID userId,
             @Param("cursorTime") Instant cursorTime,
             @Param("cursorUserId") UUID cursorUserId,

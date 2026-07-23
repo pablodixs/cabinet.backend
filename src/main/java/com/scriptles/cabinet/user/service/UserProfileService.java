@@ -74,7 +74,7 @@ public class UserProfileService {
                 Sort.by(Sort.Order.asc("displayName"), Sort.Order.asc("username"))
         );
         Page<User> users = userRepository.searchProfiles(
-                normalizedQuery, Visibility.PUBLIC, viewerId, pageable);
+                normalizedQuery, viewerId, pageable);
         SocialGraphService.RelationshipBatch relationships = socialGraphService.relationships(
                 viewerId, users.stream().map(User::getId).toList());
         return PageResponse.from(users.map(user -> {

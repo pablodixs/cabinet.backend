@@ -113,7 +113,7 @@ public class ExternalMediaService {
                 .findBySourceAndExternalId(source, externalId)
                 .orElse(null);
         if (storedReference != null) {
-            return mediaQueryService.findDetails(storedReference.getMedia().getId());
+            return mediaQueryService.findLegacyDetails(storedReference.getMedia().getId());
         }
 
         ExternalMedia external = providerRegistry.get(source, mediaType)

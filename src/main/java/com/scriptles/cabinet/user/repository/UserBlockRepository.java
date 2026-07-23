@@ -27,12 +27,22 @@ public interface UserBlockRepository extends JpaRepository<UserBlock, UserBlockI
     @Query("""
             select block from UserBlock block
             where block.blocker.id = :userId
-              and (:cursorTime is null
-                   or block.createdAt < :cursorTime
+            order by block.createdAt desc, block.blocked.id desc
+            """)
+    List<UserBlock> findFirstBlockedUsers(
+            @Param("userId") UUID userId,
+            Pageable pageable
+    );
+
+    @EntityGraph(attributePaths = "blocked")
+    @Query("""
+            select block from UserBlock block
+            where block.blocker.id = :userId
+              and (block.createdAt < :cursorTime
                    or (block.createdAt = :cursorTime and block.blocked.id < :cursorUserId))
             order by block.createdAt desc, block.blocked.id desc
             """)
-    List<UserBlock> findBlockedUsers(
+    List<UserBlock> findBlockedUsersAfter(
             @Param("userId") UUID userId,
             @Param("cursorTime") Instant cursorTime,
             @Param("cursorUserId") UUID cursorUserId,

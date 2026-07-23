@@ -171,8 +171,10 @@ public class SocialGraphService {
             String username, UUID viewerId, String cursor, int size) {
         User profile = findAccessibleProfile(username, viewerId);
         SocialCursorCodec.Position position = cursorCodec.decode(cursor);
-        List<UserFollow> rows = followRepository.findFollowers(
-                profile.getId(), viewerId, timestamp(position), userId(position), page(size));
+        List<UserFollow> rows = position == null
+                ? followRepository.findFirstFollowers(profile.getId(), viewerId, page(size))
+                : followRepository.findFollowersAfter(
+                        profile.getId(), viewerId, position.timestamp(), position.userId(), page(size));
         return socialPage(rows, size, viewerId, UserFollow::getFollower,
                 UserFollow::getAcceptedAt);
     }
@@ -182,8 +184,10 @@ public class SocialGraphService {
             String username, UUID viewerId, String cursor, int size) {
         User profile = findAccessibleProfile(username, viewerId);
         SocialCursorCodec.Position position = cursorCodec.decode(cursor);
-        List<UserFollow> rows = followRepository.findFollowing(
-                profile.getId(), viewerId, timestamp(position), userId(position), page(size));
+        List<UserFollow> rows = position == null
+                ? followRepository.findFirstFollowing(profile.getId(), viewerId, page(size))
+                : followRepository.findFollowingAfter(
+                        profile.getId(), viewerId, position.timestamp(), position.userId(), page(size));
         return socialPage(rows, size, viewerId, UserFollow::getFollowed,
                 UserFollow::getAcceptedAt);
     }
@@ -192,8 +196,10 @@ public class SocialGraphService {
     public CursorPageResponse<SocialUserResponse> incomingRequests(
             UUID userId, String cursor, int size) {
         SocialCursorCodec.Position position = cursorCodec.decode(cursor);
-        List<UserFollow> rows = followRepository.findIncomingRequests(
-                userId, timestamp(position), userId(position), page(size));
+        List<UserFollow> rows = position == null
+                ? followRepository.findFirstIncomingRequests(userId, page(size))
+                : followRepository.findIncomingRequestsAfter(
+                        userId, position.timestamp(), position.userId(), page(size));
         return socialPage(rows, size, userId, UserFollow::getFollower,
                 UserFollow::getRequestedAt);
     }
@@ -202,8 +208,10 @@ public class SocialGraphService {
     public CursorPageResponse<SocialUserResponse> outgoingRequests(
             UUID userId, String cursor, int size) {
         SocialCursorCodec.Position position = cursorCodec.decode(cursor);
-        List<UserFollow> rows = followRepository.findOutgoingRequests(
-                userId, timestamp(position), userId(position), page(size));
+        List<UserFollow> rows = position == null
+                ? followRepository.findFirstOutgoingRequests(userId, page(size))
+                : followRepository.findOutgoingRequestsAfter(
+                        userId, position.timestamp(), position.userId(), page(size));
         return socialPage(rows, size, userId, UserFollow::getFollowed,
                 UserFollow::getRequestedAt);
     }
@@ -212,8 +220,10 @@ public class SocialGraphService {
     public CursorPageResponse<BlockedUserResponse> blockedUsers(
             UUID userId, String cursor, int size) {
         SocialCursorCodec.Position position = cursorCodec.decode(cursor);
-        List<UserBlock> rows = blockRepository.findBlockedUsers(
-                userId, timestamp(position), userId(position), page(size));
+        List<UserBlock> rows = position == null
+                ? blockRepository.findFirstBlockedUsers(userId, page(size))
+                : blockRepository.findBlockedUsersAfter(
+                        userId, position.timestamp(), position.userId(), page(size));
         boolean hasMore = rows.size() > size;
         List<UserBlock> visible = rows.stream().limit(size).toList();
         String next = hasMore && !visible.isEmpty()
@@ -312,14 +322,6 @@ public class SocialGraphService {
 
     private PageRequest page(int size) {
         return PageRequest.of(0, size + 1);
-    }
-
-    private Instant timestamp(SocialCursorCodec.Position position) {
-        return position == null ? null : position.timestamp();
-    }
-
-    private UUID userId(SocialCursorCodec.Position position) {
-        return position == null ? null : position.userId();
     }
 
     private boolean isPrivate(User user) {

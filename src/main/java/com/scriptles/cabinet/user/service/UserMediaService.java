@@ -29,6 +29,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -114,6 +115,7 @@ public class UserMediaService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public LibraryEntryResponse upsert(UUID userId, UUID mediaId, UserMediaStatus status) {
         User user = findUser(userId);
         Media media = findMedia(mediaId);
@@ -134,6 +136,7 @@ public class UserMediaService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void delete(UUID userId, UUID mediaId) {
         userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
                 .ifPresent(userMediaRepository::delete);

@@ -5,6 +5,9 @@ import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
+import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
+import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.response.UserMediaStateResponse;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
@@ -31,6 +34,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +61,7 @@ public class MediaQueryService {
     private final SeriesEpisodeRepository seriesEpisodeRepository;
     private final TrackDetailsRepository trackDetailsRepository;
     private final RatingRepository ratingRepository;
+    private final ReviewRepository reviewRepository;
     private final MediaLikeRepository mediaLikeRepository;
     private final MediaListItemRepository mediaListItemRepository;
     private final UserMediaRepository userMediaRepository;
@@ -64,11 +69,8 @@ public class MediaQueryService {
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
 
-    public ExternalMediaDetailsResponse findDetails(UUID mediaId) {
-        return findDetails(mediaId, null);
-    }
-
-    public ExternalMediaDetailsResponse findDetails(UUID mediaId, UUID userId) {
+    @Cacheable(cacheNames = "mediaDetails", key = "#mediaId")
+    public PublicMediaDetailsResponse findDetails(UUID mediaId) {
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND,
                 "MEDIA_NOT_FOUND",
@@ -79,8 +81,6 @@ public class MediaQueryService {
                 .filter(ExternalReference::isPrimaryReference)
                 .findFirst()
                 .orElseGet(() -> references.stream().findFirst().orElse(null));
-        CommunityStats community = communityStats(mediaId, userId);
-
         ExternalSource source = primaryReference == null ? ExternalSource.MANUAL : primaryReference.getSource();
         String externalId = primaryReference == null ? mediaId.toString() : primaryReference.getExternalId();
         String externalUrl = primaryReference == null ? null : primaryReference.getExternalUrl();
@@ -101,11 +101,7 @@ public class MediaQueryService {
                 .map(name -> new ExternalMediaDetailsResponse.GenreResponse(null, name, ExternalSource.MANUAL))
                 .toList();
         MediaCreditService.CreditSummary creditSummary = mediaCreditService.summary(media);
-        UserArtworkResolver.ResolvedArtwork artwork = userArtworkResolver == null
-                ? canonicalArtwork(media)
-                : userArtworkResolver.resolve(userId, media);
-
-        return new ExternalMediaDetailsResponse(
+        return new PublicMediaDetailsResponse(
                 media.getId(),
                 externalId,
                 source,
@@ -115,8 +111,8 @@ public class MediaQueryService {
                 creditSummary.creator(),
                 media.getDescription(),
                 media.getTagline(),
-                artwork.coverUrl(),
-                artwork.backdropUrl(),
+                media.getCoverUrl(),
+                media.getBackdropUrl(),
                 media.getLogoUrl(),
                 externalUrl,
                 media.getReleaseDate(),
@@ -127,6 +123,35 @@ public class MediaQueryService {
                 genres,
                 creditSummary.credits().stream().map(this::toCreditResponse).toList(),
                 true,
+                details(media, creditSummary)
+        );
+    }
+
+    public ExternalMediaDetailsResponse findLegacyDetails(UUID mediaId) {
+        PublicMediaDetailsResponse media = findDetails(mediaId);
+        MediaCommunityResponse community = findCommunity(mediaId);
+        return new ExternalMediaDetailsResponse(
+                media.id(),
+                media.externalId(),
+                media.source(),
+                media.type(),
+                media.title(),
+                media.originalTitle(),
+                media.creator(),
+                media.description(),
+                media.tagline(),
+                media.coverUrl(),
+                media.backdropUrl(),
+                media.logoUrl(),
+                media.externalUrl(),
+                media.releaseDate(),
+                media.originalLanguage(),
+                media.countryCode(),
+                media.wikidataId(),
+                media.externalReferences(),
+                media.genres(),
+                media.credits(),
+                media.imported(),
                 community.likeCount(),
                 community.recentLikers(),
                 community.averageRating(),
@@ -134,13 +159,8 @@ public class MediaQueryService {
                 community.listCount(),
                 community.completedCount(),
                 community.recentCompleters(),
-                details(media, creditSummary, userId)
+                media.details()
         );
-    }
-
-    private UserArtworkResolver.ResolvedArtwork canonicalArtwork(Media media) {
-        return new UserArtworkResolver.ResolvedArtwork(
-                media.getCoverUrl(), media.getBackdropUrl(), false, false);
     }
 
     public PageResponse<ExternalMediaDetailsResponse.CreditResponse> findCredits(
@@ -156,7 +176,7 @@ public class MediaQueryService {
                 .map(this::toCreditResponse));
     }
 
-    private Object details(Media media, MediaCreditService.CreditSummary creditSummary, UUID userId) {
+    private Object details(Media media, MediaCreditService.CreditSummary creditSummary) {
         return switch (media.getType()) {
             case MOVIE -> movieDetailsRepository.findById(media.getId())
                     .map(details -> new ExternalMediaDetailsResponse.MovieDetails(
@@ -177,13 +197,11 @@ public class MediaQueryService {
                     .map(details -> {
                         List<AlbumTrack> tracks = albumTrackRepository
                                 .findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(media.getId());
-                        Map<UUID, RatingSummaryService.ItemStats> stats = ratingSummaryService.items(
-                                tracks.stream().map(t -> t.getTrackMedia().getId()).toList(), userId);
                         return new ExternalMediaDetailsResponse.AlbumDetails(
                                 details.getAlbumType() == null ? null : details.getAlbumType().name(),
                                 details.getNumberOfTracks(), details.getAnimatedCoverUrl(), tracks.stream()
-                                .map(track -> toTrackResponse(track, stats.getOrDefault(
-                                        track.getTrackMedia().getId(), RatingSummaryService.ItemStats.empty())))
+                                .map(track -> toTrackResponse(
+                                        track, RatingSummaryService.ItemStats.empty()))
                                 .toList());
                     })
                     .orElseGet(() -> new ExternalMediaDetailsResponse.AlbumDetails(null, null, null, List.of()));
@@ -195,7 +213,7 @@ public class MediaQueryService {
                             details.getLastAirDate(),
                             seriesSeasonRepository.findAllBySeriesIdOrderBySeasonNumberAsc(media.getId())
                                     .stream()
-                                    .map(season -> toSeasonResponse(season, userId))
+                                    .map(this::toSeasonResponse)
                                     .toList()
                     ))
                     .orElseGet(() -> new ExternalMediaDetailsResponse.SeriesDetails(
@@ -240,9 +258,8 @@ public class MediaQueryService {
         );
     }
 
-    private ExternalMediaDetailsResponse.SeasonResponse toSeasonResponse(SeriesSeason season, UUID userId) {
-        RatingSummaryService.SeasonStats stats = ratingSummaryService.season(
-                seriesEpisodeRepository.findAllBySeasonIdOrderByEpisodeNumberAsc(season.getId()), userId);
+    private ExternalMediaDetailsResponse.SeasonResponse toSeasonResponse(SeriesSeason season) {
+        RatingSummaryService.SeasonStats stats = RatingSummaryService.SeasonStats.empty();
         return new ExternalMediaDetailsResponse.SeasonResponse(
                 season.getId(),
                 season.getExternalId(),
@@ -270,7 +287,11 @@ public class MediaQueryService {
         );
     }
 
-    private CommunityStats communityStats(UUID mediaId, UUID viewerId) {
+    @Cacheable(cacheNames = "mediaCommunity", key = "#mediaId")
+    public MediaCommunityResponse findCommunity(UUID mediaId) {
+        if (!mediaRepository.existsById(mediaId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada");
+        }
         Double averageRating = ratingRepository.summarizeRatings(List.of(mediaId), Visibility.PUBLIC)
                 .stream()
                 .findFirst()
@@ -292,19 +313,12 @@ public class MediaQueryService {
             ));
         }
 
-        var recentLikes = viewerId == null
-                ? mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId)
-                : mediaLikeRepository.findRecentVisibleLikers(
-                        mediaId, viewerId, org.springframework.data.domain.PageRequest.of(0, 3));
-        var recentCompletions = viewerId == null
-                ? userMediaRepository
-                    .findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
-                            mediaId, UserMediaStatus.COMPLETED)
-                : userMediaRepository.findRecentVisibleCompleters(
-                        mediaId, UserMediaStatus.COMPLETED, viewerId,
-                        org.springframework.data.domain.PageRequest.of(0, 3));
+        var recentLikes = mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId);
+        var recentCompletions = userMediaRepository
+                .findTop3ByMediaIdAndStatusAndPrivateEntryFalseAndCompletedAtIsNotNullOrderByCompletedAtDescIdDesc(
+                        mediaId, UserMediaStatus.COMPLETED);
 
-        return new CommunityStats(
+        return new MediaCommunityResponse(
                 mediaLikeRepository.countByMediaId(mediaId),
                 recentLikes.stream()
                         .map(like -> toCommunityUser(like.getUser()))
@@ -322,18 +336,27 @@ public class MediaQueryService {
         );
     }
 
+    public UserMediaStateResponse findUserState(UUID mediaId, UUID userId) {
+        Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada"));
+        var libraryEntry = userMediaRepository.findByUserIdAndMediaId(userId, mediaId).orElse(null);
+        var rating = ratingRepository.findByUserIdAndMediaId(userId, mediaId).orElse(null);
+        var review = reviewRepository.findByUserIdAndMediaId(userId, mediaId).orElse(null);
+        UserArtworkResolver.ResolvedArtwork artwork = userArtworkResolver.resolve(userId, media);
+
+        return new UserMediaStateResponse(
+                mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId),
+                libraryEntry == null ? null : libraryEntry.getStatus(),
+                rating == null ? null : rating.getValue().doubleValue(),
+                review == null ? null : review.getId(),
+                mediaListItemRepository.findListIdsByMediaIdAndOwnerId(mediaId, userId),
+                artwork.customCover() ? artwork.coverUrl() : null,
+                artwork.customBackdrop() ? artwork.backdropUrl() : null
+        );
+    }
+
     private MediaCommunityUserResponse toCommunityUser(User user) {
         return new MediaCommunityUserResponse(user.getId(), user.getUsername(), user.getAvatarUlr());
     }
 
-    private record CommunityStats(
-            long likeCount,
-            List<MediaCommunityUserResponse> recentLikers,
-            Double averageRating,
-            List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution,
-            long listCount,
-            long completedCount,
-            List<MediaCommunityUserResponse> recentCompleters
-    ) {
-    }
 }

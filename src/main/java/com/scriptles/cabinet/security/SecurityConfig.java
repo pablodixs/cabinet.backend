@@ -75,6 +75,7 @@ public class SecurityConfig {
                                 "/v1/media/search",
                                 "/v1/media/rankings/**",
                                 "/v1/media/*",
+                                "/v1/media/*/community",
                                 "/v1/media/*/credits",
                                 "/v1/media/*/external-info",
                                 "/v1/media/*/awards",

@@ -51,14 +51,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("""
             select user from User user
             where user.active = true
-              and (:viewerId is not null
-                   or user.profileVisibility is null
-                   or user.profileVisibility = :visibility)
-              and (:viewerId is null or not exists (
+              and not exists (
                   select block.id from UserBlock block
                   where (block.blocker.id = :viewerId and block.blocked.id = user.id)
                      or (block.blocker.id = user.id and block.blocked.id = :viewerId)
-              ))
+              )
               and (
                 lower(user.username) like lower(concat('%', :query, '%'))
                 or lower(user.displayName) like lower(concat('%', :query, '%'))
@@ -66,7 +63,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     Page<User> searchProfiles(
             @Param("query") String query,
-            @Param("visibility") Visibility visibility,
             @Param("viewerId") UUID viewerId,
             Pageable pageable
     );

@@ -9,6 +9,7 @@ import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -26,6 +27,7 @@ public class MediaLikeService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public MediaLikeResponse like(UUID userId, UUID mediaId) {
         if (mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId)) {
             return new MediaLikeResponse(true);
@@ -37,6 +39,7 @@ public class MediaLikeService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void unlike(UUID userId, UUID mediaId) {
         mediaLikeRepository.deleteByUserIdAndMediaId(userId, mediaId);
     }

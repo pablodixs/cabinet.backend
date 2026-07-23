@@ -2,6 +2,9 @@ package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
+import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
+import com.scriptles.cabinet.media.dto.response.UserMediaStateResponse;
 import com.scriptles.cabinet.media.dto.response.MediaExternalInfoResponse;
 import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.MoreByResponse;
@@ -41,9 +44,21 @@ public class MediaQueryController {
     private final AwardQueryService awardQueryService;
 
     @GetMapping("/{mediaId}")
-    public ExternalMediaDetailsResponse findDetails(@AuthenticationPrincipal AuthenticatedUser user,
-                                                    @PathVariable UUID mediaId) {
-        return mediaQueryService.findDetails(mediaId, user == null ? null : user.id());
+    public PublicMediaDetailsResponse findDetails(@PathVariable UUID mediaId) {
+        return mediaQueryService.findDetails(mediaId);
+    }
+
+    @GetMapping("/{mediaId}/community")
+    public MediaCommunityResponse findCommunity(@PathVariable UUID mediaId) {
+        return mediaQueryService.findCommunity(mediaId);
+    }
+
+    @GetMapping("/{mediaId}/me")
+    public UserMediaStateResponse findUserState(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID mediaId
+    ) {
+        return mediaQueryService.findUserState(mediaId, user.id());
     }
 
     @GetMapping("/{mediaId}/credits")

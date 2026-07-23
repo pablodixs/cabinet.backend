@@ -51,6 +51,17 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
 
     long countByMediaIdAndListVisibility(UUID mediaId, Visibility visibility);
 
+    @Query("""
+            select item.list.id
+            from MediaListItem item
+            where item.media.id = :mediaId
+              and item.list.owner.id = :ownerId
+            """)
+    List<UUID> findListIdsByMediaIdAndOwnerId(
+            @Param("mediaId") UUID mediaId,
+            @Param("ownerId") UUID ownerId
+    );
+
     @Query(value = """
             select item as item, item.list.id as listId, count(listLike) as likeCount
             from MediaListItem item

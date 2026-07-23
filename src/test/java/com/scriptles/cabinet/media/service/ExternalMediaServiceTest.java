@@ -239,7 +239,7 @@ class ExternalMediaServiceTest {
 
         when(externalReferenceRepository.findBySourceAndExternalId(ExternalSource.TMDB, "550"))
                 .thenReturn(Optional.of(reference));
-        when(mediaQueryService.findDetails(mediaId)).thenReturn(stored);
+        when(mediaQueryService.findLegacyDetails(mediaId)).thenReturn(stored);
 
         ExternalMediaDetailsResponse response = externalMediaService.findDetails(
                 ExternalSource.TMDB,
@@ -249,7 +249,7 @@ class ExternalMediaServiceTest {
         );
 
         assertThat(response).isSameAs(stored);
-        verify(mediaQueryService).findDetails(mediaId);
+        verify(mediaQueryService).findLegacyDetails(mediaId);
         verifyNoInteractions(providerRegistry);
     }
 

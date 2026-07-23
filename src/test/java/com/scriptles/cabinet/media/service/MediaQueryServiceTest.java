@@ -134,6 +134,7 @@ class MediaQueryServiceTest {
         completed.setUser(completer);
 
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(mediaRepository.existsById(mediaId)).thenReturn(true);
         when(externalReferenceRepository.findAllByMediaId(mediaId)).thenReturn(List.of(reference));
         when(movieDetailsRepository.findById(mediaId)).thenReturn(Optional.of(movieDetails));
         when(mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId))
@@ -159,6 +160,7 @@ class MediaQueryServiceTest {
         ));
 
         var response = mediaQueryService.findDetails(mediaId);
+        var community = mediaQueryService.findCommunity(mediaId);
 
         assertThat(response.id()).isEqualTo(mediaId);
         assertThat(response.source()).isEqualTo(ExternalSource.TMDB);
@@ -169,11 +171,11 @@ class MediaQueryServiceTest {
                 .isEqualTo(new com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse.MovieDetails(
                         139, null, null, "David Fincher"));
         assertThat(response.creator()).isEqualTo("David Fincher");
-        assertThat(response.recentLikers()).singleElement().satisfies(user -> {
+        assertThat(community.recentLikers()).singleElement().satisfies(user -> {
             assertThat(user.username()).isEqualTo("ana");
             assertThat(user.avatarUrl()).isEqualTo("https://example.com/ana.jpg");
         });
-        assertThat(response.recentCompleters()).singleElement().satisfies(user -> {
+        assertThat(community.recentCompleters()).singleElement().satisfies(user -> {
             assertThat(user.username()).isEqualTo("bia");
             assertThat(user.avatarUrl()).isEqualTo("https://example.com/bia.jpg");
         });
