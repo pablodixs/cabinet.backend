@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.entity;
 
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.enums.CatalogStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -76,6 +77,20 @@ public class Media {
 
     @Column(length = 3)
     private String countryCode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private CatalogStatus catalogStatus = CatalogStatus.READY;
+
+    private Instant coreSyncedAt;
+
+    private Instant enrichmentSyncedAt;
+
+    @Column(nullable = false)
+    private int syncVersion;
+
+    @Column(columnDefinition = "TEXT")
+    private String lastSyncError;
 
     @CreationTimestamp
     private Instant createdAt;

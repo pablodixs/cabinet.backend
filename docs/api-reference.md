@@ -150,7 +150,7 @@ The same three routes exist under `/v1/artists/{artistId}`. They return `Depreca
 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
-| `GET /v1/me/library` | User | Optional `status`, optional `type`, `page=0`, `size=20` (max 50). |
+| `GET /v1/me/library` | User | Optional `status`, optional `type`, `page=0`, `size=20` (max 50). Each item includes the current user's `liked`, `rating`, `hasReview`, and the media's primary `creator`. |
 | `GET /v1/me/library/{mediaId}` | User | One entry or `204`. |
 | `PUT /v1/me/library/{mediaId}` | User | Upsert `{ status }`. |
 | `DELETE /v1/me/library/{mediaId}` | User | Remove entry; returns `204`. |

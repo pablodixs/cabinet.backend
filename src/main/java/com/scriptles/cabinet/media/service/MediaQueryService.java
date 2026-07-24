@@ -12,6 +12,8 @@ import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.MediaTranslation;
+import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.CreditRole;
@@ -21,6 +23,7 @@ import com.scriptles.cabinet.media.repository.BookDetailsRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.MediaTranslationRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
@@ -68,9 +71,15 @@ public class MediaQueryService {
     private final MediaCreditService mediaCreditService;
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
+    private final MediaTranslationRepository mediaTranslationRepository;
 
-    @Cacheable(cacheNames = "mediaDetails", key = "#mediaId")
     public PublicMediaDetailsResponse findDetails(UUID mediaId) {
+        return findDetails(mediaId, "pt-BR");
+    }
+
+    @Cacheable(cacheNames = "mediaDetails", key = "#mediaId + ':' + #locale")
+    public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
+        String requestedLocale = SupportedLocale.from(locale).tag();
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND,
                 "MEDIA_NOT_FOUND",
@@ -100,17 +109,19 @@ public class MediaQueryService {
         List<ExternalMediaDetailsResponse.GenreResponse> genres = media.getGenres().stream()
                 .map(name -> new ExternalMediaDetailsResponse.GenreResponse(null, name, ExternalSource.MANUAL))
                 .toList();
+        MediaTranslation translation = resolveTranslation(mediaId, requestedLocale);
+        String resolvedLocale = translation == null ? requestedLocale : translation.getLocale();
         MediaCreditService.CreditSummary creditSummary = mediaCreditService.summary(media);
         return new PublicMediaDetailsResponse(
                 media.getId(),
                 externalId,
                 source,
                 media.getType(),
-                media.getTitle(),
+                translation == null ? media.getTitle() : translation.getTitle(),
                 media.getOriginalTitle(),
                 creditSummary.creator(),
-                media.getDescription(),
-                media.getTagline(),
+                translation == null ? media.getDescription() : translation.getDescription(),
+                translation == null ? media.getTagline() : translation.getTagline(),
                 media.getCoverUrl(),
                 media.getBackdropUrl(),
                 media.getLogoUrl(),
@@ -123,8 +134,25 @@ public class MediaQueryService {
                 genres,
                 creditSummary.credits().stream().map(this::toCreditResponse).toList(),
                 true,
-                details(media, creditSummary)
+                details(media, creditSummary),
+                requestedLocale,
+                resolvedLocale,
+                !requestedLocale.equals(resolvedLocale),
+                media.getCatalogStatus()
         );
+    }
+
+    private MediaTranslation resolveTranslation(UUID mediaId, String requestedLocale) {
+        if (mediaTranslationRepository == null) return null;
+        List<MediaTranslation> translations = mediaTranslationRepository.findAllByMediaId(mediaId);
+        if (translations.isEmpty()) return null;
+        return translations.stream()
+                .filter(value -> requestedLocale.equals(value.getLocale()))
+                .findFirst()
+                .or(() -> translations.stream()
+                        .filter(value -> "en-US".equals(value.getLocale()))
+                        .findFirst())
+                .orElse(translations.getFirst());
     }
 
     public ExternalMediaDetailsResponse findLegacyDetails(UUID mediaId) {

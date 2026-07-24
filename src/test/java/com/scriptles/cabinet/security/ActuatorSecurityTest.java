@@ -2,11 +2,11 @@ package com.scriptles.cabinet.security;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -27,7 +27,7 @@ class ActuatorSecurityTest {
                 .andExpect(jsonPath("$.status").value("UP"));
     }
 
-    @SpringBootConfiguration
+    @Configuration(proxyBeanMethods = false)
     @EnableAutoConfiguration
     @Import(SecurityConfig.class)
     static class TestApplication {

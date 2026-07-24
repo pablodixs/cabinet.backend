@@ -3,6 +3,8 @@ package com.scriptles.cabinet.media.service;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.request.ImportExternalMediaRequest;
+import com.scriptles.cabinet.media.catalog.CatalogImportFacade;
+import com.scriptles.cabinet.media.catalog.CatalogSnapshotCache;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaLike;
@@ -96,6 +98,10 @@ class ExternalMediaServiceTest {
     private MediaCreditService mediaCreditService;
     @Mock
     private ExternalMediaProvider provider;
+    @Mock
+    private CatalogImportFacade catalogImportFacade;
+    @Mock
+    private CatalogSnapshotCache catalogSnapshotCache;
 
     @InjectMocks
     private ExternalMediaService externalMediaService;
@@ -254,31 +260,8 @@ class ExternalMediaServiceTest {
     }
 
     @Test
-    void persistsExternalCreditsWhenImportingMedia() {
+    void legacyImportDelegatesToProgressiveMaterialization() {
         ExternalMedia external = movie();
-        UUID mediaId = UUID.randomUUID();
-        when(externalReferenceRepository.findBySourceAndExternalId(ExternalSource.TMDB, "550"))
-                .thenReturn(Optional.empty());
-        when(providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)).thenReturn(provider);
-        when(provider.findById(MediaType.MOVIE, "550", "pt-BR")).thenReturn(Optional.of(external));
-        when(wikidataClient.find(ExternalSource.TMDB, MediaType.MOVIE, "550", "pt-BR"))
-                .thenReturn(Optional.empty());
-        when(mediaRepository.save(any(Media.class))).thenAnswer(invocation -> {
-            Media media = invocation.getArgument(0);
-            media.setId(mediaId);
-            return media;
-        });
-
-        var response = externalMediaService.importMedia(new ImportExternalMediaRequest(
-                ExternalSource.TMDB, "550", MediaType.MOVIE));
-
-        assertThat(response.id()).isEqualTo(mediaId);
-        assertThat(response.creator()).isEqualTo("David Fincher");
-        verify(mediaCreditService).save(argThat(media -> mediaId.equals(media.getId())), eq(external.credits()));
-    }
-
-    @Test
-    void backfillsCreditsWhenImportingAnExistingMediaWithoutCredits() {
         UUID mediaId = UUID.randomUUID();
         Media media = new Media();
         media.setId(mediaId);
@@ -288,82 +271,46 @@ class ExternalMediaServiceTest {
         reference.setMedia(media);
         reference.setSource(ExternalSource.TMDB);
         reference.setExternalId("550");
-        ExternalMedia external = movie();
-
+        when(catalogImportFacade.materialize(any())).thenReturn(
+                new CatalogImportFacade.Result(media, external));
         when(externalReferenceRepository.findBySourceAndExternalId(ExternalSource.TMDB, "550"))
                 .thenReturn(Optional.of(reference));
         when(mediaCreditService.summary(media)).thenReturn(MediaCreditService.CreditSummary.empty());
-        when(providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)).thenReturn(provider);
-        when(provider.findById(MediaType.MOVIE, "550", "pt-BR")).thenReturn(Optional.of(external));
 
         var response = externalMediaService.importMedia(new ImportExternalMediaRequest(
                 ExternalSource.TMDB, "550", MediaType.MOVIE));
 
         assertThat(response.id()).isEqualTo(mediaId);
         assertThat(response.creator()).isEqualTo("David Fincher");
-        verify(mediaCreditService).save(media, external.credits());
+        verify(catalogImportFacade).materialize(argThat(target ->
+                target.source() == ExternalSource.TMDB
+                        && target.mediaType() == MediaType.MOVIE
+                        && "550".equals(target.externalId())));
     }
 
     @Test
-    void givesNewAlbumTracksTheAlbumReleaseDate() {
-        LocalDate futureRelease = LocalDate.now().plusDays(30);
-        ExternalMedia album = new ExternalMedia(
-                ExternalSource.MUSICBRAINZ,
-                "album-1",
-                MediaType.ALBUM,
-                "Future Album",
-                "Future Album",
-                null,
-                null,
-                null,
-                null,
-                null,
-                futureRelease,
-                "en",
-                "US",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                "ALBUM",
-                1,
-                "Artist",
-                null,
-                null,
-                List.of(),
-                List.of(new ExternalMedia.ExternalTrack(
-                        "track-1", "Future Track", 1, 1, 180, false)),
-                List.of(),
-                List.of()
-        );
-        when(providerRegistry.get(ExternalSource.MUSICBRAINZ, MediaType.ALBUM))
-                .thenReturn(provider);
-        when(provider.findById(MediaType.ALBUM, "album-1", "pt-BR"))
-                .thenReturn(Optional.of(album));
-        when(wikidataClient.find(
-                ExternalSource.MUSICBRAINZ, MediaType.ALBUM, "album-1", "pt-BR"))
-                .thenReturn(Optional.empty());
-        when(mediaRepository.save(any(Media.class))).thenAnswer(invocation -> {
-            Media media = invocation.getArgument(0);
-            if (media.getId() == null) media.setId(UUID.randomUUID());
-            return media;
-        });
+    void existingImportDoesNotCallProviderOrReconcileCredits() {
+        UUID mediaId = UUID.randomUUID();
+        Media media = new Media();
+        media.setId(mediaId);
+        media.setType(MediaType.MOVIE);
+        media.setTitle("Fight Club");
+        ExternalReference reference = new ExternalReference();
+        reference.setMedia(media);
+        reference.setSource(ExternalSource.TMDB);
+        reference.setExternalId("550");
+        when(catalogImportFacade.materialize(any())).thenReturn(
+                new CatalogImportFacade.Result(media, null));
+        when(externalReferenceRepository.findBySourceAndExternalId(ExternalSource.TMDB, "550"))
+                .thenReturn(Optional.of(reference));
+        when(mediaCreditService.summary(media)).thenReturn(MediaCreditService.CreditSummary.empty());
 
-        externalMediaService.importMedia(new ImportExternalMediaRequest(
-                ExternalSource.MUSICBRAINZ, "album-1", MediaType.ALBUM));
+        var response = externalMediaService.importMedia(new ImportExternalMediaRequest(
+                ExternalSource.TMDB, "550", MediaType.MOVIE));
 
-        verify(mediaRepository, atLeastOnce()).save(argThat(media ->
-                media.getType() == MediaType.TRACK
-                        && futureRelease.equals(media.getReleaseDate())));
+        assertThat(response.id()).isEqualTo(mediaId);
+        verifyNoInteractions(providerRegistry);
+        verify(mediaCreditService, org.mockito.Mockito.never()).reconcile(any());
     }
 
     private ExternalMedia movie() {

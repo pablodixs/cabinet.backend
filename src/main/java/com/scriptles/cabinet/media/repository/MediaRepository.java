@@ -39,6 +39,11 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
               and (
                 lower(media.title) like lower(concat('%', :query, '%'))
                 or lower(coalesce(media.originalTitle, '')) like lower(concat('%', :query, '%'))
+                or exists (
+                    select translation.id from MediaTranslation translation
+                    where translation.media = media
+                      and lower(translation.title) like lower(concat('%', :query, '%'))
+                )
               )
             order by
               case
@@ -110,7 +115,12 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
             select media from Media media
             where media.typeValue in :types
               and (lower(media.title) like lower(concat('%', :query, '%'))
-                   or lower(coalesce(media.originalTitle, '')) like lower(concat('%', :query, '%')))
+                   or lower(coalesce(media.originalTitle, '')) like lower(concat('%', :query, '%'))
+                   or exists (
+                       select translation.id from MediaTranslation translation
+                       where translation.media = media
+                         and lower(translation.title) like lower(concat('%', :query, '%'))
+                   ))
             order by lower(media.title), media.id
             """)
     List<Media> findInterestMediaOptions(

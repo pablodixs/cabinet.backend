@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
 
@@ -40,6 +41,17 @@ public interface MediaLikeRepository extends JpaRepository<MediaLike, UUID> {
     );
 
     boolean existsByUserIdAndMediaId(UUID userId, UUID mediaId);
+
+    @Query("""
+            select mediaLike.media.id
+            from MediaLike mediaLike
+            where mediaLike.user.id = :userId
+              and mediaLike.media.id in :mediaIds
+            """)
+    List<UUID> findLikedMediaIds(
+            @Param("userId") UUID userId,
+            @Param("mediaIds") Collection<UUID> mediaIds
+    );
 
     @EntityGraph(attributePaths = "media")
     List<MediaLike> findAllByUserId(UUID userId);

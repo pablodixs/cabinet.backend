@@ -2,16 +2,12 @@ package com.scriptles.cabinet.media.dto.response;
 
 import com.scriptles.cabinet.media.enums.CatalogStatus;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
-public record RatingResponse(
+public record TargetMediaLikeResponse(
         UUID mediaId,
-        BigDecimal rating,
+        boolean liked,
         CatalogStatus catalogStatus,
         boolean enrichmentPending
 ) {
-    public RatingResponse(UUID mediaId, BigDecimal rating) {
-        this(mediaId, rating, CatalogStatus.READY, false);
-    }
 }

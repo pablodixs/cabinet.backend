@@ -4,11 +4,16 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
+import com.scriptles.cabinet.media.service.MediaCreditService;
 import com.scriptles.cabinet.user.dto.response.LibraryEntryResponse;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.entity.User;
@@ -30,7 +35,9 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -55,6 +62,14 @@ class UserMediaServiceTest {
     private MediaRepository mediaRepository;
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
+    @Mock
+    private MediaLikeRepository mediaLikeRepository;
+    @Mock
+    private RatingRepository ratingRepository;
+    @Mock
+    private ReviewRepository reviewRepository;
+    @Mock
+    private MediaCreditService mediaCreditService;
     @Mock
     private MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock
@@ -85,6 +100,10 @@ class UserMediaServiceTest {
         reference.setExternalId("book-123");
         reference.setPrimaryReference(true);
 
+        Rating rating = new Rating();
+        rating.setMedia(media);
+        rating.setValue(new BigDecimal("4.5"));
+
         when(userMediaRepository.findLibrary(
                 any(UUID.class),
                 any(UserMediaStatus.class),
@@ -97,6 +116,21 @@ class UserMediaServiceTest {
         ));
         when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(any()))
                 .thenReturn(List.of(reference));
+        when(mediaLikeRepository.findLikedMediaIds(userId, List.of(mediaId)))
+                .thenReturn(List.of(mediaId));
+        when(ratingRepository.findAllByUserIdAndMediaIdIn(userId, List.of(mediaId)))
+                .thenReturn(List.of(rating));
+        when(reviewRepository.findReviewedMediaIds(userId, List.of(mediaId)))
+                .thenReturn(List.of(mediaId));
+        when(mediaCreditService.summaries(List.of(media)))
+                .thenReturn(Map.of(
+                        mediaId,
+                        new MediaCreditService.CreditSummary(
+                                "Ursula K. Le Guin",
+                                null,
+                                List.of()
+                        )
+                ));
 
         PageResponse<LibraryMediaResponse> response = userMediaService.findLibrary(
                 userId,
@@ -113,6 +147,10 @@ class UserMediaServiceTest {
             assertThat(item.title()).isEqualTo("A mão esquerda da escuridão");
             assertThat(item.source()).isEqualTo(ExternalSource.GOOGLE_BOOKS);
             assertThat(item.externalId()).isEqualTo("book-123");
+            assertThat(item.liked()).isTrue();
+            assertThat(item.rating()).isEqualByComparingTo("4.5");
+            assertThat(item.hasReview()).isTrue();
+            assertThat(item.creator()).isEqualTo("Ursula K. Le Guin");
         });
         verify(userMediaRepository).findLibrary(
                 userId,

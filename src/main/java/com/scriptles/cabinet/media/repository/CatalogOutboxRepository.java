@@ -1,0 +1,31 @@
+package com.scriptles.cabinet.media.repository;
+
+import com.scriptles.cabinet.media.entity.CatalogOutboxEvent;
+import com.scriptles.cabinet.media.enums.CatalogEventType;
+import com.scriptles.cabinet.media.enums.CatalogOutboxStatus;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.UUID;
+
+public interface CatalogOutboxRepository extends JpaRepository<CatalogOutboxEvent, UUID> {
+    boolean existsByAggregateIdAndEventTypeAndStatusIn(
+            UUID aggregateId,
+            CatalogEventType eventType,
+            Collection<CatalogOutboxStatus> statuses
+    );
+
+    @Query(value = """
+            select *
+            from catalog_outbox
+            where status in ('PENDING', 'RETRY')
+              and available_at <= :now
+            order by created_at
+            for update skip locked
+            """, nativeQuery = true)
+    List<CatalogOutboxEvent> claimable(Instant now, Pageable pageable);
+}

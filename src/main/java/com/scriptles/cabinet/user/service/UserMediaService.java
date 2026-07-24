@@ -7,8 +7,12 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.event.SeriesTrackingRequestedEvent;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
+import com.scriptles.cabinet.media.service.MediaCreditService;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.dto.response.LibraryEntryResponse;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
@@ -36,6 +40,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -48,6 +53,10 @@ public class UserMediaService {
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
+    private final MediaLikeRepository mediaLikeRepository;
+    private final RatingRepository ratingRepository;
+    private final ReviewRepository reviewRepository;
+    private final MediaCreditService mediaCreditService;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final ApplicationEventPublisher eventPublisher;
     private final UserArtworkResolver userArtworkResolver;
@@ -88,11 +97,34 @@ public class UserMediaService {
                         ));
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
                 userId, entries.getContent().stream().map(UserMedia::getMedia).toList());
+        var mediaItems = entries.getContent().stream().map(UserMedia::getMedia).toList();
+        var mediaIds = mediaItems.stream().map(Media::getId).toList();
+        Set<UUID> likedMediaIds = mediaIds.isEmpty()
+                ? Set.of()
+                : Set.copyOf(mediaLikeRepository.findLikedMediaIds(userId, mediaIds));
+        Map<UUID, java.math.BigDecimal> ratingsByMediaId = mediaIds.isEmpty()
+                ? Map.of()
+                : ratingRepository.findAllByUserIdAndMediaIdIn(userId, mediaIds).stream()
+                        .collect(Collectors.toMap(
+                                rating -> rating.getMedia().getId(),
+                                rating -> rating.getValue()
+                        ));
+        Set<UUID> reviewedMediaIds = mediaIds.isEmpty()
+                ? Set.of()
+                : Set.copyOf(reviewRepository.findReviewedMediaIds(userId, mediaIds));
+        Map<UUID, MediaCreditService.CreditSummary> creditsByMediaId =
+                mediaCreditService.summaries(mediaItems);
 
         return PageResponse.from(entries.map(entry -> LibraryMediaResponse.from(
                 entry,
                 referencesByMediaId.get(entry.getMedia().getId()),
-                artworks.get(entry.getMedia().getId()).coverUrl()
+                artworks.get(entry.getMedia().getId()).coverUrl(),
+                likedMediaIds.contains(entry.getMedia().getId()),
+                ratingsByMediaId.get(entry.getMedia().getId()),
+                reviewedMediaIds.contains(entry.getMedia().getId()),
+                creditsByMediaId
+                        .getOrDefault(entry.getMedia().getId(), MediaCreditService.CreditSummary.empty())
+                        .creator()
         )));
     }
 

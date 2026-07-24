@@ -38,13 +38,31 @@ public class MediaCreditService {
 
     @Transactional
     public void save(Media media, List<ExternalMedia.ExternalCredit> externalCredits) {
+        save(media, externalCredits, true);
+    }
+
+    @Transactional
+    public void saveWithoutIdentityEnrichment(
+            Media media,
+            List<ExternalMedia.ExternalCredit> externalCredits
+    ) {
+        save(media, externalCredits, false);
+    }
+
+    private void save(
+            Media media,
+            List<ExternalMedia.ExternalCredit> externalCredits,
+            boolean enrichIdentities
+    ) {
         if (externalCredits == null || externalCredits.isEmpty()) {
             return;
         }
 
         mediaCreditRepository.deleteAllByMediaId(media.getId());
         mediaCreditRepository.flush();
-        Set<IdentityKey> enrichmentKeys = enrichmentKeys(externalCredits);
+        Set<IdentityKey> enrichmentKeys = enrichIdentities
+                ? enrichmentKeys(externalCredits)
+                : Set.of();
         Set<CreditKey> savedCredits = new LinkedHashSet<>();
         List<MediaCredit> credits = new ArrayList<>();
         for (ExternalMedia.ExternalCredit external : externalCredits) {

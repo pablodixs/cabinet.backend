@@ -2,6 +2,10 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.request.ImportExternalMediaRequest;
+import com.scriptles.cabinet.media.dto.request.MediaTarget;
+import com.scriptles.cabinet.media.catalog.CatalogImportFacade;
+import com.scriptles.cabinet.media.catalog.CatalogSnapshot;
+import com.scriptles.cabinet.media.catalog.CatalogSnapshotCache;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
@@ -19,9 +23,7 @@ import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.media.entity.TrackDetails;
 import com.scriptles.cabinet.media.enums.ExternalSource;
-import com.scriptles.cabinet.media.enums.AlbumType;
 import com.scriptles.cabinet.media.enums.MediaType;
-import com.scriptles.cabinet.media.enums.SeriesStatus;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.ExternalMediaException;
 import com.scriptles.cabinet.media.external.ExternalMediaProvider;
@@ -88,6 +90,8 @@ public class ExternalMediaService {
     private final MediaQueryService mediaQueryService;
     private final MediaCreditService mediaCreditService;
     private final UserArtworkResolver userArtworkResolver;
+    private final CatalogImportFacade catalogImportFacade;
+    private final CatalogSnapshotCache catalogSnapshotCache;
 
     @Transactional(readOnly = true)
     public List<ExternalMediaResponse> search(MediaType mediaType, String query, String language, int offset, int limit) {
@@ -119,6 +123,7 @@ public class ExternalMediaService {
         ExternalMedia external = providerRegistry.get(source, mediaType)
                 .findById(mediaType, externalId, language)
                 .orElseThrow(() -> new IllegalArgumentException("External media not found"));
+        catalogSnapshotCache.put(new CatalogSnapshot(external, language, Instant.now()));
         Optional<WikidataClient.WikidataEnrichment> enrichment = findWikidataEnrichment(
                 external, source, mediaType, externalId, language);
         if (enrichment.isPresent()) {
@@ -468,85 +473,27 @@ public class ExternalMediaService {
         return results;
     }
 
-    @Transactional
     public ExternalMediaResponse importMedia(ImportExternalMediaRequest request) {
-        ExternalReference existing = externalReferenceRepository
-                .findBySourceAndExternalId(request.source(), request.externalId())
-                .orElse(null);
-        if (existing != null) {
-            return toImportedResponse(
-                    existing.getMedia(),
-                    existing,
-                    storedCreatorOrBackfill(existing.getMedia(), request),
-                    null,
-                    existing.getMedia().getWikidataId()
-            );
-        }
-
-        ExternalMediaProvider provider = providerRegistry.get(request.source(), request.mediaType());
-        ExternalMedia external = provider.findById(request.mediaType(), request.externalId(), "pt-BR")
-                .orElseThrow(() -> new IllegalArgumentException("External media not found"));
-        Optional<WikidataClient.WikidataEnrichment> enrichment = findWikidataEnrichment(
-                external, request.source(), request.mediaType(), request.externalId(), "pt-BR");
-        if (enrichment.isPresent()) {
-            external = external.withEnrichment(enrichment.get().logoUrl(), enrichment.get().genres());
-        }
-
-        String wikidataId = preferredWikidataId(external, enrichment);
-        String canonicalWorkWikidataId = canonicalWorkWikidataId(
+        CatalogImportFacade.Result result = catalogImportFacade.materialize(new MediaTarget(
                 null,
+                request.source(),
+                request.externalId(),
                 request.mediaType(),
-                wikidataId,
-                enrichment
-        );
-        Media unsavedMedia = toMedia(external);
-        unsavedMedia.setWikidataId(wikidataId);
-        Media media = mediaRepository.save(unsavedMedia);
-        saveDetails(media, external, canonicalWorkWikidataId);
-        mediaCreditService.save(media, external.credits());
-
-        ExternalReference reference = new ExternalReference();
-        reference.setMedia(media);
-        reference.setSource(external.source());
-        reference.setExternalId(external.externalId());
-        reference.setExternalUrl(external.externalUrl());
-        reference.setPrimaryReference(true);
-        reference.setLastSyncedAt(Instant.now());
-        externalReferenceRepository.save(reference);
-
-        Optional.ofNullable(wikidataId).ifPresent(value -> {
-            ExternalReference wikidataReference = new ExternalReference();
-            wikidataReference.setMedia(media);
-            wikidataReference.setSource(ExternalSource.WIKIDATA);
-            wikidataReference.setExternalId(value);
-            wikidataReference.setExternalUrl("https://www.wikidata.org/wiki/" + value);
-            wikidataReference.setPrimaryReference(false);
-            wikidataReference.setLastSyncedAt(Instant.now());
-            externalReferenceRepository.save(wikidataReference);
-        });
-
-        return toImportedResponse(
-                media, reference, external.creator(), external.durationSeconds(), wikidataId);
-    }
-
-    private String storedCreatorOrBackfill(Media media, ImportExternalMediaRequest request) {
+                "pt-BR"
+        ));
+        Media media = result.media();
+        ExternalReference reference = externalReferenceRepository
+                .findBySourceAndExternalId(request.source(), request.externalId())
+                .orElseThrow(() -> new IllegalStateException("External reference was not materialized"));
+        ExternalMedia snapshot = result.snapshot();
         MediaCreditService.CreditSummary stored = mediaCreditService.summary(media);
-        if (!stored.credits().isEmpty()) {
-            mediaCreditService.reconcile(media);
-            return mediaCreditService.summary(media).creator();
-        }
-
-        try {
-            Optional<ExternalMedia> external = providerRegistry.get(request.source(), request.mediaType())
-                    .findById(request.mediaType(), request.externalId(), "pt-BR");
-            if (external.isPresent()) {
-                mediaCreditService.save(media, external.get().credits());
-                return external.get().creator();
-            }
-        } catch (ExternalMediaException | IllegalArgumentException exception) {
-            log.warn("Unable to backfill credits for imported media {}", media.getId(), exception);
-        }
-        return stored.creator();
+        return toImportedResponse(
+                media,
+                reference,
+                snapshot != null ? snapshot.creator() : stored.creator(),
+                snapshot == null ? null : snapshot.durationSeconds(),
+                media.getWikidataId()
+        );
     }
 
     private ExternalSource defaultSource(MediaType mediaType) {
@@ -597,160 +544,6 @@ public class ExternalMediaService {
                         external.durationSeconds(), external.wikidataId(), false
                 );
         }).toList();
-    }
-
-    private Media toMedia(ExternalMedia external) {
-        Media media = new Media();
-        media.setType(external.type());
-        media.setTitle(external.title());
-        media.setOriginalTitle(external.originalTitle());
-        media.setDescription(external.description());
-        media.setTagline(external.tagline());
-        media.setCoverUrl(external.coverUrl());
-        media.setBackdropUrl(external.backdropUrl());
-        media.setLogoUrl(external.logoUrl());
-        media.setGenres(external.genres().stream().map(ExternalMedia.ExternalGenre::name)
-                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new)));
-        media.setReleaseDate(external.releaseDate());
-        media.setOriginalLanguage(external.originalLanguage());
-        media.setCountryCode(external.countryCode());
-        return media;
-    }
-
-    private void saveDetails(Media media, ExternalMedia external, String canonicalWorkWikidataId) {
-        switch (external.type()) {
-            case TRACK -> {
-                TrackDetails details = new TrackDetails();
-                details.setMedia(media);
-                details.setDurationSeconds(external.durationSeconds());
-                details.setExplicit(Boolean.TRUE.equals(external.explicit()));
-                trackDetailsRepository.save(details);
-            }
-            case ALBUM -> {
-                AlbumDetails details = new AlbumDetails();
-                details.setMedia(media);
-                details.setAlbumType(albumType(external.albumType()));
-                details.setNumberOfTracks(external.numberOfTracks());
-                details.setReleaseDate(external.releaseDate());
-                albumDetailsRepository.save(details);
-                external.tracks().forEach(track -> {
-                    AlbumTrack entity = new AlbumTrack();
-                    entity.setAlbum(media);
-                    entity.setTrackMedia(resolveTrackMedia(track, external.releaseDate()));
-                    entity.setExternalId(track.externalId());
-                    entity.setTitle(track.title());
-                    entity.setDiscNumber(track.discNumber());
-                    entity.setTrackNumber(track.trackNumber());
-                    entity.setDurationSeconds(track.durationSeconds());
-                    entity.setExplicit(track.explicit());
-                    albumTrackRepository.save(entity);
-                });
-            }
-            case BOOK -> {
-                BookDetails details = new BookDetails();
-                details.setMedia(media);
-                details.setIsbn10(external.isbn10());
-                details.setIsbn13(external.isbn13());
-                details.setPageCount(external.pageCount());
-                details.setPublisher(external.publisher());
-                details.setPublicationDate(external.releaseDate());
-                details.setCanonicalWorkWikidataId(canonicalWorkWikidataId);
-                bookDetailsRepository.save(details);
-            }
-            case MOVIE -> {
-                MovieDetails details = new MovieDetails();
-                details.setMedia(media);
-                details.setRuntimeMinutes(external.runtimeMinutes());
-                details.setBudget(external.budget());
-                details.setRevenue(external.revenue());
-                details.setReleaseDate(external.releaseDate());
-                movieDetailsRepository.save(details);
-            }
-            case SERIES -> {
-                SeriesDetails details = new SeriesDetails();
-                details.setMedia(media);
-                details.setStatus(seriesStatus(external.seriesStatus()));
-                details.setNumberOfSeasons(external.numberOfSeasons());
-                details.setNumberOfEpisodes(external.numberOfEpisodes());
-                details.setFirstAirDate(external.releaseDate());
-                details.setLastAirDate(external.lastAirDate());
-                seriesDetailsRepository.save(details);
-                external.seasons().forEach(season -> {
-                    SeriesSeason entity = new SeriesSeason();
-                    entity.setSeries(media);
-                    entity.setExternalId(season.externalId());
-                    entity.setSeasonNumber(season.seasonNumber());
-                    entity.setName(season.name());
-                    entity.setDescription(season.description());
-                    entity.setCoverUrl(season.coverUrl());
-                    entity.setEpisodeCount(season.episodeCount());
-                    entity.setAirDate(season.airDate());
-                    seriesSeasonRepository.save(entity);
-                });
-            }
-            default -> throw new IllegalArgumentException("Import is unavailable for type " + external.type());
-        }
-    }
-
-    private Media resolveTrackMedia(ExternalMedia.ExternalTrack track, LocalDate releaseDate) {
-        if (track.externalId() != null) {
-            ExternalReference existing = externalReferenceRepository
-                    .findBySourceAndExternalId(ExternalSource.MUSICBRAINZ, track.externalId())
-                    .orElse(null);
-            if (existing != null && existing.getMedia().getType() == MediaType.TRACK) {
-                return existing.getMedia();
-            }
-        }
-
-        Media media = new Media();
-        media.setType(MediaType.TRACK);
-        media.setTitle(track.title());
-        media.setReleaseDate(releaseDate);
-        Media saved = mediaRepository.save(media);
-
-        TrackDetails details = new TrackDetails();
-        details.setMedia(saved);
-        details.setDurationSeconds(track.durationSeconds());
-        details.setExplicit(Boolean.TRUE.equals(track.explicit()));
-        trackDetailsRepository.save(details);
-
-        if (track.externalId() != null) {
-            ExternalReference reference = new ExternalReference();
-            reference.setMedia(saved);
-            reference.setSource(ExternalSource.MUSICBRAINZ);
-            reference.setExternalId(track.externalId());
-            reference.setPrimaryReference(true);
-            reference.setLastSyncedAt(Instant.now());
-            externalReferenceRepository.save(reference);
-        }
-        return saved;
-    }
-
-    private SeriesStatus seriesStatus(String status) {
-        if (status == null) {
-            return SeriesStatus.UNKNOWN;
-        }
-        return switch (status.toUpperCase()) {
-            case "PLANNED", "IN PRODUCTION", "POST PRODUCTION" -> SeriesStatus.PLANNED;
-            case "RETURNING SERIES", "PILOT" -> SeriesStatus.AIRING;
-            case "ENDED" -> SeriesStatus.ENDED;
-            case "CANCELED" -> SeriesStatus.CANCELLED;
-            default -> SeriesStatus.UNKNOWN;
-        };
-    }
-
-    private AlbumType albumType(String type) {
-        if (type == null) {
-            return AlbumType.ALBUM;
-        }
-        return switch (type.toUpperCase()) {
-            case "ALBUM" -> AlbumType.ALBUM;
-            case "SINGLE" -> AlbumType.SINGLE;
-            case "EP" -> AlbumType.EP;
-            case "COMPILATION" -> AlbumType.COMPILATION;
-            case "SOUNDTRACK" -> AlbumType.SOUNDTRACK;
-            default -> AlbumType.ALBUM;
-        };
     }
 
     private Optional<WikidataClient.WikidataEnrichment> findWikidataEnrichment(

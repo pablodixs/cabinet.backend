@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.dto.response;
 
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.enums.CatalogStatus;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -30,6 +31,39 @@ public record PublicMediaDetailsResponse(
         List<ExternalMediaDetailsResponse.GenreResponse> genres,
         List<ExternalMediaDetailsResponse.CreditResponse> credits,
         boolean imported,
-        Object details
+        Object details,
+        String requestedLocale,
+        String resolvedLocale,
+        boolean translationFallback,
+        CatalogStatus catalogStatus
 ) {
+    public PublicMediaDetailsResponse(
+            UUID id,
+            String externalId,
+            ExternalSource source,
+            MediaType type,
+            String title,
+            String originalTitle,
+            String creator,
+            String description,
+            String tagline,
+            String coverUrl,
+            String backdropUrl,
+            String logoUrl,
+            String externalUrl,
+            LocalDate releaseDate,
+            String originalLanguage,
+            String countryCode,
+            String wikidataId,
+            Map<String, String> externalReferences,
+            List<ExternalMediaDetailsResponse.GenreResponse> genres,
+            List<ExternalMediaDetailsResponse.CreditResponse> credits,
+            boolean imported,
+            Object details
+    ) {
+        this(id, externalId, source, type, title, originalTitle, creator, description, tagline,
+                coverUrl, backdropUrl, logoUrl, externalUrl, releaseDate, originalLanguage, countryCode,
+                wikidataId, externalReferences, genres, credits, imported, details,
+                "pt-BR", "pt-BR", false, CatalogStatus.READY);
+    }
 }

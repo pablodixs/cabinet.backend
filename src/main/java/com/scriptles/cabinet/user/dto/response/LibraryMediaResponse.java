@@ -9,6 +9,7 @@ import com.scriptles.cabinet.user.enums.UserMediaStatus;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 public record LibraryMediaResponse(
@@ -21,6 +22,10 @@ public record LibraryMediaResponse(
         LocalDate releaseDate,
         ExternalSource source,
         String externalId,
+        boolean liked,
+        BigDecimal rating,
+        boolean hasReview,
+        String creator,
         Instant startedAt,
         Instant completedAt,
         Instant lastInteractionAt,
@@ -39,6 +44,18 @@ public record LibraryMediaResponse(
             ExternalReference externalReference,
             String coverUrl
     ) {
+        return from(entry, externalReference, coverUrl, false, null, false, null);
+    }
+
+    public static LibraryMediaResponse from(
+            UserMedia entry,
+            ExternalReference externalReference,
+            String coverUrl,
+            boolean liked,
+            BigDecimal rating,
+            boolean hasReview,
+            String creator
+    ) {
         Media media = entry.getMedia();
         return new LibraryMediaResponse(
                 entry.getId(),
@@ -50,6 +67,10 @@ public record LibraryMediaResponse(
                 media.getReleaseDate(),
                 externalReference == null ? null : externalReference.getSource(),
                 externalReference == null ? null : externalReference.getExternalId(),
+                liked,
+                rating,
+                hasReview,
+                creator,
                 entry.getStartedAt(),
                 entry.getCompletedAt(),
                 entry.getLastInteractionAt(),

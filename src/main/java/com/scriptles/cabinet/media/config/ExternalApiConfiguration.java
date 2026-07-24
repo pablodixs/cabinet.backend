@@ -22,6 +22,16 @@ public class ExternalApiConfiguration {
         return restClientBuilder(READ_TIMEOUT);
     }
 
+    @Bean(name = "externalCoreRestClientBuilder")
+    public RestClient.Builder externalCoreRestClientBuilder() {
+        return restClientBuilder(Duration.ofMillis(2_500));
+    }
+
+    @Bean(name = "externalEnrichmentRestClientBuilder")
+    public RestClient.Builder externalEnrichmentRestClientBuilder() {
+        return restClientBuilder(READ_TIMEOUT);
+    }
+
     @Bean(name = "wikidataRestClientBuilder")
     public RestClient.Builder wikidataRestClientBuilder(ExternalApiProperties properties) {
         ExternalApiProperties.Wikidata wikidata = properties.wikidata() == null

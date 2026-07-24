@@ -51,6 +51,21 @@ public class RatingService {
         BigDecimal value = RatingValue.normalize(request.rating());
         User user = userRepository.findById(userId).orElseThrow(() -> notFound("USER_NOT_FOUND", "Usuário não encontrado"));
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> notFound("MEDIA_NOT_FOUND", "Mídia não encontrada"));
+        return upsertResolved(userId, user, media, value);
+    }
+
+    @CacheEvict(cacheNames = "mediaCommunity", key = "#media.id")
+    public RatingResponse upsertResolved(User user, Media media, BigDecimal requestedValue) {
+        return upsertResolved(user.getId(), user, media, RatingValue.normalize(requestedValue));
+    }
+
+    private RatingResponse upsertResolved(
+            UUID userId,
+            User user,
+            Media media,
+            BigDecimal value
+    ) {
+        UUID mediaId = media.getId();
         if (media.getType() == MediaType.EPISODE) validateEpisodeDate(mediaId);
         mediaConsumptionPolicy.ensureReleased(media);
 
@@ -73,7 +88,12 @@ public class RatingService {
         if (media.getType() != MediaType.TRACK && media.getType() != MediaType.EPISODE) {
             userMediaService.markCompleted(user, media);
         }
-        return new RatingResponse(mediaId, saved.getValue());
+        return new RatingResponse(
+                mediaId,
+                saved.getValue(),
+                media.getCatalogStatus(),
+                media.getCatalogStatus() != com.scriptles.cabinet.media.enums.CatalogStatus.READY
+        );
     }
 
     @Transactional

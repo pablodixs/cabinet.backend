@@ -44,7 +44,11 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,caches
+
+catalog:
+  outbox:
+    poll-delay: ${CATALOG_OUTBOX_POLL_DELAY:1000}
 
 app:
   cors:

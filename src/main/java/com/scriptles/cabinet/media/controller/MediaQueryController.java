@@ -44,8 +44,17 @@ public class MediaQueryController {
     private final AwardQueryService awardQueryService;
 
     @GetMapping("/{mediaId}")
-    public PublicMediaDetailsResponse findDetails(@PathVariable UUID mediaId) {
-        return mediaQueryService.findDetails(mediaId);
+    public ResponseEntity<PublicMediaDetailsResponse> findDetails(
+            @PathVariable UUID mediaId,
+            @RequestParam(defaultValue = "pt-BR")
+            @Pattern(regexp = "^(pt-BR|en-US)$") String locale
+    ) {
+        PublicMediaDetailsResponse response = mediaQueryService.findDetails(mediaId, locale);
+        return ResponseEntity.ok()
+                .header("Content-Language", response.resolvedLocale())
+                .header("Vary", "Accept-Language")
+                .header("Cache-Control", "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400")
+                .body(response);
     }
 
     @GetMapping("/{mediaId}/community")

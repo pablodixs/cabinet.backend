@@ -5,7 +5,8 @@ import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalOfferType;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -21,7 +22,6 @@ import java.util.Optional;
 import java.util.Set;
 
 @Component
-@RequiredArgsConstructor
 public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksProvider {
     private static final String IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
     private static final String POSTER_SIZE = "w500";
@@ -30,8 +30,24 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
     private static final String STILL_SIZE = "w780";
     private static final String PROFILE_SIZE = "w500";
 
-    private final RestClient.Builder restClientBuilder;
+    private final RestClient.Builder coreRestClientBuilder;
+    private final RestClient.Builder enrichmentRestClientBuilder;
     private final ExternalApiProperties properties;
+
+    public TmdbClient(RestClient.Builder restClientBuilder, ExternalApiProperties properties) {
+        this(restClientBuilder, restClientBuilder, properties);
+    }
+
+    @Autowired
+    public TmdbClient(
+            @Qualifier("externalCoreRestClientBuilder") RestClient.Builder coreRestClientBuilder,
+            @Qualifier("externalEnrichmentRestClientBuilder") RestClient.Builder enrichmentRestClientBuilder,
+            ExternalApiProperties properties
+    ) {
+        this.coreRestClientBuilder = coreRestClientBuilder;
+        this.enrichmentRestClientBuilder = enrichmentRestClientBuilder;
+        this.properties = properties;
+    }
 
     @Override
     public ExternalSource source() {
@@ -86,6 +102,19 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
 
     @Override
     public Optional<ExternalMedia> findById(MediaType mediaType, String externalId, String language) {
+        return findEnrichmentById(mediaType, externalId, language);
+    }
+
+    @Override
+    public Optional<ExternalMedia> findCoreById(MediaType mediaType, String externalId, String language) {
+        JsonNode body = get(detailPath(mediaType, externalId), null, language, false, null);
+        return body.isMissingNode() || body.isEmpty()
+                ? Optional.empty()
+                : Optional.of(toMedia(body, mediaType, true));
+    }
+
+    @Override
+    public Optional<ExternalMedia> findEnrichmentById(MediaType mediaType, String externalId, String language) {
         JsonNode body = get(detailPath(mediaType, externalId), null, language, true, null);
         return body.isMissingNode() || body.isEmpty() ? Optional.empty() : Optional.of(toMedia(body, mediaType, true));
     }
@@ -179,7 +208,10 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         }
 
         try {
-            RestClient.RequestHeadersSpec<?> request = restClientBuilder.clone()
+            RestClient.Builder selectedBuilder = includeCredits
+                    ? enrichmentRestClientBuilder
+                    : coreRestClientBuilder;
+            RestClient.RequestHeadersSpec<?> request = selectedBuilder.clone()
                     .baseUrl(properties.tmdb().baseUrl()).build().get()
                     .uri(uriBuilder -> {
                         uriBuilder.path(path);
