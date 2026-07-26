@@ -4,6 +4,7 @@ import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.enums.Visibility;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -90,6 +91,106 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             @Param("status") UserMediaStatus status,
             @Param("type") MediaType type,
             Pageable pageable
+    );
+
+    @Query(
+            value = """
+                    select userMedia
+                    from UserMedia userMedia
+                    join fetch userMedia.media media
+                    left join Rating rating
+                      on rating.user.id = :userId
+                     and rating.media.id = media.id
+                     and rating.visibility in :ratingVisibilities
+                    where userMedia.user.id = :userId
+                      and (:includePrivate = true or userMedia.privateEntry = false)
+                      and (:status is null or userMedia.status = :status)
+                      and (:type is null or media.typeValue = :#{#type == null ? null : #type.name()})
+                      and (:searchQuery is null
+                        or lower(media.title) like :searchQuery
+                        or lower(coalesce(media.originalTitle, '')) like :searchQuery)
+                      and (:genre is null or :genre member of media.genres)
+                      and (:ratingFilter = 'ALL'
+                        or (:ratingFilter = 'UNRATED'
+                            and rating.id is null)
+                        or (:ratingFilter = 'FOUR_PLUS'
+                            and rating.value >= 4)
+                        or (:ratingFilter = 'THREE_PLUS'
+                            and rating.value >= 3)
+                        or (:ratingFilter = 'TWO_PLUS'
+                            and rating.value >= 2)
+                        or (:ratingFilter = 'ONE_PLUS'
+                            and rating.value >= 1))
+                    order by
+                      case when :sortMode = 'TITLE'
+                        then lower(media.title) end asc,
+                      case when :sortMode = 'RATING'
+                        and rating.id is null then 1 else 0 end asc,
+                      case when :sortMode = 'RATING'
+                        then rating.value end desc,
+                      case when :sortMode = 'RELEASE_YEAR_ASC'
+                        and media.releaseDate is null then 1 else 0 end asc,
+                      case when :sortMode = 'RELEASE_YEAR_ASC'
+                        then media.releaseDate end asc,
+                      case when :sortMode = 'RECENT'
+                        then coalesce(userMedia.lastInteractionAt, userMedia.updatedAt, userMedia.createdAt)
+                        end desc,
+                      userMedia.id desc
+                    """,
+            countQuery = """
+                    select count(userMedia)
+                    from UserMedia userMedia
+                    join userMedia.media media
+                    left join Rating rating
+                      on rating.user.id = :userId
+                     and rating.media.id = media.id
+                     and rating.visibility in :ratingVisibilities
+                    where userMedia.user.id = :userId
+                      and (:includePrivate = true or userMedia.privateEntry = false)
+                      and (:status is null or userMedia.status = :status)
+                      and (:type is null or media.typeValue = :#{#type == null ? null : #type.name()})
+                      and (:searchQuery is null
+                        or lower(media.title) like :searchQuery
+                        or lower(coalesce(media.originalTitle, '')) like :searchQuery)
+                      and (:genre is null or :genre member of media.genres)
+                      and (:ratingFilter = 'ALL'
+                        or (:ratingFilter = 'UNRATED'
+                            and rating.id is null)
+                        or (:ratingFilter = 'FOUR_PLUS'
+                            and rating.value >= 4)
+                        or (:ratingFilter = 'THREE_PLUS'
+                            and rating.value >= 3)
+                        or (:ratingFilter = 'TWO_PLUS'
+                            and rating.value >= 2)
+                        or (:ratingFilter = 'ONE_PLUS'
+                            and rating.value >= 1))
+                    """
+    )
+    Page<UserMedia> findProfileLibrary(
+            @Param("userId") UUID userId,
+            @Param("includePrivate") boolean includePrivate,
+            @Param("status") UserMediaStatus status,
+            @Param("type") MediaType type,
+            @Param("searchQuery") String searchQuery,
+            @Param("genre") String genre,
+            @Param("ratingFilter") String ratingFilter,
+            @Param("ratingVisibilities") List<Visibility> ratingVisibilities,
+            @Param("sortMode") String sortMode,
+            Pageable pageable
+    );
+
+    @Query("""
+            select distinct genre
+            from UserMedia userMedia
+            join userMedia.media media
+            join media.genres genre
+            where userMedia.user.id = :userId
+              and (:includePrivate = true or userMedia.privateEntry = false)
+            order by genre
+            """)
+    List<String> findProfileLibraryGenres(
+            @Param("userId") UUID userId,
+            @Param("includePrivate") boolean includePrivate
     );
 
     @Query("""

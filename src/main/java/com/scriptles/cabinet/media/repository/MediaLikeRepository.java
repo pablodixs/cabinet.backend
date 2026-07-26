@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 
 import java.time.Instant;
 import java.util.List;
@@ -55,6 +56,12 @@ public interface MediaLikeRepository extends JpaRepository<MediaLike, UUID> {
 
     @EntityGraph(attributePaths = "media")
     List<MediaLike> findAllByUserId(UUID userId);
+
+    @EntityGraph(attributePaths = "media")
+    Page<MediaLike> findByUserIdOrderByLikedAtDescIdDesc(
+            UUID userId,
+            Pageable pageable
+    );
 
     long countByMediaId(UUID mediaId);
 

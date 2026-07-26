@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaArtworkPreferenceRepository;
 import org.junit.jupiter.api.Test;
@@ -27,8 +28,14 @@ class MediaSearchItemAssemblerTest {
         MediaCreditService mediaCreditService = mock(MediaCreditService.class);
         UserArtworkResolver artworkResolver = new UserArtworkResolver(
                 mock(UserMediaArtworkPreferenceRepository.class));
+        MediaTranslationResolver translationResolver = mock(MediaTranslationResolver.class);
         MediaSearchItemAssembler assembler = new MediaSearchItemAssembler(
-                externalReferenceRepository, ratingRepository, mediaCreditService, artworkResolver);
+                externalReferenceRepository,
+                ratingRepository,
+                mediaCreditService,
+                artworkResolver,
+                translationResolver
+        );
         Media media = new Media();
         media.setId(UUID.randomUUID());
         media.setType(MediaType.ALBUM);
@@ -51,6 +58,7 @@ class MediaSearchItemAssemblerTest {
                 media.getId(),
                 new MediaCreditService.CreditSummary("An Artist", null, List.of())
         ));
+        when(translationResolver.resolveAll(List.of(media), "pt-BR")).thenReturn(Map.of());
 
         var items = assembler.fromImported(List.of(media));
 

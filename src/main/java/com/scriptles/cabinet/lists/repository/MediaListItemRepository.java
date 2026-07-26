@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.repository;
 
 import com.scriptles.cabinet.lists.entity.MediaListItem;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,6 +23,37 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
             group by item.list.id
             """)
     List<MediaListItemCount> countByListIds(@Param("listIds") Collection<UUID> listIds);
+
+    @Query("""
+            select item.list.id as listId, count(item) as consumedItemCount
+            from MediaListItem item
+            join UserMedia userMedia
+              on userMedia.media = item.media
+             and userMedia.user.id = :userId
+            where item.list.id in :listIds
+              and userMedia.status = :status
+            group by item.list.id
+            """)
+    List<MediaListConsumptionCount> countConsumedByListIds(
+            @Param("userId") UUID userId,
+            @Param("listIds") Collection<UUID> listIds,
+            @Param("status") UserMediaStatus status
+    );
+
+    @Query("""
+            select item.media.id
+            from MediaListItem item
+            join UserMedia userMedia
+              on userMedia.media = item.media
+             and userMedia.user.id = :userId
+            where item.list.id = :listId
+              and userMedia.status = :status
+            """)
+    List<UUID> findConsumedMediaIds(
+            @Param("userId") UUID userId,
+            @Param("listId") UUID listId,
+            @Param("status") UserMediaStatus status
+    );
 
     @Query(value = """
             select cast(ranked.list_id as varchar) as "listIdValue",
@@ -161,6 +193,12 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
         UUID getListId();
 
         long getItemCount();
+    }
+
+    interface MediaListConsumptionCount {
+        UUID getListId();
+
+        long getConsumedItemCount();
     }
 
     interface MediaListCover {

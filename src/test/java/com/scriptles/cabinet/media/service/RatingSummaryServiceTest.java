@@ -18,12 +18,53 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class RatingSummaryServiceTest {
     @Mock RatingRepository ratingRepository;
     @InjectMocks RatingSummaryService service;
+
+    @Test
+    void aggregateWeightsEveryPublicChildRatingAndBuildsAllBuckets() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        List<UUID> ids = List.of(first, second);
+        RatingRepository.AggregateRatingProjection summary =
+                mock(RatingRepository.AggregateRatingProjection.class);
+        RatingRepository.RatingDistributionProjection threeStars =
+                mock(RatingRepository.RatingDistributionProjection.class);
+        RatingRepository.RatingDistributionProjection fiveStars =
+                mock(RatingRepository.RatingDistributionProjection.class);
+        when(summary.getAverageRating()).thenReturn(13.0 / 3.0);
+        when(summary.getRatingCount()).thenReturn(3L);
+        when(threeStars.getRating()).thenReturn(new BigDecimal("3.0"));
+        when(threeStars.getRatingCount()).thenReturn(1L);
+        when(fiveStars.getRating()).thenReturn(new BigDecimal("5.0"));
+        when(fiveStars.getRatingCount()).thenReturn(2L);
+        when(ratingRepository.aggregateRatings(ids, Visibility.PUBLIC)).thenReturn(summary);
+        when(ratingRepository.ratingDistributionForMediaIds(ids, Visibility.PUBLIC))
+                .thenReturn(List.of(threeStars, fiveStars));
+
+        var result = service.aggregate(ids);
+
+        assertThat(result.averageRating()).isEqualTo(4.33);
+        assertThat(result.ratingCount()).isEqualTo(3);
+        assertThat(result.ratingDistribution()).hasSize(10);
+        assertThat(result.ratingDistribution().get(5).count()).isEqualTo(1);
+        assertThat(result.ratingDistribution().get(9).count()).isEqualTo(2);
+    }
+
+    @Test
+    void emptyAggregateHasNoAverageAndTenEmptyBuckets() {
+        var result = service.aggregate(List.of());
+
+        assertThat(result.averageRating()).isNull();
+        assertThat(result.ratingCount()).isZero();
+        assertThat(result.ratingDistribution()).hasSize(10)
+                .allMatch(bucket -> bucket.count() == 0);
+    }
 
     @Test
     void seasonGivesEveryUserEqualWeightAndReportsPersonalCoverage() {

@@ -33,6 +33,19 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             @Param("mediaIds") Collection<UUID> mediaIds
     );
 
+    @Query("""
+            select review.media.id
+            from Review review
+            where review.user.id = :userId
+              and review.media.id in :mediaIds
+              and review.visibility in :visibilities
+            """)
+    List<UUID> findVisibleReviewedMediaIds(
+            @Param("userId") UUID userId,
+            @Param("mediaIds") Collection<UUID> mediaIds,
+            @Param("visibilities") Collection<Visibility> visibilities
+    );
+
     Optional<Review> findByActivityId(UUID activityId);
 
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})

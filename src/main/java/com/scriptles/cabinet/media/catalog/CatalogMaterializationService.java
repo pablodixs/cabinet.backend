@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.entity.*;
 import com.scriptles.cabinet.media.enums.*;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.*;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,7 @@ public class CatalogMaterializationService {
     private final AlbumDetailsRepository albumDetailsRepository;
     private final BookDetailsRepository bookDetailsRepository;
     private final TrackDetailsRepository trackDetailsRepository;
+    private final CatalogLocaleResolver localeResolver;
 
     public Media findOrCreateCore(MediaTarget target, CatalogResolver.Resolution resolution) {
         if (resolution.alreadyMaterialized()) {
@@ -30,6 +32,7 @@ public class CatalogMaterializationService {
         }
 
         ExternalMedia external = resolution.snapshot().media();
+        String locale = localeResolver.normalize(resolution.locale());
         Media media = new Media();
         media.setType(external.type());
         media.setTitle(firstNonBlank(external.title(), external.originalTitle(), external.externalId()));
@@ -45,13 +48,14 @@ public class CatalogMaterializationService {
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
         media.setReleaseDate(external.releaseDate());
         media.setOriginalLanguage(external.originalLanguage());
+        media.setDefaultLocale(locale);
         media.setCountryCode(external.countryCode());
         media.setCatalogStatus(CatalogStatus.CORE_READY);
         media.setCoreSyncedAt(Instant.now());
         Media saved = mediaRepository.saveAndFlush(media);
 
         saveMinimalDetails(saved, external);
-        saveTranslation(saved, external, resolution.locale());
+        saveTranslation(saved, external, locale);
 
         ExternalReference reference = new ExternalReference();
         reference.setMedia(saved);
@@ -72,10 +76,8 @@ public class CatalogMaterializationService {
         translation.setDescription(external.description());
         translation.setTagline(external.tagline());
         translation.setSource(external.source());
-        translation.setSourceLanguage(external.originalLanguage());
-        translation.setTranslationStatus(external.description() == null
-                ? TranslationStatus.PARTIAL
-                : TranslationStatus.AVAILABLE);
+        translation.setOriginalLanguage(external.originalLanguage());
+        translation.setTranslationStatus(translationStatus(external));
         translation.setLastSyncedAt(Instant.now());
         translationRepository.save(translation);
     }
@@ -153,5 +155,11 @@ public class CatalogMaterializationService {
             if (value != null && !value.isBlank()) return value;
         }
         return null;
+    }
+
+    private TranslationStatus translationStatus(ExternalMedia external) {
+        boolean hasTitle = firstNonBlank(external.title(), external.originalTitle()) != null;
+        boolean hasOptionalText = firstNonBlank(external.description(), external.tagline()) != null;
+        return hasTitle && hasOptionalText ? TranslationStatus.AVAILABLE : TranslationStatus.PARTIAL;
     }
 }

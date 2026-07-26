@@ -32,6 +32,12 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
     @EntityGraph(attributePaths = {"user", "media"})
     List<Rating> findAllByUserIdAndMediaIdIn(UUID userId, Collection<UUID> mediaIds);
 
+    List<Rating> findAllByUserIdAndMediaIdInAndVisibilityIn(
+            UUID userId,
+            Collection<UUID> mediaIds,
+            Collection<Visibility> visibilities
+    );
+
     @EntityGraph(attributePaths = {"user", "media"})
     List<Rating> findAllByMediaIdInAndVisibility(Collection<UUID> mediaIds, Visibility visibility);
 
@@ -45,6 +51,14 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
                                                   @Param("visibility") Visibility visibility);
 
     @Query("""
+            select avg(r.value) as averageRating, count(r.id) as ratingCount
+            from Rating r
+            where r.visibility = :visibility and r.media.id in :mediaIds
+            """)
+    AggregateRatingProjection aggregateRatings(@Param("mediaIds") Collection<UUID> mediaIds,
+                                                @Param("visibility") Visibility visibility);
+
+    @Query("""
             select r.value as rating, count(r.id) as ratingCount
             from Rating r
             where r.media.id = :mediaId and r.visibility = :visibility
@@ -52,6 +66,17 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
             """)
     List<RatingDistributionProjection> ratingDistribution(@Param("mediaId") UUID mediaId,
                                                             @Param("visibility") Visibility visibility);
+
+    @Query("""
+            select r.value as rating, count(r.id) as ratingCount
+            from Rating r
+            where r.media.id in :mediaIds and r.visibility = :visibility
+            group by r.value order by r.value
+            """)
+    List<RatingDistributionProjection> ratingDistributionForMediaIds(
+            @Param("mediaIds") Collection<UUID> mediaIds,
+            @Param("visibility") Visibility visibility
+    );
 
     @Query("""
             select r.media as media, avg(r.value) as averageRating, count(r.id) as ratingCount
@@ -100,6 +125,11 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
 
     interface MediaRatingProjection {
         UUID getMediaId();
+        Double getAverageRating();
+        long getRatingCount();
+    }
+
+    interface AggregateRatingProjection {
         Double getAverageRating();
         long getRatingCount();
     }

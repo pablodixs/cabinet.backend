@@ -75,6 +75,9 @@ public class Media {
     @Column(length = 10)
     private String originalLanguage;
 
+    @Column(nullable = false, length = 10)
+    private String defaultLocale = "pt-BR";
+
     @Column(length = 3)
     private String countryCode;
 

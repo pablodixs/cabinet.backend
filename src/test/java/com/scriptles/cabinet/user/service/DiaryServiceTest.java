@@ -45,6 +45,7 @@ class DiaryServiceTest {
     @Mock MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock UserMediaService userMediaService;
     @Mock EpisodeTrackingService episodeTrackingService;
+    @Mock UserTagService userTagService;
     @InjectMocks DiaryService service;
 
     @Test

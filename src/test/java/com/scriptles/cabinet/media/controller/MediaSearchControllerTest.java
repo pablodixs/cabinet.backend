@@ -4,6 +4,8 @@ import com.scriptles.cabinet.media.dto.response.MediaSearchPageResponse;
 import com.scriptles.cabinet.media.enums.MediaSearchSort;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.MediaSearchService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,9 +31,13 @@ class MediaSearchControllerTest {
     @MockitoBean
     private MediaSearchService mediaSearchService;
 
+    @MockitoBean
+    private CatalogLocaleResolver catalogLocaleResolver;
+
     @Test
     void allowsAnonymousSearchWithDefaults() throws Exception {
-        when(mediaSearchService.search("matrix", null, MediaSearchSort.RELEVANCE, null, 20))
+        when(catalogLocaleResolver.resolve(null, null)).thenReturn(SupportedLocale.PT_BR);
+        when(mediaSearchService.search("matrix", null, MediaSearchSort.RELEVANCE, null, 20, "pt-BR"))
                 .thenReturn(new MediaSearchPageResponse(List.of(), null));
 
         mockMvc.perform(get("/v1/media/search").param("query", "matrix"))
@@ -39,7 +45,8 @@ class MediaSearchControllerTest {
                 .andExpect(jsonPath("$.items").isArray())
                 .andExpect(jsonPath("$.nextCursor").doesNotExist());
 
-        verify(mediaSearchService).search("matrix", null, MediaSearchSort.RELEVANCE, null, 20);
+        verify(mediaSearchService).search(
+                "matrix", null, MediaSearchSort.RELEVANCE, null, 20, "pt-BR");
     }
 
     @Test
@@ -52,7 +59,9 @@ class MediaSearchControllerTest {
 
     @Test
     void mapsTypeSortAndCursor() throws Exception {
-        when(mediaSearchService.search("matrix", MediaType.MOVIE, MediaSearchSort.RATING, "cursor", 10))
+        when(catalogLocaleResolver.resolve(null, null)).thenReturn(SupportedLocale.PT_BR);
+        when(mediaSearchService.search(
+                "matrix", MediaType.MOVIE, MediaSearchSort.RATING, "cursor", 10, "pt-BR"))
                 .thenReturn(new MediaSearchPageResponse(List.of(), null));
 
         mockMvc.perform(get("/v1/media/search")
@@ -64,6 +73,6 @@ class MediaSearchControllerTest {
                 .andExpect(status().isOk());
 
         verify(mediaSearchService).search(
-                "matrix", MediaType.MOVIE, MediaSearchSort.RATING, "cursor", 10);
+                "matrix", MediaType.MOVIE, MediaSearchSort.RATING, "cursor", 10, "pt-BR");
     }
 }

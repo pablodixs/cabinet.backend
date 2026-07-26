@@ -22,10 +22,14 @@ import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import com.scriptles.cabinet.media.repository.TrackDetailsRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
+import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.enums.Visibility;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -34,6 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -75,9 +80,68 @@ class MediaQueryServiceTest {
     private MediaCreditService mediaCreditService;
     @Mock
     private RatingSummaryService ratingSummaryService;
+    @Mock
+    private CatalogLocaleResolver catalogLocaleResolver;
+    @Mock
+    private MediaTranslationResolver mediaTranslationResolver;
 
     @InjectMocks
     private MediaQueryService mediaQueryService;
+
+    @Test
+    void returnsDirectAndTrackBasedAlbumRatingsSeparately() {
+        UUID albumId = UUID.randomUUID();
+        UUID firstTrackId = UUID.randomUUID();
+        UUID secondTrackId = UUID.randomUUID();
+        Media album = new Media();
+        album.setId(albumId);
+        album.setType(MediaType.ALBUM);
+        List<UUID> trackIds = List.of(firstTrackId, secondTrackId);
+        var childStats = new RatingSummaryService.AggregateStats(
+                4.33,
+                3,
+                java.util.stream.IntStream.rangeClosed(1, 10)
+                        .mapToObj(step -> new ExternalMediaDetailsResponse.RatingDistributionBucket(
+                                step / 2.0, step == 10 ? 3 : 0))
+                        .toList()
+        );
+        RatingRepository.MediaRatingProjection direct =
+                org.mockito.Mockito.mock(RatingRepository.MediaRatingProjection.class);
+        when(direct.getAverageRating()).thenReturn(3.5);
+        when(mediaRepository.findById(albumId)).thenReturn(Optional.of(album));
+        when(ratingRepository.summarizeRatings(List.of(albumId), Visibility.PUBLIC))
+                .thenReturn(List.of(direct));
+        when(albumTrackRepository.findTrackMediaIdsByAlbumId(albumId)).thenReturn(trackIds);
+        when(ratingSummaryService.aggregate(trackIds)).thenReturn(childStats);
+
+        var community = mediaQueryService.findCommunity(albumId);
+
+        assertThat(community.averageRating()).isEqualTo(3.5);
+        assertThat(community.childRatings().itemType()).isEqualTo(MediaType.TRACK);
+        assertThat(community.childRatings().averageRating()).isEqualTo(4.33);
+        assertThat(community.childRatings().ratingCount()).isEqualTo(3);
+    }
+
+    @Test
+    void returnsEligibleEpisodeRatingsForSeries() {
+        UUID seriesId = UUID.randomUUID();
+        UUID episodeId = UUID.randomUUID();
+        Media series = new Media();
+        series.setId(seriesId);
+        series.setType(MediaType.SERIES);
+        List<UUID> episodeIds = List.of(episodeId);
+        var childStats = RatingSummaryService.AggregateStats.empty();
+        when(mediaRepository.findById(seriesId)).thenReturn(Optional.of(series));
+        when(seriesEpisodeRepository.findEligibleEpisodeMediaIdsBySeriesId(
+                seriesId, LocalDate.now())).thenReturn(episodeIds);
+        when(ratingSummaryService.aggregate(episodeIds)).thenReturn(childStats);
+
+        var community = mediaQueryService.findCommunity(seriesId);
+
+        assertThat(community.childRatings().itemType()).isEqualTo(MediaType.EPISODE);
+        assertThat(community.childRatings().averageRating()).isNull();
+        assertThat(community.childRatings().ratingDistribution()).hasSize(10);
+    }
 
     @Test
     void returnsAnimatedCoverUrlInAlbumDetails() {
@@ -92,6 +156,7 @@ class MediaQueryServiceTest {
         albumDetails.setAnimatedCoverUrl("https://example.com/discovery.gif");
 
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        stubTranslation(media);
         when(externalReferenceRepository.findAllByMediaId(mediaId)).thenReturn(List.of());
         when(albumDetailsRepository.findById(mediaId)).thenReturn(Optional.of(albumDetails));
         when(albumTrackRepository.findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(mediaId))
@@ -134,7 +199,7 @@ class MediaQueryServiceTest {
         completed.setUser(completer);
 
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
-        when(mediaRepository.existsById(mediaId)).thenReturn(true);
+        stubTranslation(media);
         when(externalReferenceRepository.findAllByMediaId(mediaId)).thenReturn(List.of(reference));
         when(movieDetailsRepository.findById(mediaId)).thenReturn(Optional.of(movieDetails));
         when(mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId))
@@ -179,6 +244,7 @@ class MediaQueryServiceTest {
             assertThat(user.username()).isEqualTo("bia");
             assertThat(user.avatarUrl()).isEqualTo("https://example.com/bia.jpg");
         });
+        assertThat(community.childRatings()).isNull();
         assertThat(response.credits()).singleElement().satisfies(credit -> {
             assertThat(credit.personId()).isEqualTo(personId);
             assertThat(credit.role()).isEqualTo(CreditRole.DIRECTOR);
@@ -192,6 +258,22 @@ class MediaQueryServiceTest {
         user.setUsername(username);
         user.setAvatarUlr(avatarUrl);
         return user;
+    }
+
+    private void stubTranslation(Media media) {
+        when(catalogLocaleResolver.normalize("pt-BR")).thenReturn("pt-BR");
+        when(mediaTranslationResolver.resolve(media, "pt-BR")).thenReturn(new ResolvedMediaTranslation(
+                media.getId(),
+                media.getTitle(),
+                media.getDescription(),
+                media.getTagline(),
+                "pt-BR",
+                "pt-BR",
+                false,
+                false,
+                com.scriptles.cabinet.media.enums.TranslationStatus.FALLBACK,
+                ExternalSource.MANUAL
+        ));
     }
 
     @Test

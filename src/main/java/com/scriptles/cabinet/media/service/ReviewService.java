@@ -56,6 +56,7 @@ public class ReviewService {
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final SocialAccessPolicy socialAccessPolicy;
+    private final MediaCommunityCacheInvalidator communityCacheInvalidator;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -182,10 +183,6 @@ public class ReviewService {
 
         User user = findUser(userId);
         Media media = findMedia(mediaId);
-        if (media.getType() == MediaType.TRACK || media.getType() == MediaType.EPISODE) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "REVIEW_NOT_SUPPORTED",
-                    "Faixas e episódios aceitam somente nota");
-        }
         mediaConsumptionPolicy.ensureReleased(media);
         Review review = reviewRepository.findByUserIdAndMediaId(userId, mediaId)
                 .orElseGet(() -> newReview(user, media));
@@ -215,7 +212,12 @@ public class ReviewService {
         if (review.getPublishedAt() == null) review.setPublishedAt(Instant.now());
 
         Review saved = reviewRepository.saveAndFlush(review);
-        userMediaService.markCompleted(user, media);
+        if (media.getType() != MediaType.TRACK && media.getType() != MediaType.EPISODE) {
+            userMediaService.markCompleted(user, media);
+        }
+        if (requestedRating != null) {
+            communityCacheInvalidator.evict(media);
+        }
         return response(saved, userId);
     }
 

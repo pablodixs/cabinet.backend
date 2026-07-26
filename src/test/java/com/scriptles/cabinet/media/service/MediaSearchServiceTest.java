@@ -11,6 +11,8 @@ import com.scriptles.cabinet.media.external.ExternalMediaProvider;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaArtworkPreferenceRepository;
 import org.junit.jupiter.api.Test;
@@ -46,10 +48,16 @@ class MediaSearchServiceTest {
     private RatingRepository ratingRepository;
     @Mock
     private MediaCreditService mediaCreditService;
+    @Mock
+    private MediaTranslationResolver translationResolver;
     private MediaSearchService mediaSearchService;
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(translationResolver.resolveAll(
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(Map.of());
         UserArtworkResolver artworkResolver = new UserArtworkResolver(
                 mock(UserMediaArtworkPreferenceRepository.class));
         mediaSearchService = new MediaSearchService(
@@ -61,9 +69,12 @@ class MediaSearchServiceTest {
                         externalReferenceRepository,
                         ratingRepository,
                         mediaCreditService,
-                        artworkResolver
+                        artworkResolver,
+                        mock(com.scriptles.cabinet.media.translation.MediaTranslationResolver.class)
                 ),
-                artworkResolver
+                artworkResolver,
+                new CatalogLocaleResolver(),
+                translationResolver
         );
     }
 

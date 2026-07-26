@@ -5,8 +5,13 @@ import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.MediaExternalInfoResponse;
+import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
 import com.scriptles.cabinet.media.dto.response.MoreByResponse;
 import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
+import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
+import com.scriptles.cabinet.media.enums.CatalogStatus;
+import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalInfoSectionState;
 import com.scriptles.cabinet.media.enums.AwardSectionState;
@@ -18,6 +23,7 @@ import com.scriptles.cabinet.media.service.MediaQueryService;
 import com.scriptles.cabinet.media.service.MoreByService;
 import com.scriptles.cabinet.media.service.SeasonEpisodeService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +64,76 @@ class MediaQueryControllerTest {
     @MockitoBean
     private AwardQueryService awardQueryService;
 
+    @MockitoBean
+    private CatalogLocaleResolver catalogLocaleResolver;
+
+    @Test
+    void returnsChildRatingsInCommunityContract() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        List<ExternalMediaDetailsResponse.RatingDistributionBucket> distribution =
+                java.util.stream.IntStream.rangeClosed(1, 10)
+                        .mapToObj(step -> new ExternalMediaDetailsResponse.RatingDistributionBucket(
+                                step / 2.0, step == 9 ? 3 : 0))
+                        .toList();
+        when(mediaQueryService.findCommunity(mediaId)).thenReturn(new MediaCommunityResponse(
+                0,
+                List.of(),
+                4.0,
+                distribution,
+                new MediaCommunityResponse.ChildRatingsResponse(
+                        MediaType.TRACK, 4.5, 3, distribution),
+                0,
+                0,
+                List.of()
+        ));
+
+        mockMvc.perform(get("/v1/media/{mediaId}/community", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.averageRating").value(4.0))
+                .andExpect(jsonPath("$.childRatings.itemType").value("TRACK"))
+                .andExpect(jsonPath("$.childRatings.averageRating").value(4.5))
+                .andExpect(jsonPath("$.childRatings.ratingCount").value(3))
+                .andExpect(jsonPath("$.childRatings.ratingDistribution[8].rating").value(4.5))
+                .andExpect(jsonPath("$.childRatings.ratingDistribution[8].count").value(3));
+    }
+
+    @Test
+    void resolvesAcceptLanguageAndReturnsRepresentationHeaders() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(catalogLocaleResolver.resolve(null, "en-US,en;q=0.9"))
+                .thenReturn(SupportedLocale.EN_US);
+        when(mediaQueryService.findDetails(mediaId, "en-US"))
+                .thenReturn(details(mediaId, "en-US", "en-US", false));
+
+        mockMvc.perform(get("/v1/media/{mediaId}", mediaId)
+                        .header("Accept-Language", "en-US,en;q=0.9"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "en-US"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).contains("Accept-Language"))
+                .andExpect(jsonPath("$.requestedLocale").value("en-US"))
+                .andExpect(jsonPath("$.resolvedLocale").value("en-US"))
+                .andExpect(jsonPath("$.translationFallback").value(false));
+
+        verify(mediaQueryService).findDetails(mediaId, "en-US");
+    }
+
+    @Test
+    void explicitLocaleOverridesHeaderAndDoesNotVaryByHeader() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(catalogLocaleResolver.resolve("pt-BR", "en-US")).thenReturn(SupportedLocale.PT_BR);
+        when(mediaQueryService.findDetails(mediaId, "pt-BR"))
+                .thenReturn(details(mediaId, "pt-BR", "pt-BR", false));
+
+        mockMvc.perform(get("/v1/media/{mediaId}", mediaId)
+                        .param("locale", "pt-BR")
+                        .header("Accept-Language", "en-US"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "pt-BR"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).doesNotContain("Accept-Language"));
+    }
+
     @Test
     void returnsSeasonEpisodesWithoutAuthentication() throws Exception {
         UUID seriesId = UUID.randomUUID();
@@ -79,6 +155,42 @@ class MediaQueryControllerTest {
                 .andExpect(jsonPath("$.episodes[0].myRating").doesNotExist());
 
         verify(seasonEpisodeService).find(seriesId, 1, "pt-BR", null);
+    }
+
+    private PublicMediaDetailsResponse details(
+            UUID mediaId,
+            String requestedLocale,
+            String resolvedLocale,
+            boolean fallback
+    ) {
+        return new PublicMediaDetailsResponse(
+                mediaId,
+                mediaId.toString(),
+                ExternalSource.MANUAL,
+                MediaType.MOVIE,
+                "Title",
+                "Title",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "en",
+                null,
+                null,
+                java.util.Map.of(),
+                List.of(),
+                List.of(),
+                true,
+                null,
+                requestedLocale,
+                resolvedLocale,
+                fallback,
+                CatalogStatus.READY
+        );
     }
 
     @Test

@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import java.util.Collection;
 import java.util.UUID;
+import java.util.List;
 
 public interface UserMediaActivityRepository extends JpaRepository<UserMediaActivity, UUID> {
     Optional<UserMediaActivity> findByIdAndUserId(UUID id, UUID userId);
@@ -104,4 +105,24 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             @Param("visibilities") Collection<Visibility> visibilities,
             Pageable pageable
     );
+
+    @Query("""
+            select tag as name, count(activity.id) as usageCount
+            from UserMediaActivity activity
+            join activity.tags tag
+            where activity.user.id = :userId
+              and activity.visibility in :visibilities
+            group by tag
+            order by count(activity.id) desc, tag asc
+            """)
+    List<ProfileTagCount> findProfileTags(
+            @Param("userId") UUID userId,
+            @Param("visibilities") Collection<Visibility> visibilities,
+            Pageable pageable
+    );
+
+    interface ProfileTagCount {
+        String getName();
+        long getUsageCount();
+    }
 }

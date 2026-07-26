@@ -28,6 +28,7 @@ import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -85,6 +87,55 @@ public class MediaListService {
                         previewItems.getOrDefault(list.getId(), List.of())
                 ))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PublicListSearchResponse> findByOwner(
+            String username,
+            UUID viewerId,
+            int page,
+            int size
+    ) {
+        User owner = userRepository.findByUsernameIgnoreCase(username.trim())
+                .filter(candidate -> Boolean.TRUE.equals(candidate.getActive()))
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, "profile_not_found", "Perfil não encontrado"));
+        if (!socialAccessPolicy.canViewProfile(owner, viewerId)) {
+            throw new ApiException(
+                    HttpStatus.NOT_FOUND, "profile_not_found", "Perfil não encontrado");
+        }
+
+        Page<MediaList> lists = mediaListRepository.findAccessibleByOwner(
+                owner.getId(), viewerId, PageRequest.of(page, size));
+        List<UUID> listIds = lists.stream().map(MediaList::getId).toList();
+        Map<UUID, Long> itemCounts = listIds.isEmpty()
+                ? Map.of()
+                : mediaListItemRepository.countByListIds(listIds).stream()
+                        .collect(Collectors.toMap(
+                                MediaListItemRepository.MediaListItemCount::getListId,
+                                MediaListItemRepository.MediaListItemCount::getItemCount));
+        Map<UUID, Long> likeCounts = listIds.isEmpty()
+                ? Map.of()
+                : mediaListLikeRepository.countByListIds(listIds).stream()
+                        .collect(Collectors.toMap(
+                                MediaListLikeRepository.MediaListLikeCount::getListId,
+                                MediaListLikeRepository.MediaListLikeCount::getLikeCount));
+        Map<UUID, List<MediaListPreviewResponse>> previews =
+                listIds.isEmpty() ? Map.of() : previewItems(lists.getContent());
+        Map<UUID, ListConsumption> consumption =
+                consumptionByListIds(viewerId, listIds, itemCounts);
+
+        return PageResponse.from(lists.map(list -> {
+            ListConsumption progress = consumption.get(list.getId());
+            return PublicListSearchResponse.from(
+                    list,
+                    itemCounts.getOrDefault(list.getId(), 0L),
+                    likeCounts.getOrDefault(list.getId(), 0L),
+                    previews.getOrDefault(list.getId(), List.of()),
+                    progress == null ? null : progress.consumedItemCount(),
+                    progress == null ? null : progress.percentage()
+            );
+        }));
     }
 
     @Transactional(readOnly = true)
@@ -134,14 +185,21 @@ public class MediaListService {
                 .collect(Collectors.toMap(MediaList::getId, Function.identity()));
         Map<UUID, List<MediaListPreviewResponse>> previewItems =
                 previewItems(listsById.values());
+        Map<UUID, ListConsumption> consumption =
+                consumptionByListIds(viewerId, listIds, itemCounts);
 
-        return PageResponse.from(memberships.map(membership -> PublicMediaListResponse.from(
-                listsById.get(membership.getListId()),
-                membership.getItem(),
-                itemCounts.getOrDefault(membership.getListId(), 0L),
-                membership.getLikeCount(),
-                previewItems.getOrDefault(membership.getListId(), List.of())
-        )));
+        return PageResponse.from(memberships.map(membership -> {
+            ListConsumption progress = consumption.get(membership.getListId());
+            return PublicMediaListResponse.from(
+                    listsById.get(membership.getListId()),
+                    membership.getItem(),
+                    itemCounts.getOrDefault(membership.getListId(), 0L),
+                    membership.getLikeCount(),
+                    previewItems.getOrDefault(membership.getListId(), List.of()),
+                    progress == null ? null : progress.consumedItemCount(),
+                    progress == null ? null : progress.percentage()
+            );
+        }));
     }
 
     @Transactional(readOnly = true)
@@ -199,13 +257,20 @@ public class MediaListService {
                 ));
         Map<UUID, List<MediaListPreviewResponse>> previewItems =
                 previewItems(lists.getContent());
+        Map<UUID, ListConsumption> consumption =
+                consumptionByListIds(viewerId, listIds, itemCounts);
 
-        return PageResponse.from(lists.map(list -> PublicListSearchResponse.from(
-                list,
-                itemCounts.getOrDefault(list.getId(), 0L),
-                likeCounts.getOrDefault(list.getId(), 0L),
-                previewItems.getOrDefault(list.getId(), List.of())
-        )));
+        return PageResponse.from(lists.map(list -> {
+            ListConsumption progress = consumption.get(list.getId());
+            return PublicListSearchResponse.from(
+                    list,
+                    itemCounts.getOrDefault(list.getId(), 0L),
+                    likeCounts.getOrDefault(list.getId(), 0L),
+                    previewItems.getOrDefault(list.getId(), List.of()),
+                    progress == null ? null : progress.consumedItemCount(),
+                    progress == null ? null : progress.percentage()
+            );
+        }));
     }
 
     @Transactional(readOnly = true)
@@ -238,15 +303,20 @@ public class MediaListService {
                 ));
         Map<UUID, List<MediaListPreviewResponse>> previewItems =
                 previewItems(listsById.values());
+        Map<UUID, ListConsumption> consumption =
+                consumptionByListIds(viewerId, listIds, itemCounts);
 
         return popular.stream()
                 .map(item -> {
                     MediaList list = listsById.get(item.getListId());
+                    ListConsumption progress = consumption.get(item.getListId());
                     return list == null ? null : PublicListSearchResponse.from(
                             list,
                             itemCounts.getOrDefault(item.getListId(), 0L),
                             item.getLikeCount(),
-                            previewItems.getOrDefault(item.getListId(), List.of())
+                            previewItems.getOrDefault(item.getListId(), List.of()),
+                            progress == null ? null : progress.consumedItemCount(),
+                            progress == null ? null : progress.percentage()
                     );
                 })
                 .filter(Objects::nonNull)
@@ -271,17 +341,56 @@ public class MediaListService {
         }
 
         List<MediaListItemResponse> items = itemResponses(
-                listId, list.getOwner().getId());
+                listId, list.getOwner().getId(), userId);
         boolean liked = userId != null
                 && mediaListLikeRepository.existsByUserIdAndListId(userId, listId);
+        Map<UUID, Long> itemCounts = Map.of(listId, (long) items.size());
+        ListConsumption progress = consumptionByListIds(
+                userId, List.of(listId), itemCounts).get(listId);
 
         return PublicMediaListDetailsResponse.from(
                 list,
                 items,
                 mediaListLikeRepository.countByListId(listId),
                 liked,
-                ownList
+                ownList,
+                progress == null ? null : progress.consumedItemCount(),
+                progress == null ? null : progress.percentage()
         );
+    }
+
+    private Map<UUID, ListConsumption> consumptionByListIds(
+            UUID viewerId,
+            List<UUID> listIds,
+            Map<UUID, Long> itemCounts
+    ) {
+        if (viewerId == null || listIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, Long> consumedCounts = mediaListItemRepository
+                .countConsumedByListIds(
+                        viewerId, listIds, UserMediaStatus.COMPLETED)
+                .stream()
+                .collect(Collectors.toMap(
+                        MediaListItemRepository.MediaListConsumptionCount::getListId,
+                        MediaListItemRepository.MediaListConsumptionCount::getConsumedItemCount
+                ));
+
+        return listIds.stream().collect(Collectors.toMap(
+                Function.identity(),
+                listId -> {
+                    long total = itemCounts.getOrDefault(listId, 0L);
+                    long consumed = consumedCounts.getOrDefault(listId, 0L);
+                    int percentage = total == 0
+                            ? 0
+                            : (int) Math.round(consumed * 100.0 / total);
+                    return new ListConsumption(consumed, percentage);
+                }
+        ));
+    }
+
+    private record ListConsumption(long consumedItemCount, int percentage) {
     }
 
     @Transactional
@@ -526,16 +635,29 @@ public class MediaListService {
     }
 
     private List<MediaListItemResponse> itemResponses(UUID listId, UUID artworkOwnerId) {
+        return itemResponses(listId, artworkOwnerId, null);
+    }
+
+    private List<MediaListItemResponse> itemResponses(
+            UUID listId,
+            UUID artworkOwnerId,
+            UUID viewerId
+    ) {
         List<MediaListItem> items = mediaListItemRepository.findAllWithMediaByListId(listId);
         Map<UUID, ExternalReference> referencesByMediaId = primaryReferences(items);
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
                 artworkOwnerId, items.stream().map(MediaListItem::getMedia).toList());
+        Set<UUID> consumedMediaIds = viewerId == null
+                ? Set.of()
+                : Set.copyOf(mediaListItemRepository.findConsumedMediaIds(
+                        viewerId, listId, UserMediaStatus.COMPLETED));
 
         return items.stream()
                 .map(item -> MediaListItemResponse.from(
                         item,
                         referencesByMediaId.get(item.getMedia().getId()),
-                        artworks.get(item.getMedia().getId()).coverUrl()
+                        artworks.get(item.getMedia().getId()).coverUrl(),
+                        consumedMediaIds.contains(item.getMedia().getId())
                 ))
                 .toList();
     }

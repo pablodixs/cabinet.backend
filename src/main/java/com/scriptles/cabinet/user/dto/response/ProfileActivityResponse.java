@@ -31,7 +31,9 @@ public record ProfileActivityResponse(
         BigDecimal rating,
         String review,
         List<String> tags,
-        boolean containsSpoilers
+        boolean containsSpoilers,
+        boolean liked,
+        boolean hasReview
 ) {
     public static ProfileActivityResponse from(
             UserMedia entry,
@@ -66,6 +68,8 @@ public record ProfileActivityResponse(
                 null,
                 null,
                 List.of(),
+                false,
+                false,
                 false
         );
     }
@@ -81,6 +85,15 @@ public record ProfileActivityResponse(
             UserMediaActivity activity,
             ExternalReference externalReference,
             String coverUrl
+    ) {
+        return from(activity, externalReference, coverUrl, false);
+    }
+
+    public static ProfileActivityResponse from(
+            UserMediaActivity activity,
+            ExternalReference externalReference,
+            String coverUrl,
+            boolean liked
     ) {
         Media media = activity.getMedia();
         Instant occurredAt = activity.getOccurredOn()
@@ -102,7 +115,10 @@ public record ProfileActivityResponse(
                 activity.getRating(),
                 activity.getReviewContent(),
                 List.copyOf(activity.getTags()),
-                Boolean.TRUE.equals(activity.getContainsSpoilers())
+                Boolean.TRUE.equals(activity.getContainsSpoilers()),
+                liked,
+                activity.getReviewContent() != null
+                        && !activity.getReviewContent().isBlank()
         );
     }
 }

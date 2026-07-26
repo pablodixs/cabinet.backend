@@ -115,6 +115,43 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
             Pageable pageable
     );
 
+    @Query(value = """
+            select list
+            from MediaList list
+            join fetch list.owner
+            where list.owner.id = :ownerId
+              and (
+                list.owner.id = :viewerId
+                or list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (:viewerId is not null
+                    and list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = :ownerId
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED))
+              )
+            order by list.updatedAt desc, list.createdAt desc, list.id desc
+            """, countQuery = """
+            select count(list)
+            from MediaList list
+            where list.owner.id = :ownerId
+              and (
+                list.owner.id = :viewerId
+                or list.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
+                or (:viewerId is not null
+                    and list.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
+                    and exists (select follow.id from UserFollow follow
+                        where follow.follower.id = :viewerId
+                          and follow.followed.id = :ownerId
+                          and follow.status = com.scriptles.cabinet.user.enums.FollowStatus.ACCEPTED))
+              )
+            """)
+    Page<MediaList> findAccessibleByOwner(
+            @Param("ownerId") UUID ownerId,
+            @Param("viewerId") UUID viewerId,
+            Pageable pageable
+    );
+
     @Query("""
             select list.id as listId, count(listLike.id) as likeCount
             from MediaList list

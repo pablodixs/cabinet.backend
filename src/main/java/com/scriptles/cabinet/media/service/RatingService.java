@@ -19,7 +19,6 @@ import com.scriptles.cabinet.user.service.UserMediaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -38,6 +37,7 @@ public class RatingService {
     private final UserRepository userRepository;
     private final UserMediaService userMediaService;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
+    private final MediaCommunityCacheInvalidator communityCacheInvalidator;
 
     @Transactional(readOnly = true)
     public Optional<RatingResponse> find(UUID userId, UUID mediaId) {
@@ -46,7 +46,6 @@ public class RatingService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public RatingResponse upsert(UUID userId, UUID mediaId, UpsertRatingRequest request) {
         BigDecimal value = RatingValue.normalize(request.rating());
         User user = userRepository.findById(userId).orElseThrow(() -> notFound("USER_NOT_FOUND", "Usuário não encontrado"));
@@ -54,7 +53,6 @@ public class RatingService {
         return upsertResolved(userId, user, media, value);
     }
 
-    @CacheEvict(cacheNames = "mediaCommunity", key = "#media.id")
     public RatingResponse upsertResolved(User user, Media media, BigDecimal requestedValue) {
         return upsertResolved(user.getId(), user, media, RatingValue.normalize(requestedValue));
     }
@@ -88,6 +86,7 @@ public class RatingService {
         if (media.getType() != MediaType.TRACK && media.getType() != MediaType.EPISODE) {
             userMediaService.markCompleted(user, media);
         }
+        communityCacheInvalidator.evict(media);
         return new RatingResponse(
                 mediaId,
                 saved.getValue(),
@@ -97,7 +96,6 @@ public class RatingService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void delete(UUID userId, UUID mediaId) {
         ratingRepository.findByUserIdAndMediaId(userId, mediaId).ifPresent(rating -> {
             var review = reviewRepository.findByRatingId(rating.getId()).orElse(null);
@@ -106,6 +104,7 @@ public class RatingService {
                 reviewRepository.saveAndFlush(review);
             }
             ratingRepository.delete(rating);
+            communityCacheInvalidator.evict(rating.getMedia());
         });
     }
 

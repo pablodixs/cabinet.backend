@@ -89,9 +89,14 @@ public class MoreByService {
                 mediaId,
                 PageRequest.of(0, LOCAL_FETCH_LIMIT)
         );
+        boolean defaultLocale = "pt-BR".equalsIgnoreCase(language);
         List<MediaSearchItemResponse> localItems = personalized
-                ? itemAssembler.fromImported(localMedia, viewerId)
-                : itemAssembler.fromImported(localMedia);
+                ? defaultLocale
+                        ? itemAssembler.fromImported(localMedia, viewerId)
+                        : itemAssembler.fromImported(localMedia, viewerId, language)
+                : defaultLocale
+                        ? itemAssembler.fromImported(localMedia)
+                        : itemAssembler.fromImported(localMedia, language);
 
         String personExternalId = externalId(person, principal, eligibility.source());
         boolean incomplete = personExternalId == null;

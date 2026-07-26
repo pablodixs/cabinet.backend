@@ -36,6 +36,7 @@ class RatingServiceTest {
     @Mock UserRepository userRepository;
     @Mock UserMediaService userMediaService;
     @Mock MediaConsumptionPolicy mediaConsumptionPolicy;
+    @Mock MediaCommunityCacheInvalidator communityCacheInvalidator;
     @InjectMocks RatingService service;
 
     @Test
@@ -53,6 +54,7 @@ class RatingServiceTest {
         assertThat(response.rating()).isEqualByComparingTo("4.5");
         verify(ratingRepository).saveAndFlush(argThat(rating ->
                 rating.getMedia() == track && rating.getUser() == user));
+        verify(communityCacheInvalidator).evict(track);
         verifyNoInteractions(userMediaService);
     }
 
@@ -146,6 +148,8 @@ class RatingServiceTest {
         UUID userId = UUID.randomUUID(), mediaId = UUID.randomUUID();
         Rating rating = new Rating();
         rating.setId(UUID.randomUUID());
+        Media track = media(mediaId, MediaType.TRACK);
+        rating.setMedia(track);
         Review review = new Review();
         review.setRatingEntity(rating);
         when(ratingRepository.findByUserIdAndMediaId(userId, mediaId))
@@ -157,6 +161,7 @@ class RatingServiceTest {
         assertThat(review.getRatingEntity()).isNull();
         verify(reviewRepository).saveAndFlush(review);
         verify(ratingRepository).delete(rating);
+        verify(communityCacheInvalidator).evict(track);
     }
 
     private Media media(UUID id, MediaType type) {

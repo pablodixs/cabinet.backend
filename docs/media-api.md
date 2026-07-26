@@ -2,6 +2,35 @@
 
 This API searches external catalogs, retrieves enriched media details, imports media into Cabinet, and lazily loads series episodes.
 
+## Localized catalog representations
+
+Stored media has one internal UUID in every language. Localized endpoints currently support `pt-BR` and `en-US`
+and choose the requested locale in this order:
+
+1. the `locale` query parameter;
+2. the `Accept-Language` header;
+3. `pt-BR`.
+
+For example:
+
+```http
+GET /v1/media/{mediaId}?locale=en-US
+GET /v1/media/{mediaId}
+Accept-Language: en-US,pt-BR;q=0.8
+```
+
+The same locale rules apply to `/v1/media/search` and `/v1/search/header`. A stored title can be found in either
+supported language, while the returned title uses the requested representation. Unsupported explicit locales
+return `400 Bad Request` with code `UNSUPPORTED_LOCALE`.
+
+Localized media details include `requestedLocale`, `resolvedLocale`, and `translationFallback`. The fallback flag
+is true when any returned localized field needed another locale. `Content-Language` identifies the locale used
+for the displayed title. Responses selected from `Accept-Language` also send `Vary: Accept-Language`.
+
+Translation selection prefers an `AVAILABLE` or `PARTIAL` record in the requested locale, then the other supported
+locale, then another usable translation, and finally the canonical fields stored on the media. `MISSING` and
+`STALE` records do not replace a usable alternative.
+
 ## Sources and enrichment
 
 - Movies and series: TMDB.
@@ -195,6 +224,11 @@ credit backfill and does not duplicate existing credits.
 account's `id`, `username`, and `avatarUrl`. Private reviews, non-public lists, and private library entries are
 excluded. Media that has not been imported yet returns zero for the counters, empty recent-account arrays, and
 `null` for `averageRating`.
+
+For imported albums and series, `GET /v1/media/{mediaId}/community` also returns `childRatings`. The nested
+`itemType` is `TRACK` for albums and `EPISODE` for series; `averageRating`, `ratingCount`, and
+`ratingDistribution` aggregate every public rating attached to the eligible child media. Series exclude episodes
+whose air date is in the future. Other media types return `childRatings: null`.
 
 Works with a `releaseDate` after the current date can be added as `PLANNED`, but cannot use any consumption status
 (`IN_PROGRESS`, `PAUSED`, `DROPPED`, or `COMPLETED`) and cannot receive a rating or review. Those attempts return

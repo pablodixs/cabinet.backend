@@ -17,6 +17,8 @@ public record PublicMediaListResponse(
         String backdropUrl,
         List<MediaListPreviewResponse> previewItems,
         long itemCount,
+        Long consumedItemCount,
+        Integer consumedPercentage,
         long likeCount,
         int mediaPosition,
         Instant updatedAt,
@@ -36,7 +38,7 @@ public record PublicMediaListResponse(
             AuthorResponse owner
     ) {
         this(id, name, description, ordered, coverUrl, null, previewItems,
-                itemCount, likeCount, mediaPosition, updatedAt, owner);
+                itemCount, null, null, likeCount, mediaPosition, updatedAt, owner);
     }
 
     public static PublicMediaListResponse from(
@@ -45,6 +47,18 @@ public record PublicMediaListResponse(
             long itemCount,
             long likeCount,
             List<MediaListPreviewResponse> previewItems
+    ) {
+        return from(list, item, itemCount, likeCount, previewItems, null, null);
+    }
+
+    public static PublicMediaListResponse from(
+            MediaList list,
+            MediaListItem item,
+            long itemCount,
+            long likeCount,
+            List<MediaListPreviewResponse> previewItems,
+            Long consumedItemCount,
+            Integer consumedPercentage
     ) {
         return new PublicMediaListResponse(
                 list.getId(),
@@ -56,6 +70,8 @@ public record PublicMediaListResponse(
                         ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
                 itemCount,
+                consumedItemCount,
+                consumedPercentage,
                 likeCount,
                 item.getPosition(),
                 list.getUpdatedAt(),

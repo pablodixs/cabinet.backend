@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.time.CabinetTime;
+import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.media.repository.RatingRepository;
@@ -40,6 +41,36 @@ public class RatingSummaryService {
         return Map.copyOf(result);
     }
 
+    public AggregateStats aggregate(Collection<UUID> mediaIds) {
+        if (mediaIds.isEmpty()) return AggregateStats.empty();
+
+        RatingRepository.AggregateRatingProjection summary =
+                ratingRepository.aggregateRatings(mediaIds, Visibility.PUBLIC);
+        Map<BigDecimal, Long> counts = ratingRepository
+                .ratingDistributionForMediaIds(mediaIds, Visibility.PUBLIC)
+                .stream()
+                .collect(Collectors.toMap(
+                        projection -> projection.getRating().stripTrailingZeros(),
+                        RatingRepository.RatingDistributionProjection::getRatingCount
+                ));
+        List<ExternalMediaDetailsResponse.RatingDistributionBucket> distribution =
+                java.util.stream.IntStream.rangeClosed(1, 10)
+                        .mapToObj(step -> {
+                            BigDecimal rating = BigDecimal.valueOf(step)
+                                    .divide(BigDecimal.valueOf(2));
+                            return new ExternalMediaDetailsResponse.RatingDistributionBucket(
+                                    rating.doubleValue(),
+                                    counts.getOrDefault(rating.stripTrailingZeros(), 0L)
+                            );
+                        })
+                        .toList();
+        return new AggregateStats(
+                rounded(summary.getAverageRating()),
+                summary.getRatingCount(),
+                distribution
+        );
+    }
+
     public SeasonStats season(List<SeriesEpisode> episodes, UUID userId) {
         List<SeriesEpisode> eligible = episodes.stream().filter(this::eligible).toList();
         List<UUID> ids = eligible.stream().map(e -> e.getEpisodeMedia().getId()).toList();
@@ -74,6 +105,25 @@ public class RatingSummaryService {
 
     public record ItemStats(Double averageRating, long ratingCount, Double myRating) {
         public static ItemStats empty() { return new ItemStats(null, 0, null); }
+    }
+
+    public record AggregateStats(
+            Double averageRating,
+            long ratingCount,
+            List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution
+    ) {
+        public static AggregateStats empty() {
+            return new AggregateStats(
+                    null,
+                    0,
+                    java.util.stream.IntStream.rangeClosed(1, 10)
+                            .mapToObj(step -> new ExternalMediaDetailsResponse.RatingDistributionBucket(
+                                    step / 2.0,
+                                    0
+                            ))
+                            .toList()
+            );
+        }
     }
 
     public record SeasonStats(Double averageRating, long ratingCount, Double myRating,

@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
@@ -12,18 +13,16 @@ import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaTranslation;
-import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
 import com.scriptles.cabinet.media.repository.BookDetailsRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
-import com.scriptles.cabinet.media.repository.MediaTranslationRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
@@ -31,6 +30,9 @@ import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.repository.TrackDetailsRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
+import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
@@ -71,7 +73,8 @@ public class MediaQueryService {
     private final MediaCreditService mediaCreditService;
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
-    private final MediaTranslationRepository mediaTranslationRepository;
+    private final CatalogLocaleResolver catalogLocaleResolver;
+    private final MediaTranslationResolver mediaTranslationResolver;
 
     public PublicMediaDetailsResponse findDetails(UUID mediaId) {
         return findDetails(mediaId, "pt-BR");
@@ -79,7 +82,7 @@ public class MediaQueryService {
 
     @Cacheable(cacheNames = "mediaDetails", key = "#mediaId + ':' + #locale")
     public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
-        String requestedLocale = SupportedLocale.from(locale).tag();
+        String requestedLocale = catalogLocaleResolver.normalize(locale);
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND,
                 "MEDIA_NOT_FOUND",
@@ -109,19 +112,18 @@ public class MediaQueryService {
         List<ExternalMediaDetailsResponse.GenreResponse> genres = media.getGenres().stream()
                 .map(name -> new ExternalMediaDetailsResponse.GenreResponse(null, name, ExternalSource.MANUAL))
                 .toList();
-        MediaTranslation translation = resolveTranslation(mediaId, requestedLocale);
-        String resolvedLocale = translation == null ? requestedLocale : translation.getLocale();
+        ResolvedMediaTranslation translation = mediaTranslationResolver.resolve(media, requestedLocale);
         MediaCreditService.CreditSummary creditSummary = mediaCreditService.summary(media);
         return new PublicMediaDetailsResponse(
                 media.getId(),
                 externalId,
                 source,
                 media.getType(),
-                translation == null ? media.getTitle() : translation.getTitle(),
+                translation.title(),
                 media.getOriginalTitle(),
                 creditSummary.creator(),
-                translation == null ? media.getDescription() : translation.getDescription(),
-                translation == null ? media.getTagline() : translation.getTagline(),
+                translation.description(),
+                translation.tagline(),
                 media.getCoverUrl(),
                 media.getBackdropUrl(),
                 media.getLogoUrl(),
@@ -136,23 +138,10 @@ public class MediaQueryService {
                 true,
                 details(media, creditSummary),
                 requestedLocale,
-                resolvedLocale,
-                !requestedLocale.equals(resolvedLocale),
+                translation.resolvedLocale(),
+                translation.fallback(),
                 media.getCatalogStatus()
         );
-    }
-
-    private MediaTranslation resolveTranslation(UUID mediaId, String requestedLocale) {
-        if (mediaTranslationRepository == null) return null;
-        List<MediaTranslation> translations = mediaTranslationRepository.findAllByMediaId(mediaId);
-        if (translations.isEmpty()) return null;
-        return translations.stream()
-                .filter(value -> requestedLocale.equals(value.getLocale()))
-                .findFirst()
-                .or(() -> translations.stream()
-                        .filter(value -> "en-US".equals(value.getLocale()))
-                        .findFirst())
-                .orElse(translations.getFirst());
     }
 
     public ExternalMediaDetailsResponse findLegacyDetails(UUID mediaId) {
@@ -317,9 +306,8 @@ public class MediaQueryService {
 
     @Cacheable(cacheNames = "mediaCommunity", key = "#mediaId")
     public MediaCommunityResponse findCommunity(UUID mediaId) {
-        if (!mediaRepository.existsById(mediaId)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada");
-        }
+        Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada"));
         Double averageRating = ratingRepository.summarizeRatings(List.of(mediaId), Visibility.PUBLIC)
                 .stream()
                 .findFirst()
@@ -353,6 +341,7 @@ public class MediaQueryService {
                         .toList(),
                 averageRating,
                 List.copyOf(ratingDistribution),
+                childRatings(media),
                 mediaListItemRepository.countByMediaIdAndListVisibility(mediaId, Visibility.PUBLIC),
                 userMediaRepository.countByMediaIdAndStatusAndPrivateEntryFalse(
                         mediaId,
@@ -361,6 +350,29 @@ public class MediaQueryService {
                 recentCompletions.stream()
                         .map(entry -> toCommunityUser(entry.getUser()))
                         .toList()
+        );
+    }
+
+    private MediaCommunityResponse.ChildRatingsResponse childRatings(Media media) {
+        List<UUID> childIds;
+        MediaType itemType;
+        if (media.getType() == MediaType.ALBUM) {
+            itemType = MediaType.TRACK;
+            childIds = albumTrackRepository.findTrackMediaIdsByAlbumId(media.getId());
+        } else if (media.getType() == MediaType.SERIES) {
+            itemType = MediaType.EPISODE;
+            childIds = seriesEpisodeRepository.findEligibleEpisodeMediaIdsBySeriesId(
+                    media.getId(), CabinetTime.today());
+        } else {
+            return null;
+        }
+
+        RatingSummaryService.AggregateStats stats = ratingSummaryService.aggregate(childIds);
+        return new MediaCommunityResponse.ChildRatingsResponse(
+                itemType,
+                stats.averageRating(),
+                stats.ratingCount(),
+                stats.ratingDistribution()
         );
     }
 

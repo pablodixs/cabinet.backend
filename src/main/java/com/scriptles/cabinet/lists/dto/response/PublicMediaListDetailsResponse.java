@@ -17,6 +17,8 @@ public record PublicMediaListDetailsResponse(
         String coverUrl,
         String backdropUrl,
         long itemCount,
+        Long consumedItemCount,
+        Integer consumedPercentage,
         long likeCount,
         boolean liked,
         boolean ownList,
@@ -42,7 +44,7 @@ public record PublicMediaListDetailsResponse(
             List<MediaListItemResponse> items
     ) {
         this(id, name, description, visibility, ordered, coverUrl, null,
-                itemCount, likeCount, liked, ownList, createdAt, updatedAt, owner, items);
+                itemCount, null, null, likeCount, liked, ownList, createdAt, updatedAt, owner, items);
     }
 
     public static PublicMediaListDetailsResponse from(
@@ -51,6 +53,18 @@ public record PublicMediaListDetailsResponse(
             long likeCount,
             boolean liked,
             boolean ownList
+    ) {
+        return from(list, items, likeCount, liked, ownList, null, null);
+    }
+
+    public static PublicMediaListDetailsResponse from(
+            MediaList list,
+            List<MediaListItemResponse> items,
+            long likeCount,
+            boolean liked,
+            boolean ownList,
+            Long consumedItemCount,
+            Integer consumedPercentage
     ) {
         return new PublicMediaListDetailsResponse(
                 list.getId(),
@@ -62,6 +76,8 @@ public record PublicMediaListDetailsResponse(
                 list.getOwner().getAccountTier() == AccountTier.PRO
                         ? list.getBackdropUrl() : null,
                 items.size(),
+                consumedItemCount,
+                consumedPercentage,
                 likeCount,
                 liked,
                 ownList,

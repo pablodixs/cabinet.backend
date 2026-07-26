@@ -4,6 +4,8 @@ import com.scriptles.cabinet.media.dto.response.HeaderSearchResponse;
 import com.scriptles.cabinet.media.enums.HeaderSearchScope;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.HeaderSearchService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,21 +31,26 @@ class HeaderSearchControllerTest {
     @MockitoBean
     private HeaderSearchService headerSearchService;
 
+    @MockitoBean
+    private CatalogLocaleResolver catalogLocaleResolver;
+
     @Test
     void allowsAnonymousHeaderSearchWithDefaults() throws Exception {
-        when(headerSearchService.search("matrix", HeaderSearchScope.ALL, null))
+        when(catalogLocaleResolver.resolve(null, null)).thenReturn(SupportedLocale.PT_BR);
+        when(headerSearchService.search("matrix", HeaderSearchScope.ALL, null, "pt-BR"))
                 .thenReturn(new HeaderSearchResponse(List.of()));
 
         mockMvc.perform(get("/v1/search/header").param("query", "matrix"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items").isArray());
 
-        verify(headerSearchService).search("matrix", HeaderSearchScope.ALL, null);
+        verify(headerSearchService).search("matrix", HeaderSearchScope.ALL, null, "pt-BR");
     }
 
     @Test
     void mapsScopeAndMediaTypeFilters() throws Exception {
-        when(headerSearchService.search("matrix", HeaderSearchScope.MEDIA, MediaType.MOVIE))
+        when(catalogLocaleResolver.resolve(null, null)).thenReturn(SupportedLocale.PT_BR);
+        when(headerSearchService.search("matrix", HeaderSearchScope.MEDIA, MediaType.MOVIE, "pt-BR"))
                 .thenReturn(new HeaderSearchResponse(List.of()));
 
         mockMvc.perform(get("/v1/search/header")
@@ -52,7 +59,7 @@ class HeaderSearchControllerTest {
                         .param("type", "MOVIE"))
                 .andExpect(status().isOk());
 
-        verify(headerSearchService).search("matrix", HeaderSearchScope.MEDIA, MediaType.MOVIE);
+        verify(headerSearchService).search("matrix", HeaderSearchScope.MEDIA, MediaType.MOVIE, "pt-BR");
     }
 
     @Test

@@ -16,6 +16,8 @@ public record PublicListSearchResponse(
         String backdropUrl,
         List<MediaListPreviewResponse> previewItems,
         long itemCount,
+        Long consumedItemCount,
+        Integer consumedPercentage,
         long likeCount,
         Instant updatedAt,
         PublicMediaListResponse.AuthorResponse owner
@@ -33,7 +35,7 @@ public record PublicListSearchResponse(
             PublicMediaListResponse.AuthorResponse owner
     ) {
         this(id, name, description, ordered, coverUrl, null, previewItems,
-                itemCount, likeCount, updatedAt, owner);
+                itemCount, null, null, likeCount, updatedAt, owner);
     }
 
     public static PublicListSearchResponse from(
@@ -41,6 +43,17 @@ public record PublicListSearchResponse(
             long itemCount,
             long likeCount,
             List<MediaListPreviewResponse> previewItems
+    ) {
+        return from(list, itemCount, likeCount, previewItems, null, null);
+    }
+
+    public static PublicListSearchResponse from(
+            MediaList list,
+            long itemCount,
+            long likeCount,
+            List<MediaListPreviewResponse> previewItems,
+            Long consumedItemCount,
+            Integer consumedPercentage
     ) {
         return new PublicListSearchResponse(
                 list.getId(),
@@ -52,6 +65,8 @@ public record PublicListSearchResponse(
                         ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
                 itemCount,
+                consumedItemCount,
+                consumedPercentage,
                 likeCount,
                 list.getUpdatedAt(),
                 new PublicMediaListResponse.AuthorResponse(

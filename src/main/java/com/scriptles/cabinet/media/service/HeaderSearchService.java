@@ -9,6 +9,9 @@ import com.scriptles.cabinet.media.enums.HeaderSearchScope;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
+import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -31,13 +34,25 @@ public class HeaderSearchService {
     private final MediaRepository mediaRepository;
     private final PersonRepository personRepository;
     private final MediaCreditService mediaCreditService;
+    private final MediaTranslationResolver translationResolver;
+    private final CatalogLocaleResolver localeResolver;
 
     public HeaderSearchResponse search(String query, HeaderSearchScope scope, MediaType type) {
+        return search(query, scope, type, CatalogLocaleResolver.DEFAULT_LOCALE);
+    }
+
+    public HeaderSearchResponse search(
+            String query,
+            HeaderSearchScope scope,
+            MediaType type,
+            String locale
+    ) {
         String trimmedQuery = query.trim();
+        String requestedLocale = localeResolver.normalize(locale);
         List<RankedItem> rankedItems = new ArrayList<>(RESULT_LIMIT * 2);
 
         if (scope != HeaderSearchScope.ARTIST) {
-            addMedia(rankedItems, trimmedQuery, type);
+            addMedia(rankedItems, trimmedQuery, type, requestedLocale);
         }
         if (scope != HeaderSearchScope.MEDIA) {
             addArtists(rankedItems, trimmedQuery, type);
@@ -54,27 +69,30 @@ public class HeaderSearchService {
         return new HeaderSearchResponse(items);
     }
 
-    private void addMedia(List<RankedItem> target, String query, MediaType type) {
+    private void addMedia(List<RankedItem> target, String query, MediaType type, String locale) {
         List<Media> candidates = mediaRepository.findHeaderSearchCandidates(
                 query,
                 type == null ? null : type.name(),
                 PageRequest.of(0, RESULT_LIMIT)
         );
         Map<UUID, MediaCreditService.CreditSummary> credits = mediaCreditService.summaries(candidates);
+        Map<UUID, ResolvedMediaTranslation> translations = translationResolver.resolveAll(candidates, locale);
 
         for (Media media : candidates) {
+            ResolvedMediaTranslation translation = translations.get(media.getId());
+            String title = translation == null ? media.getTitle() : translation.title();
             HeaderSearchItemResponse response = new HeaderSearchItemResponse(
                     media.getId(),
                     HeaderSearchEntityType.MEDIA,
-                    media.getTitle(),
+                    title,
                     credits.getOrDefault(media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
                     media.getCoverUrl(),
                     media.getReleaseDate() == null ? null : media.getReleaseDate().getYear()
             );
             target.add(new RankedItem(
                     response,
-                    relevance(query, media.getTitle(), media.getOriginalTitle()),
-                    normalize(media.getTitle())
+                    relevance(query, title, media.getTitle(), media.getOriginalTitle()),
+                    normalize(title)
             ));
         }
     }

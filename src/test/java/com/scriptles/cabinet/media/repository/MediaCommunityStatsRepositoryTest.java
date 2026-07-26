@@ -57,6 +57,7 @@ class MediaCommunityStatsRepositoryTest {
     @Test
     void aggregatesOnlyPublicCommunityActivity() {
         Media media = media();
+        Media secondMedia = media("Second child", null);
         User ana = user("ana");
         User bia = user("bia");
         User caio = user("caio");
@@ -69,6 +70,7 @@ class MediaCommunityStatsRepositoryTest {
         review(media, ana, "5.0", Visibility.PUBLIC);
         review(media, bia, "3.0", Visibility.PUBLIC);
         review(media, caio, "1.0", Visibility.PRIVATE);
+        review(secondMedia, ana, "5.0", Visibility.PUBLIC);
 
         listItem(media, mediaList(ana, "Pública", Visibility.PUBLIC));
         listItem(media, mediaList(bia, "Seguidores", Visibility.FOLLOWERS));
@@ -93,6 +95,25 @@ class MediaCommunityStatsRepositoryTest {
                         org.assertj.core.groups.Tuple.tuple(new BigDecimal("3.0"), 1L),
                         org.assertj.core.groups.Tuple.tuple(new BigDecimal("5.0"), 1L)
                 );
+        var aggregate = ratingRepository.aggregateRatings(
+                List.of(media.getId(), secondMedia.getId()),
+                Visibility.PUBLIC
+        );
+        assertThat(aggregate.getAverageRating()).isCloseTo(
+                13.0 / 3.0,
+                org.assertj.core.data.Offset.offset(0.001)
+        );
+        assertThat(aggregate.getRatingCount()).isEqualTo(3);
+        assertThat(ratingRepository.ratingDistributionForMediaIds(
+                List.of(media.getId(), secondMedia.getId()),
+                Visibility.PUBLIC
+        )).extracting(
+                RatingRepository.RatingDistributionProjection::getRating,
+                RatingRepository.RatingDistributionProjection::getRatingCount
+        ).containsExactly(
+                org.assertj.core.groups.Tuple.tuple(new BigDecimal("3.0"), 1L),
+                org.assertj.core.groups.Tuple.tuple(new BigDecimal("5.0"), 2L)
+        );
         assertThat(mediaLikeRepository.countByMediaId(media.getId())).isEqualTo(1);
         assertThat(userMediaRepository.countByMediaIdAndStatusAndPrivateEntryFalse(
                 media.getId(), UserMediaStatus.COMPLETED)).isEqualTo(2);

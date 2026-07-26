@@ -43,8 +43,8 @@ public class MediaTranslation {
     @Column(nullable = false, length = 30)
     private ExternalSource source;
 
-    @Column(length = 10)
-    private String sourceLanguage;
+    @Column(name = "source_language", length = 10)
+    private String originalLanguage;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -57,4 +57,18 @@ public class MediaTranslation {
 
     @UpdateTimestamp
     private Instant updatedAt;
+
+    /**
+     * Compatibility accessors for callers that still use the database column's
+     * former domain name.
+     */
+    @Deprecated(forRemoval = false)
+    public String getSourceLanguage() {
+        return originalLanguage;
+    }
+
+    @Deprecated(forRemoval = false)
+    public void setSourceLanguage(String sourceLanguage) {
+        this.originalLanguage = sourceLanguage;
+    }
 }

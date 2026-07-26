@@ -48,6 +48,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class MediaListServiceTest {
@@ -563,11 +564,28 @@ class MediaListServiceTest {
                                 false
                         )
                 ));
+        MediaListItemRepository.MediaListConsumptionCount consumption =
+                mock(MediaListItemRepository.MediaListConsumptionCount.class);
+        when(consumption.getListId()).thenReturn(listId);
+        when(consumption.getConsumedItemCount()).thenReturn(1L);
+        when(mediaListItemRepository.countConsumedByListIds(
+                viewerId,
+                List.of(listId),
+                com.scriptles.cabinet.user.enums.UserMediaStatus.COMPLETED
+        )).thenReturn(List.of(consumption));
+        when(mediaListItemRepository.findConsumedMediaIds(
+                viewerId,
+                listId,
+                com.scriptles.cabinet.user.enums.UserMediaStatus.COMPLETED
+        )).thenReturn(List.of(media.getId()));
 
         var response = mediaListService.findAccessibleDetails(viewerId, listId);
 
         assertThat(response.items().getFirst().coverUrl())
                 .isEqualTo("https://images.example/custom.jpg");
+        assertThat(response.items().getFirst().consumed()).isTrue();
+        assertThat(response.consumedItemCount()).isEqualTo(1);
+        assertThat(response.consumedPercentage()).isEqualTo(100);
         verify(userArtworkResolver).resolve(owner.getId(), List.of(media));
     }
 

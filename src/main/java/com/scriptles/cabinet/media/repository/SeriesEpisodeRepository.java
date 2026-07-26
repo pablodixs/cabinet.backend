@@ -7,11 +7,29 @@ import java.util.List;
 import java.util.Optional;
 import java.time.LocalDate;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface SeriesEpisodeRepository extends JpaRepository<SeriesEpisode, UUID> {
     List<SeriesEpisode> findAllBySeasonIdOrderByEpisodeNumberAsc(UUID seasonId);
     Optional<SeriesEpisode> findBySeasonIdAndEpisodeNumber(UUID seasonId, Integer episodeNumber);
     Optional<SeriesEpisode> findByEpisodeMediaId(UUID mediaId);
+
+    @Query("""
+            select episode.episodeMedia.id
+            from SeriesEpisode episode
+            where episode.season.series.id = :seriesId
+              and (episode.airDate is null or episode.airDate <= :today)
+            """)
+    List<UUID> findEligibleEpisodeMediaIdsBySeriesId(@Param("seriesId") UUID seriesId,
+                                                      @Param("today") LocalDate today);
+
+    @Query("""
+            select episode.season.series.id
+            from SeriesEpisode episode
+            where episode.episodeMedia.id = :episodeMediaId
+            """)
+    Optional<UUID> findSeriesIdByEpisodeMediaId(@Param("episodeMediaId") UUID episodeMediaId);
 
     long countBySeasonSeriesIdAndSeasonSeasonNumberGreaterThan(UUID seriesId, Integer seasonNumber);
 

@@ -8,6 +8,8 @@ import com.scriptles.cabinet.media.enums.HeaderSearchScope;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,12 +35,27 @@ class HeaderSearchServiceTest {
     private PersonRepository personRepository;
     @Mock
     private MediaCreditService mediaCreditService;
+    @Mock
+    private MediaTranslationResolver translationResolver;
+    @Mock
+    private CatalogLocaleResolver localeResolver;
 
     private HeaderSearchService service;
 
     @BeforeEach
     void setUp() {
-        service = new HeaderSearchService(mediaRepository, personRepository, mediaCreditService);
+        service = new HeaderSearchService(
+                mediaRepository,
+                personRepository,
+                mediaCreditService,
+                translationResolver,
+                localeResolver
+        );
+        org.mockito.Mockito.lenient().when(localeResolver.normalize("pt-BR")).thenReturn("pt-BR");
+        org.mockito.Mockito.lenient().when(translationResolver.resolveAll(
+                org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenReturn(Map.of());
     }
 
     @Test

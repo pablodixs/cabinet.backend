@@ -61,6 +61,7 @@ public class DiaryService {
     private final EpisodeTrackingService episodeTrackingService;
     private final SocialAccessPolicy socialAccessPolicy;
     private final UserArtworkResolver userArtworkResolver;
+    private final UserTagService userTagService;
 
     @Transactional
     public DiaryEntryResponse create(UUID userId, CreateDiaryEntryRequest request) {
@@ -88,6 +89,7 @@ public class DiaryService {
         activity.setSource(ExternalSource.MANUAL);
         activity.setSourceKey("cabinet:diary:" + UUID.randomUUID());
         activity.setTags(normalizeTags(request.tags()));
+        userTagService.ensureTags(user, activity.getTags());
         activity = activityRepository.saveAndFlush(activity);
 
         if (reviewContent != null) {

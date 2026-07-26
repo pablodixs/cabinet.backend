@@ -20,6 +20,8 @@ import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -42,6 +44,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class ReviewServiceTest {
@@ -63,9 +66,43 @@ class ReviewServiceTest {
     private MediaSearchItemAssembler mediaSearchItemAssembler;
     @Mock
     private MediaConsumptionPolicy mediaConsumptionPolicy;
+    @Mock
+    private MediaCommunityCacheInvalidator communityCacheInvalidator;
 
     @InjectMocks
     private ReviewService reviewService;
+
+    @ParameterizedTest
+    @EnumSource(value = MediaType.class, names = {"TRACK", "EPISODE"})
+    void createsChildReviewWithoutCompletingLibrary(MediaType type) {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media child = media(mediaId);
+        child.setType(type);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(child));
+        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId))
+                .thenReturn(Optional.empty());
+        when(reviewRepository.saveAndFlush(any(Review.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ReviewResponse response = reviewService.upsert(
+                userId,
+                mediaId,
+                new UpsertReviewRequest(
+                        new BigDecimal("4.5"),
+                        "Review individual",
+                        false,
+                        Visibility.PUBLIC
+                )
+        );
+
+        assertThat(response.content()).isEqualTo("Review individual");
+        verify(mediaConsumptionPolicy).ensureReleased(child);
+        verifyNoInteractions(userMediaService);
+        verify(communityCacheInvalidator).evict(child);
+    }
 
     @Test
     void createsReviewAndMarksMediaCompleted() {

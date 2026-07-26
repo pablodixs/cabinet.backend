@@ -8,6 +8,14 @@ import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.dto.response.UserSummaryResponse;
 import com.scriptles.cabinet.user.dto.response.SocialUserResponse;
+import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
+import com.scriptles.cabinet.user.dto.response.LibraryFilterOptionsResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileLikeResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileTagResponse;
+import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.enums.LibraryRatingFilter;
+import com.scriptles.cabinet.user.enums.LibrarySort;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.service.UserProfileService;
 import com.scriptles.cabinet.user.service.UserService;
@@ -27,6 +35,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.validation.annotation.Validated;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/v1/users")
@@ -103,6 +113,63 @@ public class UserController {
                 page,
                 size
         );
+    }
+
+    @GetMapping("/{username}/library")
+    public PageResponse<LibraryMediaResponse> findLibrary(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam(required = false) UserMediaStatus status,
+            @RequestParam(required = false) MediaType type,
+            @RequestParam(required = false) @Size(max = 100) String query,
+            @RequestParam(required = false) @Size(max = 100) String genre,
+            @RequestParam(defaultValue = "ALL") LibraryRatingFilter rating,
+            @RequestParam(defaultValue = "RECENT") LibrarySort sort,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
+    ) {
+        return userProfileService.findLibrary(
+                username,
+                viewer == null ? null : viewer.id(),
+                status,
+                type,
+                query,
+                genre,
+                rating,
+                sort,
+                page,
+                size
+        );
+    }
+
+    @GetMapping("/{username}/library/filters")
+    public LibraryFilterOptionsResponse findLibraryFilters(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer
+    ) {
+        return userProfileService.findLibraryFilters(
+                username, viewer == null ? null : viewer.id());
+    }
+
+    @GetMapping("/{username}/likes")
+    public PageResponse<ProfileLikeResponse> findLikes(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "30") @Min(1) @Max(50) int size
+    ) {
+        return userProfileService.findLikes(
+                username, viewer == null ? null : viewer.id(), page, size);
+    }
+
+    @GetMapping("/{username}/tags")
+    public List<ProfileTagResponse> findTags(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam(defaultValue = "100") @Min(1) @Max(200) int limit
+    ) {
+        return userProfileService.findTags(
+                username, viewer == null ? null : viewer.id(), limit);
     }
 
     @PostMapping("/create")

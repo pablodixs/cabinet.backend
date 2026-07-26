@@ -17,6 +17,7 @@ public record UserProfileResponse(
         long inProgressCount,
         ProfileStatsResponse stats,
         List<LibraryMediaResponse> recentItems,
+        List<ProfileFavoriteResponse> favoriteItems,
         long followerCount,
         long followingCount,
         boolean privateProfile,
@@ -56,7 +57,7 @@ public record UserProfileResponse(
             List<LibraryMediaResponse> recentItems
     ) {
         this(id, username, displayName, biography, avatarUrl, pro, ownProfile,
-                libraryCount, completedCount, inProgressCount, stats, recentItems,
+                libraryCount, completedCount, inProgressCount, stats, recentItems, List.of(),
                 0, 0, false, FollowState.NONE, false);
     }
 }

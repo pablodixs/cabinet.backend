@@ -7,6 +7,9 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
+import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.Visibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -27,6 +30,7 @@ public class MediaSearchItemAssembler {
     private final RatingRepository ratingRepository;
     private final MediaCreditService mediaCreditService;
     private final UserArtworkResolver userArtworkResolver;
+    private final MediaTranslationResolver translationResolver;
 
     public List<MediaSearchItemResponse> fromExternal(List<ExternalMedia> results) {
         return fromExternal(results, null);
@@ -84,10 +88,22 @@ public class MediaSearchItemAssembler {
     }
 
     public List<MediaSearchItemResponse> fromImported(List<Media> mediaItems) {
-        return fromImported(mediaItems, null);
+        return fromImported(mediaItems, null, CatalogLocaleResolver.DEFAULT_LOCALE);
     }
 
     public List<MediaSearchItemResponse> fromImported(List<Media> mediaItems, UUID viewerId) {
+        return fromImported(mediaItems, viewerId, CatalogLocaleResolver.DEFAULT_LOCALE);
+    }
+
+    public List<MediaSearchItemResponse> fromImported(List<Media> mediaItems, String locale) {
+        return fromImported(mediaItems, null, locale);
+    }
+
+    public List<MediaSearchItemResponse> fromImported(
+            List<Media> mediaItems,
+            UUID viewerId,
+            String locale
+    ) {
         if (mediaItems == null || mediaItems.isEmpty()) {
             return List.of();
         }
@@ -103,18 +119,20 @@ public class MediaSearchItemAssembler {
         Map<UUID, RatingSummary> ratings = ratings(mediaItems);
         Map<UUID, MediaCreditService.CreditSummary> creditSummaries = mediaCreditService.summaries(mediaItems);
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = userArtworkResolver.resolve(viewerId, mediaItems);
+        Map<UUID, ResolvedMediaTranslation> translations = translationResolver.resolveAll(mediaItems, locale);
 
         return mediaItems.stream().map(media -> {
             ExternalReference reference = references.get(media.getId());
             RatingSummary rating = ratings.get(media.getId());
+            ResolvedMediaTranslation translation = translations.get(media.getId());
             return new MediaSearchItemResponse(
                     media.getId(),
                     reference == null ? media.getId().toString() : reference.getExternalId(),
                     reference == null ? ExternalSource.MANUAL : reference.getSource(),
                     media.getType(),
-                    media.getTitle(),
+                    translation == null ? media.getTitle() : translation.title(),
                     creditSummaries.getOrDefault(media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
-                    media.getDescription(),
+                    translation == null ? media.getDescription() : translation.description(),
                     artworks.get(media.getId()).coverUrl(),
                     media.getReleaseDate(),
                     true,

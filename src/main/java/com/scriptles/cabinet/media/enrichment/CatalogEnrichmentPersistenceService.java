@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.enums.*;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.*;
 import com.scriptles.cabinet.media.service.MediaCreditService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,16 +29,20 @@ public class CatalogEnrichmentPersistenceService {
     private final AlbumTrackRepository albumTrackRepository;
     private final SeriesSeasonRepository seasonRepository;
     private final MediaCreditService creditService;
+    private final CatalogLocaleResolver localeResolver;
 
     @Transactional
-    @CacheEvict(cacheNames = "mediaDetails", allEntries = true)
+    @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':' + #locale")
     public void complete(UUID mediaId, ExternalMedia external, String locale, String wikidataId) {
         Media media = mediaRepository.findById(mediaId)
                 .orElseThrow(() -> new IllegalArgumentException("Media not found"));
-        media.setTitle(firstNonBlank(external.title(), media.getTitle()));
+        String normalizedLocale = localeResolver.normalize(locale);
+        if (normalizedLocale.equals(media.getDefaultLocale())) {
+            media.setTitle(firstNonBlank(external.title(), media.getTitle()));
+            media.setDescription(external.description());
+            media.setTagline(external.tagline());
+        }
         media.setOriginalTitle(firstNonBlank(external.originalTitle(), media.getOriginalTitle()));
-        media.setDescription(external.description());
-        media.setTagline(external.tagline());
         media.setCoverUrl(firstNonBlank(external.coverUrl(), media.getCoverUrl()));
         media.setBackdropUrl(firstNonBlank(external.backdropUrl(), media.getBackdropUrl()));
         media.setLogoUrl(firstNonBlank(external.logoUrl(), media.getLogoUrl()));
@@ -51,7 +56,7 @@ public class CatalogEnrichmentPersistenceService {
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
         }
         updateDetails(media, external);
-        upsertTranslation(media, external, locale);
+        upsertTranslation(media, external, normalizedLocale);
         linkWikidata(media, wikidataId);
         creditService.saveWithoutIdentityEnrichment(media, external.credits());
         media.setCatalogStatus(CatalogStatus.READY);
@@ -61,11 +66,11 @@ public class CatalogEnrichmentPersistenceService {
     }
 
     @Transactional
-    @CacheEvict(cacheNames = "mediaDetails", allEntries = true)
+    @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':' + #locale")
     public void saveTranslation(UUID mediaId, ExternalMedia external, String locale) {
         Media media = mediaRepository.findById(mediaId)
                 .orElseThrow(() -> new IllegalArgumentException("Media not found"));
-        upsertTranslation(media, external, locale);
+        upsertTranslation(media, external, localeResolver.normalize(locale));
     }
 
     @Transactional
@@ -90,10 +95,8 @@ public class CatalogEnrichmentPersistenceService {
         translation.setDescription(external.description());
         translation.setTagline(external.tagline());
         translation.setSource(external.source());
-        translation.setSourceLanguage(external.originalLanguage());
-        translation.setTranslationStatus(external.description() == null
-                ? TranslationStatus.PARTIAL
-                : TranslationStatus.AVAILABLE);
+        translation.setOriginalLanguage(external.originalLanguage());
+        translation.setTranslationStatus(translationStatus(external));
         translation.setLastSyncedAt(Instant.now());
         translationRepository.save(translation);
     }
@@ -187,6 +190,7 @@ public class CatalogEnrichmentPersistenceService {
             trackMedia.setType(MediaType.TRACK);
             trackMedia.setTitle(firstNonBlank(source.title(), source.externalId()));
             trackMedia.setOriginalTitle(source.title());
+            trackMedia.setDefaultLocale(album.getDefaultLocale());
             trackMedia.setReleaseDate(external.releaseDate());
             trackMedia.setCatalogStatus(CatalogStatus.CORE_READY);
             trackMedia.setCoreSyncedAt(Instant.now());
@@ -253,5 +257,11 @@ public class CatalogEnrichmentPersistenceService {
     private String truncate(String value, int size) {
         if (value == null || value.length() <= size) return value;
         return value.substring(0, size);
+    }
+
+    private TranslationStatus translationStatus(ExternalMedia external) {
+        boolean hasTitle = firstNonBlank(external.title(), external.originalTitle()) != null;
+        boolean hasOptionalText = firstNonBlank(external.description(), external.tagline()) != null;
+        return hasTitle && hasOptionalText ? TranslationStatus.AVAILABLE : TranslationStatus.PARTIAL;
     }
 }

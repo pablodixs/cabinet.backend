@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
@@ -20,6 +21,9 @@ import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.repository.UserProfileFavoriteRepository;
+import com.scriptles.cabinet.user.repository.UserMediaTagRepository;
+import com.scriptles.cabinet.user.repository.UserTagRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,11 +72,25 @@ class UserProfileServiceTest {
     @Mock
     private UserArtworkResolver userArtworkResolver;
 
+    @Mock
+    private MediaLikeRepository mediaLikeRepository;
+
+    @Mock
+    private UserProfileFavoriteRepository favoriteRepository;
+
+    @Mock
+    private UserTagRepository tagRepository;
+
+    @Mock
+    private UserMediaTagRepository mediaTagRepository;
+
     @InjectMocks
     private UserProfileService userProfileService;
 
     @BeforeEach
     void resolveCanonicalArtworkByDefault() {
+        lenient().when(favoriteRepository.findAllByUserIdOrderByPositionAsc(
+                any(UUID.class))).thenReturn(List.of());
         lenient().when(userArtworkResolver.resolve(
                 any(UUID.class),
                 org.mockito.ArgumentMatchers.<java.util.Collection<Media>>any()
@@ -237,6 +255,8 @@ class UserProfileServiceTest {
         entry.setType(ProfileActivityType.COMPLETED);
         entry.setOccurredOn(LocalDate.of(2026, 7, 14));
         entry.setVisibility(Visibility.PUBLIC);
+        entry.setRating(new java.math.BigDecimal("4.5"));
+        entry.setReviewContent("Uma ótima leitura.");
 
         ExternalReference reference = new ExternalReference();
         reference.setMedia(media);
@@ -255,6 +275,9 @@ class UserProfileServiceTest {
         when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(
                 List.of(media.getId())
         )).thenReturn(List.of(reference));
+        when(mediaLikeRepository.findLikedMediaIds(
+                profileUser.getId(), List.of(media.getId())))
+                .thenReturn(List.of(media.getId()));
 
         ProfileActivityResponse activity = userProfileService.findActivities(
                 "maria",
@@ -268,6 +291,9 @@ class UserProfileServiceTest {
         assertThat(activity.title()).isEqualTo("Torto Arado");
         assertThat(activity.source()).isEqualTo(ExternalSource.GOOGLE_BOOKS);
         assertThat(activity.externalId()).isEqualTo("book-123");
+        assertThat(activity.rating()).isEqualByComparingTo("4.5");
+        assertThat(activity.liked()).isTrue();
+        assertThat(activity.hasReview()).isTrue();
     }
 
     @Test

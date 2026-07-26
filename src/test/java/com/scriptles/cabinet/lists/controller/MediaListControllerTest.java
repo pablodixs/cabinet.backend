@@ -133,7 +133,8 @@ class MediaListControllerTest {
                 null,
                 null,
                 null,
-                Instant.parse("2026-07-15T12:00:00Z")
+                Instant.parse("2026-07-15T12:00:00Z"),
+                false
         );
         when(mediaListService.addItem(
                 eq(principal.id()),

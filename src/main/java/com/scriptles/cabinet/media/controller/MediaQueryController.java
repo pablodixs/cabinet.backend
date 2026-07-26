@@ -16,6 +16,7 @@ import com.scriptles.cabinet.media.service.MoreByService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
 import com.scriptles.cabinet.media.service.SeasonEpisodeService;
 import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -26,6 +27,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -42,19 +44,23 @@ public class MediaQueryController {
     private final MoreByService moreByService;
     private final SeasonEpisodeService seasonEpisodeService;
     private final AwardQueryService awardQueryService;
+    private final CatalogLocaleResolver catalogLocaleResolver;
 
     @GetMapping("/{mediaId}")
     public ResponseEntity<PublicMediaDetailsResponse> findDetails(
             @PathVariable UUID mediaId,
-            @RequestParam(defaultValue = "pt-BR")
-            @Pattern(regexp = "^(pt-BR|en-US)$") String locale
+            @RequestParam(required = false) String locale,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
-        PublicMediaDetailsResponse response = mediaQueryService.findDetails(mediaId, locale);
-        return ResponseEntity.ok()
+        String requestedLocale = catalogLocaleResolver.resolve(locale, acceptLanguage).tag();
+        PublicMediaDetailsResponse response = mediaQueryService.findDetails(mediaId, requestedLocale);
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header("Content-Language", response.resolvedLocale())
-                .header("Vary", "Accept-Language")
-                .header("Cache-Control", "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400")
-                .body(response);
+                .header("Cache-Control", "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400");
+        if (locale == null || locale.isBlank()) {
+            builder.header("Vary", "Accept-Language");
+        }
+        return builder.body(response);
     }
 
     @GetMapping("/{mediaId}/community")

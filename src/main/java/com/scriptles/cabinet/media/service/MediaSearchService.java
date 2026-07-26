@@ -13,6 +13,9 @@ import com.scriptles.cabinet.media.external.ExternalMediaProvider;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
+import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.Visibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -35,7 +38,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MediaSearchService {
-    private static final String LANGUAGE = "pt-BR";
     private static final Set<MediaType> SEARCHABLE_TYPES = EnumSet.of(
             MediaType.MOVIE,
             MediaType.SERIES,
@@ -49,6 +51,8 @@ public class MediaSearchService {
     private final MediaCreditService mediaCreditService;
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
     private final UserArtworkResolver userArtworkResolver;
+    private final CatalogLocaleResolver localeResolver;
+    private final MediaTranslationResolver translationResolver;
 
     @Transactional(readOnly = true)
     public MediaSearchPageResponse search(
@@ -58,7 +62,7 @@ public class MediaSearchService {
             String cursor,
             int limit
     ) {
-        return search(query, type, sort, cursor, limit, null);
+        return search(query, type, sort, cursor, limit, null, CatalogLocaleResolver.DEFAULT_LOCALE);
     }
 
     @Transactional(readOnly = true)
@@ -70,13 +74,39 @@ public class MediaSearchService {
             int limit,
             UUID viewerId
     ) {
+        return search(query, type, sort, cursor, limit, viewerId, CatalogLocaleResolver.DEFAULT_LOCALE);
+    }
+
+    @Transactional(readOnly = true)
+    public MediaSearchPageResponse search(
+            String query,
+            MediaType type,
+            MediaSearchSort sort,
+            String cursor,
+            int limit,
+            String locale
+    ) {
+        return search(query, type, sort, cursor, limit, null, locale);
+    }
+
+    @Transactional(readOnly = true)
+    public MediaSearchPageResponse search(
+            String query,
+            MediaType type,
+            MediaSearchSort sort,
+            String cursor,
+            int limit,
+            UUID viewerId,
+            String locale
+    ) {
         validateType(type);
         String normalizedQuery = query.trim();
+        String requestedLocale = localeResolver.normalize(locale);
 
         if (sort == MediaSearchSort.RATING) {
-            return searchByRating(normalizedQuery, type, cursor, limit, viewerId);
+            return searchByRating(normalizedQuery, type, cursor, limit, viewerId, requestedLocale);
         }
-        return searchByRelevance(normalizedQuery, type, cursor, limit, viewerId);
+        return searchByRelevance(normalizedQuery, type, cursor, limit, viewerId, requestedLocale);
     }
 
     private MediaSearchPageResponse searchByRelevance(
@@ -84,15 +114,16 @@ public class MediaSearchService {
             MediaType type,
             String cursor,
             int limit,
-            UUID viewerId
+            UUID viewerId,
+            String locale
     ) {
         if (type == null) {
-            return searchAllByRelevance(query, cursor, limit, viewerId);
+            return searchAllByRelevance(query, cursor, limit, viewerId, locale);
         }
 
         SingleCursor state = decodeSingleCursor(cursor);
         ExternalMediaProvider provider = providerRegistry.get(defaultSource(type), type);
-        List<ExternalMedia> fetched = provider.search(type, query, LANGUAGE, state.offset(), limit + 1);
+        List<ExternalMedia> fetched = provider.search(type, query, locale, state.offset(), limit + 1);
         List<ExternalMedia> page = fetched.stream().limit(limit).toList();
         int consumed = page.size();
         String nextCursor = fetched.size() > consumed
@@ -106,7 +137,8 @@ public class MediaSearchService {
             String query,
             String cursor,
             int limit,
-            UUID viewerId
+            UUID viewerId,
+            String locale
     ) {
         AllCursor state = decodeAllCursor(cursor);
         int fetchLimit = limit + 1;
@@ -114,7 +146,7 @@ public class MediaSearchService {
         List<ExternalMedia> tmdb = state.tmdbDone()
                 ? List.of()
                 : providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)
-                .searchAll(query, LANGUAGE, state.tmdbOffset(), fetchLimit);
+                .searchAll(query, locale, state.tmdbOffset(), fetchLimit);
 
         List<ExternalMedia> albums;
         boolean albumFailed = false;
@@ -122,7 +154,7 @@ public class MediaSearchService {
             albums = state.albumDone()
                     ? List.of()
                     : providerRegistry.get(ExternalSource.MUSICBRAINZ, MediaType.ALBUM)
-                    .search(MediaType.ALBUM, query, LANGUAGE, state.albumOffset(), fetchLimit);
+                    .search(MediaType.ALBUM, query, locale, state.albumOffset(), fetchLimit);
         } catch (ExternalMediaException exception) {
             albums = List.of();
             albumFailed = true;
@@ -134,7 +166,7 @@ public class MediaSearchService {
             books = state.bookDone()
                     ? List.of()
                     : providerRegistry.get(ExternalSource.GOOGLE_BOOKS, MediaType.BOOK)
-                    .search(MediaType.BOOK, query, LANGUAGE, state.bookOffset(), fetchLimit);
+                    .search(MediaType.BOOK, query, locale, state.bookOffset(), fetchLimit);
         } catch (ExternalMediaException exception) {
             books = List.of();
             bookFailed = true;
@@ -174,7 +206,8 @@ public class MediaSearchService {
             MediaType type,
             String cursor,
             int limit,
-            UUID viewerId
+            UUID viewerId,
+            String locale
     ) {
         RatingCursor state = decodeRatingCursor(cursor);
         Set<MediaType> types = type == null ? SEARCHABLE_TYPES : EnumSet.of(type);
@@ -204,6 +237,10 @@ public class MediaSearchService {
                 viewerId,
                 ratings.getContent().stream().map(RatingRepository.RatedMediaProjection::getMedia).toList()
         );
+        Map<UUID, ResolvedMediaTranslation> translations = translationResolver.resolveAll(
+                ratings.getContent().stream().map(RatingRepository.RatedMediaProjection::getMedia).toList(),
+                locale
+        );
 
         List<MediaSearchItemResponse> items = ratings.getContent().stream()
                 .map(projection -> toRatedResponse(
@@ -211,7 +248,8 @@ public class MediaSearchService {
                         references.get(projection.getMedia().getId()),
                         creditSummaries.getOrDefault(
                                 projection.getMedia().getId(), MediaCreditService.CreditSummary.empty()),
-                        artworks.get(projection.getMedia().getId())
+                        artworks.get(projection.getMedia().getId()),
+                        translations.get(projection.getMedia().getId())
                 ))
                 .filter(java.util.Objects::nonNull)
                 .toList();
@@ -226,7 +264,8 @@ public class MediaSearchService {
             RatingRepository.RatedMediaProjection projection,
             ExternalReference reference,
             MediaCreditService.CreditSummary creditSummary,
-            UserArtworkResolver.ResolvedArtwork artwork
+            UserArtworkResolver.ResolvedArtwork artwork,
+            ResolvedMediaTranslation translation
     ) {
         if (reference == null) {
             return null;
@@ -237,9 +276,9 @@ public class MediaSearchService {
                 reference.getExternalId(),
                 reference.getSource(),
                 media.getType(),
-                media.getTitle(),
+                translation == null ? media.getTitle() : translation.title(),
                 creditSummary.creator(),
-                media.getDescription(),
+                translation == null ? media.getDescription() : translation.description(),
                 artwork.coverUrl(),
                 media.getReleaseDate(),
                 true,

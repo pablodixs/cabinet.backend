@@ -21,7 +21,8 @@ public record MediaListItemResponse(
         LocalDate releaseDate,
         ExternalSource source,
         String externalId,
-        Instant createdAt
+        Instant createdAt,
+        boolean consumed
 ) {
     public static MediaListItemResponse from(
             MediaListItem item,
@@ -35,6 +36,15 @@ public record MediaListItemResponse(
             ExternalReference externalReference,
             String coverUrl
     ) {
+        return from(item, externalReference, coverUrl, false);
+    }
+
+    public static MediaListItemResponse from(
+            MediaListItem item,
+            ExternalReference externalReference,
+            String coverUrl,
+            boolean consumed
+    ) {
         Media media = item.getMedia();
         return new MediaListItemResponse(
                 item.getId(),
@@ -47,7 +57,8 @@ public record MediaListItemResponse(
                 media.getReleaseDate(),
                 externalReference == null ? null : externalReference.getSource(),
                 externalReference == null ? null : externalReference.getExternalId(),
-                item.getCreatedAt()
+                item.getCreatedAt(),
+                consumed
         );
     }
 }
