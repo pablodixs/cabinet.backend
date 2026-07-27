@@ -372,6 +372,44 @@ class UserProfileServiceTest {
                 .containsExactly("Arrival", "Bacurau");
     }
 
+    @Test
+    void returnsVisibleActivitiesForUserAndMedia() {
+        User profileUser = user(Visibility.PUBLIC);
+        Media media = new Media();
+        media.setId(UUID.randomUUID());
+        media.setType(MediaType.MOVIE);
+        media.setTitle("Bacurau");
+        UserMediaActivity entry = new UserMediaActivity();
+        entry.setId(UUID.randomUUID());
+        entry.setUser(profileUser);
+        entry.setMedia(media);
+        entry.setType(ProfileActivityType.WATCHED);
+        entry.setOccurredOn(LocalDate.of(2026, 7, 20));
+        entry.setVisibility(Visibility.PUBLIC);
+
+        when(userRepository.findByUsernameIgnoreCase("maria"))
+                .thenReturn(Optional.of(profileUser));
+        when(userMediaActivityRepository.findByUserAndMediaVisible(
+                profileUser.getId(),
+                media.getId(),
+                List.of(Visibility.PUBLIC)
+        )).thenReturn(List.of(entry));
+        when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(
+                List.of(media.getId())
+        )).thenReturn(List.of());
+        when(mediaLikeRepository.existsByUserIdAndMediaId(
+                profileUser.getId(), media.getId()
+        )).thenReturn(true);
+
+        List<ProfileActivityResponse> response =
+                userProfileService.findActivitiesByMedia(
+                        "maria", media.getId(), UUID.randomUUID());
+
+        assertThat(response).hasSize(1);
+        assertThat(response.getFirst().mediaId()).isEqualTo(media.getId());
+        assertThat(response.getFirst().liked()).isTrue();
+    }
+
     private User user(Visibility visibility) {
         User user = new User();
         user.setId(UUID.randomUUID());

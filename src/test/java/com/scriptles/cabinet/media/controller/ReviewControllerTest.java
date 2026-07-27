@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.Mockito.verify;
@@ -58,5 +59,35 @@ class ReviewControllerTest {
                 .andExpect(jsonPath("$[0].media.title").value("Central do Brasil"));
 
         verify(reviewService).findGloballyPopular(null, 12);
+    }
+
+    @Test
+    void returnsAUsersReviewForMediaWithoutAuthentication() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        ReviewResponse review = new ReviewResponse(
+                UUID.randomUUID(), mediaId, new BigDecimal("4.5"), "Excelente.", false,
+                Visibility.PUBLIC, Instant.parse("2026-07-19T12:00:00Z"),
+                Instant.parse("2026-07-19T12:00:00Z"), 0, false, List.of(),
+                new ReviewResponse.AuthorResponse(UUID.randomUUID(), "ana", "Ana", null)
+        );
+        when(reviewService.findByUserAndMedia("ana", mediaId, null))
+                .thenReturn(Optional.of(review));
+
+        mockMvc.perform(get("/v1/users/ana/reviews/{mediaId}", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mediaId").value(mediaId.toString()))
+                .andExpect(jsonPath("$.author.username").value("ana"));
+
+        verify(reviewService).findByUserAndMedia("ana", mediaId, null);
+    }
+
+    @Test
+    void returnsNoContentWhenUserHasNoReviewForMedia() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(reviewService.findByUserAndMedia("ana", mediaId, null))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/v1/users/ana/reviews/{mediaId}", mediaId))
+                .andExpect(status().isNoContent());
     }
 }

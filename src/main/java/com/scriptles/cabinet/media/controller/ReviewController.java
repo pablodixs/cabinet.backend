@@ -46,6 +46,21 @@ public class ReviewController {
         return reviewService.findPublicById(user == null ? null : user.id(), reviewId);
     }
 
+    @GetMapping("/v1/users/{username}/reviews/{mediaId}")
+    public ResponseEntity<ReviewResponse> findByUserAndMedia(
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @PathVariable String username,
+            @PathVariable UUID mediaId
+    ) {
+        return reviewService.findByUserAndMedia(
+                        username,
+                        mediaId,
+                        viewer == null ? null : viewer.id()
+                )
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
     @GetMapping("/v1/media/{mediaId}/reviews")
     public PageResponse<ReviewResponse> findPublic(
             @AuthenticationPrincipal AuthenticatedUser user,

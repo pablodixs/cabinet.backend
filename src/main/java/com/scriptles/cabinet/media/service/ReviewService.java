@@ -160,6 +160,34 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<ReviewResponse> findByUserAndMedia(
+            String username,
+            UUID mediaId,
+            UUID viewerId
+    ) {
+        User owner = userRepository.findByUsernameIgnoreCase(username.trim())
+                .filter(user -> Boolean.TRUE.equals(user.getActive()))
+                .filter(user -> socialAccessPolicy == null
+                        ? viewerId != null && viewerId.equals(user.getId())
+                            || user.getProfileVisibility() == null
+                            || user.getProfileVisibility() == Visibility.PUBLIC
+                        : socialAccessPolicy.canViewProfile(user, viewerId))
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "USER_PROFILE_NOT_FOUND",
+                        "Perfil não encontrado"
+                ));
+
+        return reviewRepository.findByUserIdAndMediaId(owner.getId(), mediaId)
+                .filter(review -> socialAccessPolicy == null
+                        ? viewerId != null && viewerId.equals(owner.getId())
+                            || review.getVisibility() == Visibility.PUBLIC
+                        : socialAccessPolicy.canViewContent(
+                                owner.getId(), viewerId, review.getVisibility()))
+                .map(review -> response(review, viewerId));
+    }
+
+    @Transactional(readOnly = true)
     public ReviewResponse findPublicById(UUID userId, UUID reviewId) {
         Review review = reviewRepository.findById(reviewId)
                 .filter(candidate -> userId == null

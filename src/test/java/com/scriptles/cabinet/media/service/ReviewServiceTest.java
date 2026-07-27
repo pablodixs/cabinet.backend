@@ -407,11 +407,32 @@ class ReviewServiceTest {
         verify(reviewRepository, never()).delete(any());
     }
 
+    @Test
+    void findsPublicReviewByUsernameAndMedia() {
+        UUID ownerId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User owner = user(ownerId);
+        Review review = review(mediaId, "4.5");
+        review.setUser(owner);
+        when(userRepository.findByUsernameIgnoreCase("maria"))
+                .thenReturn(Optional.of(owner));
+        when(reviewRepository.findByUserIdAndMediaId(ownerId, mediaId))
+                .thenReturn(Optional.of(review));
+
+        Optional<ReviewResponse> response =
+                reviewService.findByUserAndMedia(" maria ", mediaId, null);
+
+        assertThat(response).isPresent();
+        assertThat(response.orElseThrow().author().username()).isEqualTo("maria");
+    }
+
     private User user(UUID id) {
         User user = new User();
         user.setId(id);
         user.setUsername("maria");
         user.setDisplayName("Maria");
+        user.setActive(true);
+        user.setProfileVisibility(Visibility.PUBLIC);
         return user;
     }
 

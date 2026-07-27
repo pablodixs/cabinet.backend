@@ -281,6 +281,37 @@ public class UserProfileService {
     }
 
     @Transactional(readOnly = true)
+    public List<ProfileActivityResponse> findActivitiesByMedia(
+            String username,
+            UUID mediaId,
+            UUID viewerId
+    ) {
+        ProfileAccess access = findProfileAccess(username, viewerId);
+        List<com.scriptles.cabinet.user.entity.UserMediaActivity> entries =
+                userMediaActivityRepository.findByUserAndMediaVisible(
+                        access.user().getId(),
+                        mediaId,
+                        visibleInteractions(access)
+                );
+        Map<UUID, ExternalReference> referencesByMediaId = findActivityReferences(entries);
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(
+                access.user().getId(),
+                entries.stream().map(entry -> entry.getMedia()).toList()
+        );
+        boolean liked = mediaLikeRepository.existsByUserIdAndMediaId(
+                access.user().getId(), mediaId);
+
+        return entries.stream()
+                .map(entry -> ProfileActivityResponse.from(
+                        entry,
+                        referencesByMediaId.get(mediaId),
+                        artworks.get(mediaId).coverUrl(),
+                        liked
+                ))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<LibraryMediaResponse> findLibrary(
             String username,
             UUID viewerId,

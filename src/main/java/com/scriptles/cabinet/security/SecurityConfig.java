@@ -99,6 +99,8 @@ public class SecurityConfig {
                                 "/v1/users/*/followers",
                                 "/v1/users/*/following",
                                 "/v1/users/*/activities",
+                                "/v1/users/*/activities/*",
+                                "/v1/users/*/reviews/*",
                                 "/v1/users/*/diary",
                                 "/v1/users/*/library",
                                 "/v1/users/*/library/filters",

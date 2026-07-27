@@ -108,4 +108,15 @@ class UserProfileSecurityTest {
                 .andExpect(jsonPath("$.items").isEmpty())
                 .andExpect(jsonPath("$.page").value(0));
     }
+
+    @Test
+    void allowsAnonymousUsersToReadPublicProfileActivitiesForMedia() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(userProfileService.findActivitiesByMedia("maria", mediaId, null))
+                .thenReturn(List.of());
+
+        mockMvc.perform(get("/v1/users/maria/activities/{mediaId}", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
 }

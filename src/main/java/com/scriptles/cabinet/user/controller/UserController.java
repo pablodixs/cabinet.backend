@@ -116,6 +116,19 @@ public class UserController {
         );
     }
 
+    @GetMapping("/{username}/activities/{mediaId}")
+    public List<ProfileActivityResponse> findActivitiesByMedia(
+            @PathVariable String username,
+            @PathVariable java.util.UUID mediaId,
+            @AuthenticationPrincipal AuthenticatedUser viewer
+    ) {
+        return userProfileService.findActivitiesByMedia(
+                username,
+                mediaId,
+                viewer == null ? null : viewer.id()
+        );
+    }
+
     @GetMapping("/{username}/library")
     public PageResponse<LibraryMediaResponse> findLibrary(
             @PathVariable String username,

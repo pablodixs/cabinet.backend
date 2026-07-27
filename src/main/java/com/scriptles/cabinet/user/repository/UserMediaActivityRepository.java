@@ -85,6 +85,21 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             Pageable pageable
     );
 
+    @Query("""
+            select activity
+            from UserMediaActivity activity
+            join fetch activity.media
+            where activity.user.id = :userId
+              and activity.media.id = :mediaId
+              and activity.visibility in :visibilities
+            order by activity.occurredOn desc, activity.createdAt desc, activity.id desc
+            """)
+    List<UserMediaActivity> findByUserAndMediaVisible(
+            @Param("userId") UUID userId,
+            @Param("mediaId") UUID mediaId,
+            @Param("visibilities") Collection<Visibility> visibilities
+    );
+
     @Query(value = """
             select activity
             from UserMediaActivity activity
