@@ -15,4 +15,16 @@ public class ExternalInfoTaskConfiguration {
         executor.setThreadNamePrefix("external-info-");
         return executor;
     }
+
+    @Bean(name = "catalogOutboxTaskExecutor")
+    public ThreadPoolTaskExecutor catalogOutboxTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(0);
+        executor.setThreadNamePrefix("catalog-outbox-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        return executor;
+    }
 }

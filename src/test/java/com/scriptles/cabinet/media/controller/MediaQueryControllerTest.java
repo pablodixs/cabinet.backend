@@ -135,6 +135,21 @@ class MediaQueryControllerTest {
     }
 
     @Test
+    void doesNotCacheDetailsWhileCatalogEnrichmentIsPending() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(catalogLocaleResolver.resolve("pt-BR", null)).thenReturn(SupportedLocale.PT_BR);
+        when(mediaQueryService.findDetails(mediaId, "pt-BR"))
+                .thenReturn(details(mediaId, "pt-BR", "pt-BR", false, CatalogStatus.ENRICHING));
+
+        mockMvc.perform(get("/v1/media/{mediaId}", mediaId)
+                        .param("locale", "pt-BR"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store, max-age=0"))
+                .andExpect(header().string("Retry-After", "2"))
+                .andExpect(jsonPath("$.catalogStatus").value("ENRICHING"));
+    }
+
+    @Test
     void returnsSeasonEpisodesWithoutAuthentication() throws Exception {
         UUID seriesId = UUID.randomUUID();
         UUID seasonId = UUID.randomUUID();
@@ -163,6 +178,16 @@ class MediaQueryControllerTest {
             String resolvedLocale,
             boolean fallback
     ) {
+        return details(mediaId, requestedLocale, resolvedLocale, fallback, CatalogStatus.READY);
+    }
+
+    private PublicMediaDetailsResponse details(
+            UUID mediaId,
+            String requestedLocale,
+            String resolvedLocale,
+            boolean fallback,
+            CatalogStatus catalogStatus
+    ) {
         return new PublicMediaDetailsResponse(
                 mediaId,
                 mediaId.toString(),
@@ -189,7 +214,7 @@ class MediaQueryControllerTest {
                 requestedLocale,
                 resolvedLocale,
                 fallback,
-                CatalogStatus.READY
+                catalogStatus
         );
     }
 

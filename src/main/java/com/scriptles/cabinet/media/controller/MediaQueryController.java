@@ -10,6 +10,7 @@ import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.MoreByResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.AwardResult;
+import com.scriptles.cabinet.media.enums.CatalogStatus;
 import com.scriptles.cabinet.media.service.MediaExternalInfoService;
 import com.scriptles.cabinet.media.service.MediaQueryService;
 import com.scriptles.cabinet.media.service.MoreByService;
@@ -55,8 +56,14 @@ public class MediaQueryController {
         String requestedLocale = catalogLocaleResolver.resolve(locale, acceptLanguage).tag();
         PublicMediaDetailsResponse response = mediaQueryService.findDetails(mediaId, requestedLocale);
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
-                .header("Content-Language", response.resolvedLocale())
-                .header("Cache-Control", "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400");
+                .header("Content-Language", response.resolvedLocale());
+        if (response.catalogStatus() == CatalogStatus.READY) {
+            builder.header("Cache-Control",
+                    "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400");
+        } else {
+            builder.header("Cache-Control", "no-store, max-age=0")
+                    .header("Retry-After", "2");
+        }
         if (locale == null || locale.isBlank()) {
             builder.header("Vary", "Accept-Language");
         }

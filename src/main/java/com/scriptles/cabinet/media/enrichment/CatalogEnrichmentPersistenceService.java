@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 
 import java.time.Instant;
 import java.util.LinkedHashSet;
@@ -32,7 +33,10 @@ public class CatalogEnrichmentPersistenceService {
     private final CatalogLocaleResolver localeResolver;
 
     @Transactional
-    @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':' + #locale")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':pt-BR'"),
+            @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':en-US'")
+    })
     public void complete(UUID mediaId, ExternalMedia external, String locale, String wikidataId) {
         Media media = mediaRepository.findById(mediaId)
                 .orElseThrow(() -> new IllegalArgumentException("Media not found"));
@@ -63,6 +67,17 @@ public class CatalogEnrichmentPersistenceService {
         media.setEnrichmentSyncedAt(Instant.now());
         media.setSyncVersion(media.getSyncVersion() + 1);
         media.setLastSyncError(null);
+    }
+
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':pt-BR'"),
+            @CacheEvict(cacheNames = "mediaDetails", key = "#mediaId + ':en-US'")
+    })
+    public void saveStructure(UUID mediaId, ExternalMedia external) {
+        Media media = mediaRepository.findById(mediaId)
+                .orElseThrow(() -> new IllegalArgumentException("Media not found"));
+        updateDetails(media, external);
     }
 
     @Transactional

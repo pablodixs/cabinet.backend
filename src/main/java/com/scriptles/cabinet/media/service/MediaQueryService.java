@@ -85,7 +85,8 @@ public class MediaQueryService {
     @Cacheable(
             cacheNames = "mediaDetails",
             key = "#mediaId + ':' + #locale",
-            unless = "#result.translationFallback()"
+            unless = "#result.translationFallback() || "
+                    + "#result.catalogStatus() != T(com.scriptles.cabinet.media.enums.CatalogStatus).READY"
     )
     public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
         String requestedLocale = catalogLocaleResolver.normalize(locale);

@@ -2,13 +2,14 @@
 
 ## Execution model
 
-All asynchronous and scheduled work runs inside the web application process. `@EnableScheduling` is enabled by `NotificationSchedulingConfiguration`. There is no external queue or worker service.
+All asynchronous and scheduled work runs inside the web application process. `@EnableScheduling` is enabled by `NotificationSchedulingConfiguration`. Catalog enrichment uses a durable PostgreSQL outbox; there is no external broker or worker service.
 
-Two bounded executors are defined:
+Three bounded executors are defined:
 
 | Bean | Core/max threads | Queue | Uses |
 | --- | --- | --- | --- |
 | `externalInfoTaskExecutor` | 2 / 4 | 100 | Availability, ratings, awards, tracked-series synchronization |
+| `catalogOutboxTaskExecutor` | 4 / 4 | 0 | Catalog translations, credits, tracks, and seasons |
 | `letterboxdImportExecutor` | 1 / 2 | 20 | Matching and applying Letterboxd import jobs |
 
 Rejected submissions are caught and logged for external-info/award/series scheduling. Letterboxd scheduling submits directly; queue rejection can surface from the event listener.
@@ -17,6 +18,7 @@ Rejected submissions are caught and logged for external-info/award/series schedu
 
 | Schedule | Time | Behavior |
 | --- | --- | --- |
+| Catalog outbox | Every second by default | Recovers stale claims, claims only free executor capacity, and dispatches enrichment concurrently. |
 | Notification SSE heartbeat | Every 25 seconds | Sends `heartbeat: ping` to all process-local connections and removes broken emitters. |
 | Notification retention | Daily at `03:20` scheduler/JVM zone | Deletes notifications whose `activityAt` is older than 90 days. |
 | Tracked series refresh | Daily at `04:00 America/Sao_Paulo` | Schedules every series with at least one `IN_PROGRESS` library entry. |
@@ -34,6 +36,10 @@ Community services write or recompute notifications in their transaction and pub
 ### Series tracking
 
 When a series becomes `IN_PROGRESS`, `UserMediaService` publishes `SeriesTrackingRequestedEvent`. After commit, the scheduler asynchronously synchronizes the series so the initiating library write remains fast.
+
+### Catalog enrichment
+
+Media imports commit core metadata and a `catalog_outbox` event together. The worker claims rows with `FOR UPDATE SKIP LOCKED`, persists tracks or seasons as soon as the primary provider responds, and finishes optional translation and Wikidata enrichment afterward. Claims left in `PROCESSING` by an interrupted process return to `RETRY` after the configured lock timeout.
 
 ### Letterboxd jobs
 

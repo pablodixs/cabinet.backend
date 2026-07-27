@@ -13,6 +13,8 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +38,10 @@ public class SeriesTrackingSyncService {
     private final SeasonEpisodeService seasonEpisodeService;
 
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "mediaDetails", key = "#seriesId + ':pt-BR'"),
+            @CacheEvict(cacheNames = "mediaDetails", key = "#seriesId + ':en-US'")
+    })
     public void synchronize(UUID seriesId) {
         ExternalReference reference = referenceRepository
                 .findByMediaIdAndSource(seriesId, ExternalSource.TMDB)

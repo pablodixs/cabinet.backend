@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.enums.CatalogEventType;
 import com.scriptles.cabinet.media.enums.CatalogOutboxStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.Instant;
@@ -28,4 +29,16 @@ public interface CatalogOutboxRepository extends JpaRepository<CatalogOutboxEven
             for update skip locked
             """, nativeQuery = true)
     List<CatalogOutboxEvent> claimable(Instant now, Pageable pageable);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            update catalog_outbox
+            set status = 'RETRY',
+                available_at = :availableAt,
+                locked_at = null,
+                locked_by = null
+            where status = 'PROCESSING'
+              and locked_at < :cutoff
+            """, nativeQuery = true)
+    int releaseStaleProcessing(Instant cutoff, Instant availableAt);
 }

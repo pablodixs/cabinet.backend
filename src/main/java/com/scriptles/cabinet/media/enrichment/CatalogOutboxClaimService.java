@@ -31,6 +31,23 @@ public class CatalogOutboxClaimService {
     }
 
     @Transactional
+    public int releaseStale(Duration lockTimeout) {
+        Instant now = Instant.now();
+        return repository.releaseStaleProcessing(now.minus(lockTimeout), now);
+    }
+
+    @Transactional
+    public void release(UUID eventId) {
+        repository.findById(eventId).ifPresent(event -> {
+            if (event.getStatus() != CatalogOutboxStatus.PROCESSING) return;
+            event.setStatus(CatalogOutboxStatus.RETRY);
+            event.setAvailableAt(Instant.now());
+            event.setLockedAt(null);
+            event.setLockedBy(null);
+        });
+    }
+
+    @Transactional
     public void complete(UUID eventId) {
         repository.findById(eventId).ifPresent(event -> {
             event.setStatus(CatalogOutboxStatus.PROCESSED);

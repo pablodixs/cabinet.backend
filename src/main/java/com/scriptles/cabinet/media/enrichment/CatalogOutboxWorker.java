@@ -8,17 +8,19 @@ import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.external.WikidataClient;
 import com.scriptles.cabinet.media.repository.CatalogOutboxRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
 import java.lang.management.ManagementFactory;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class CatalogOutboxWorker {
     private final CatalogOutboxRepository repository;
@@ -26,12 +28,44 @@ public class CatalogOutboxWorker {
     private final ExternalMediaProviderRegistry providerRegistry;
     private final WikidataClient wikidataClient;
     private final CatalogEnrichmentPersistenceService persistenceService;
+    private final ThreadPoolTaskExecutor executor;
+    private final Duration lockTimeout;
+
+    public CatalogOutboxWorker(
+            CatalogOutboxRepository repository,
+            CatalogOutboxClaimService claimService,
+            ExternalMediaProviderRegistry providerRegistry,
+            WikidataClient wikidataClient,
+            CatalogEnrichmentPersistenceService persistenceService,
+            @Qualifier("catalogOutboxTaskExecutor") ThreadPoolTaskExecutor executor,
+            @Value("${catalog.outbox.lock-timeout:15m}") Duration lockTimeout
+    ) {
+        this.repository = repository;
+        this.claimService = claimService;
+        this.providerRegistry = providerRegistry;
+        this.wikidataClient = wikidataClient;
+        this.persistenceService = persistenceService;
+        this.executor = executor;
+        this.lockTimeout = lockTimeout;
+    }
 
     @Scheduled(fixedDelayString = "${catalog.outbox.poll-delay:1000}")
     public void poll() {
+        int released = claimService.releaseStale(lockTimeout);
+        if (released > 0) {
+            log.warn("Released {} stale catalog enrichment event(s)", released);
+        }
+        int capacity = Math.max(0, executor.getMaxPoolSize() - executor.getActiveCount());
+        if (capacity == 0) return;
+
         String workerId = ManagementFactory.getRuntimeMXBean().getName();
-        for (UUID eventId : claimService.claim(workerId, 25)) {
-            process(eventId);
+        for (UUID eventId : claimService.claim(workerId, capacity)) {
+            try {
+                executor.execute(() -> process(eventId));
+            } catch (RuntimeException failure) {
+                claimService.release(eventId);
+                log.warn("Unable to submit catalog enrichment event {}", eventId, failure);
+            }
         }
     }
 
@@ -41,11 +75,12 @@ public class CatalogOutboxWorker {
         try {
             CatalogEventPayload payload = event.getPayload();
             persistenceService.markEnriching(event.getAggregateId());
-            fetchSecondaryTranslation(event.getAggregateId(), payload);
             ExternalMedia external = providerRegistry.get(payload.source(), payload.mediaType())
                     .findEnrichmentById(payload.mediaType(), payload.externalId(), payload.locale())
                     .orElseThrow(() -> new IllegalArgumentException("External media not found"));
-            Optional<WikidataClient.WikidataEnrichment> wikidata = findWikidata(payload, external);
+            persistenceService.saveStructure(event.getAggregateId(), external);
+            fetchSecondaryTranslation(event.getAggregateId(), payload);
+            Optional<WikidataClient.WikidataEnrichment> wikidata = findWikidataSafely(payload, external);
             if (wikidata.isPresent()) {
                 external = external.withEnrichment(
                         wikidata.get().logoUrl(),
@@ -70,6 +105,10 @@ public class CatalogOutboxWorker {
             UUID mediaId,
             CatalogEventPayload payload
     ) {
+        if (payload.source() == ExternalSource.MUSICBRAINZ
+                || payload.source() == ExternalSource.GOOGLE_BOOKS) {
+            return;
+        }
         String secondaryLocale = "pt-BR".equals(payload.locale()) ? "en-US" : "pt-BR";
         try {
             providerRegistry.get(payload.source(), payload.mediaType())
@@ -77,6 +116,19 @@ public class CatalogOutboxWorker {
                     .ifPresent(media -> persistenceService.saveTranslation(mediaId, media, secondaryLocale));
         } catch (RuntimeException failure) {
             log.warn("Secondary translation for media {} failed: {}", mediaId, failure.getMessage());
+        }
+    }
+
+    private Optional<WikidataClient.WikidataEnrichment> findWikidataSafely(
+            CatalogEventPayload payload,
+            ExternalMedia external
+    ) {
+        try {
+            return findWikidata(payload, external);
+        } catch (RuntimeException failure) {
+            log.warn("Wikidata enrichment for {} {} failed: {}",
+                    payload.mediaType(), payload.externalId(), failure.getMessage());
+            return Optional.empty();
         }
     }
 

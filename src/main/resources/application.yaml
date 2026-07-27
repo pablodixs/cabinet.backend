@@ -49,6 +49,7 @@ management:
 catalog:
   outbox:
     poll-delay: ${CATALOG_OUTBOX_POLL_DELAY:1000}
+    lock-timeout: ${CATALOG_OUTBOX_LOCK_TIMEOUT:15m}
 
 app:
   cors:
