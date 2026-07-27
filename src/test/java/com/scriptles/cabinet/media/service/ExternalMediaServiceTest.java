@@ -278,14 +278,15 @@ class ExternalMediaServiceTest {
         when(mediaCreditService.summary(media)).thenReturn(MediaCreditService.CreditSummary.empty());
 
         var response = externalMediaService.importMedia(new ImportExternalMediaRequest(
-                ExternalSource.TMDB, "550", MediaType.MOVIE));
+                ExternalSource.TMDB, "550", MediaType.MOVIE), "en-US");
 
         assertThat(response.id()).isEqualTo(mediaId);
         assertThat(response.creator()).isEqualTo("David Fincher");
         verify(catalogImportFacade).materialize(argThat(target ->
-                target.source() == ExternalSource.TMDB
+                        target.source() == ExternalSource.TMDB
                         && target.mediaType() == MediaType.MOVIE
-                        && "550".equals(target.externalId())));
+                        && "550".equals(target.externalId())
+                        && "en-US".equals(target.locale())));
     }
 
     @Test

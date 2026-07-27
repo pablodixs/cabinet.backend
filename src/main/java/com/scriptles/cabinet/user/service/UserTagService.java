@@ -98,6 +98,14 @@ public class UserTagService {
         findOrCreate(user, normalize(requestedTags));
     }
 
+    @Transactional
+    public List<UserTag> resolveTags(
+            User user, Collection<String> requestedTags) {
+        Map<String, String> names = normalize(requestedTags);
+        Map<String, UserTag> tagsByName = findOrCreate(user, names);
+        return names.keySet().stream().map(tagsByName::get).toList();
+    }
+
     private Map<String, UserTag> findOrCreate(User user, Map<String, String> names) {
         if (names.isEmpty()) return Map.of();
         Map<String, UserTag> existing = tagRepository

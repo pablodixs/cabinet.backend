@@ -23,6 +23,7 @@ import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import com.scriptles.cabinet.media.repository.TrackDetailsRepository;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.CatalogTranslationLoader;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
@@ -82,6 +83,8 @@ class MediaQueryServiceTest {
     private RatingSummaryService ratingSummaryService;
     @Mock
     private CatalogLocaleResolver catalogLocaleResolver;
+    @Mock
+    private CatalogTranslationLoader catalogTranslationLoader;
     @Mock
     private MediaTranslationResolver mediaTranslationResolver;
 
@@ -267,6 +270,7 @@ class MediaQueryServiceTest {
                 media.getTitle(),
                 media.getDescription(),
                 media.getTagline(),
+                media.getCoverUrl(),
                 "pt-BR",
                 "pt-BR",
                 false,

@@ -75,6 +75,7 @@ public class CatalogMaterializationService {
         translation.setTitle(firstNonBlank(external.title(), external.originalTitle(), external.externalId()));
         translation.setDescription(external.description());
         translation.setTagline(external.tagline());
+        translation.setCoverUrl(external.coverUrl());
         translation.setSource(external.source());
         translation.setOriginalLanguage(external.originalLanguage());
         translation.setTranslationStatus(translationStatus(external));

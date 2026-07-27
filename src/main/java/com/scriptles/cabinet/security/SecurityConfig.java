@@ -104,7 +104,8 @@ public class SecurityConfig {
                                 "/v1/users/*/library/filters",
                                 "/v1/users/*/lists",
                                 "/v1/users/*/likes",
-                                "/v1/users/*/tags"
+                                "/v1/users/*/tags",
+                                "/v1/users/*/tagged-media"
                         ).permitAll()
 
                         .requestMatchers(

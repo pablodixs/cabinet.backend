@@ -8,6 +8,7 @@ import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ExternalMediaService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -35,6 +37,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MediaController {
     private final ExternalMediaService externalMediaService;
+    private final CatalogLocaleResolver localeResolver;
 
     @GetMapping("/search")
     public List<ExternalMediaResponse> search(
@@ -83,7 +86,12 @@ public class MediaController {
 
     @PostMapping("/import")
     @ResponseStatus(HttpStatus.CREATED)
-    public ExternalMediaResponse importMedia(@RequestBody @Valid ImportExternalMediaRequest request) {
-        return externalMediaService.importMedia(request);
+    public ExternalMediaResponse importMedia(
+            @RequestBody @Valid ImportExternalMediaRequest request,
+            @RequestParam(required = false) String locale,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
+    ) {
+        String requestedLocale = localeResolver.resolve(locale, acceptLanguage).tag();
+        return externalMediaService.importMedia(request, requestedLocale);
     }
 }

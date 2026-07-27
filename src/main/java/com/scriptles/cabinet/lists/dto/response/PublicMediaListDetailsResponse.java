@@ -25,7 +25,8 @@ public record PublicMediaListDetailsResponse(
         Instant createdAt,
         Instant updatedAt,
         PublicMediaListResponse.AuthorResponse owner,
-        List<MediaListItemResponse> items
+        List<MediaListItemResponse> items,
+        List<String> tags
 ) {
     public PublicMediaListDetailsResponse(
             UUID id,
@@ -44,7 +45,32 @@ public record PublicMediaListDetailsResponse(
             List<MediaListItemResponse> items
     ) {
         this(id, name, description, visibility, ordered, coverUrl, null,
-                itemCount, null, null, likeCount, liked, ownList, createdAt, updatedAt, owner, items);
+                itemCount, null, null, likeCount, liked, ownList, createdAt,
+                updatedAt, owner, items, List.of());
+    }
+
+    public PublicMediaListDetailsResponse(
+            UUID id,
+            String name,
+            String description,
+            Visibility visibility,
+            boolean ordered,
+            String coverUrl,
+            String backdropUrl,
+            long itemCount,
+            Long consumedItemCount,
+            Integer consumedPercentage,
+            long likeCount,
+            boolean liked,
+            boolean ownList,
+            Instant createdAt,
+            Instant updatedAt,
+            PublicMediaListResponse.AuthorResponse owner,
+            List<MediaListItemResponse> items
+    ) {
+        this(id, name, description, visibility, ordered, coverUrl, backdropUrl,
+                itemCount, consumedItemCount, consumedPercentage, likeCount,
+                liked, ownList, createdAt, updatedAt, owner, items, List.of());
     }
 
     public static PublicMediaListDetailsResponse from(
@@ -72,7 +98,8 @@ public record PublicMediaListDetailsResponse(
                 list.getDescription(),
                 list.getVisibility(),
                 list.isOrdered(),
-                list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getCoverUrl() : null,
                 list.getOwner().getAccountTier() == AccountTier.PRO
                         ? list.getBackdropUrl() : null,
                 items.size(),
@@ -90,7 +117,8 @@ public record PublicMediaListDetailsResponse(
                         list.getOwner().getAvatarUlr(),
                         list.getOwner().getAccountTier() == AccountTier.PRO
                 ),
-                items
+                items,
+                list.getTags().stream().map(tag -> tag.getName()).toList()
         );
     }
 }

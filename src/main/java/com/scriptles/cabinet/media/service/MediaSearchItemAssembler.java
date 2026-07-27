@@ -133,13 +133,23 @@ public class MediaSearchItemAssembler {
                     translation == null ? media.getTitle() : translation.title(),
                     creditSummaries.getOrDefault(media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
                     translation == null ? media.getDescription() : translation.description(),
-                    artworks.get(media.getId()).coverUrl(),
+                    localizedCover(artworks.get(media.getId()), translation),
                     media.getReleaseDate(),
                     true,
                     rating == null ? null : rating.average(),
                     rating == null ? 0 : rating.count()
             );
         }).toList();
+    }
+
+    private String localizedCover(
+            UserArtworkResolver.ResolvedArtwork artwork,
+            ResolvedMediaTranslation translation
+    ) {
+        if (artwork.customCover() || translation == null) {
+            return artwork.coverUrl();
+        }
+        return translation.coverUrl();
     }
 
     private Map<UUID, RatingSummary> ratings(List<Media> mediaItems) {

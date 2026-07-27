@@ -10,6 +10,7 @@ public record ResolvedMediaTranslation(
         String title,
         String description,
         String tagline,
+        String coverUrl,
         String requestedLocale,
         String resolvedLocale,
         boolean fallback,

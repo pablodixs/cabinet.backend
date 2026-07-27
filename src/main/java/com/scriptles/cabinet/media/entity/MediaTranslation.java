@@ -39,6 +39,9 @@ public class MediaTranslation {
     @Column(length = 500)
     private String tagline;
 
+    @Column(length = 2000)
+    private String coverUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private ExternalSource source;

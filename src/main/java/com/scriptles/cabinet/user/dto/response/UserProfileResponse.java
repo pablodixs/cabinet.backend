@@ -22,7 +22,8 @@ public record UserProfileResponse(
         long followingCount,
         boolean privateProfile,
         FollowState followState,
-        boolean followsViewer
+        boolean followsViewer,
+        ProfileRatingSummaryResponse ratings
 ) {
     public UserProfileResponse(
             UUID id,
@@ -58,6 +59,6 @@ public record UserProfileResponse(
     ) {
         this(id, username, displayName, biography, avatarUrl, pro, ownProfile,
                 libraryCount, completedCount, inProgressCount, stats, recentItems, List.of(),
-                0, 0, false, FollowState.NONE, false);
+                0, 0, false, FollowState.NONE, false, ProfileRatingSummaryResponse.empty());
     }
 }

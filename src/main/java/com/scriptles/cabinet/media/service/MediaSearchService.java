@@ -279,7 +279,9 @@ public class MediaSearchService {
                 translation == null ? media.getTitle() : translation.title(),
                 creditSummary.creator(),
                 translation == null ? media.getDescription() : translation.description(),
-                artwork.coverUrl(),
+                artwork.customCover() || translation == null
+                        ? artwork.coverUrl()
+                        : translation.coverUrl(),
                 media.getReleaseDate(),
                 true,
                 projection.getAverageRating(),

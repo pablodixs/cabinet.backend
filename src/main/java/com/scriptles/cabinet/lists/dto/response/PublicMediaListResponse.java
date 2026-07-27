@@ -22,7 +22,8 @@ public record PublicMediaListResponse(
         long likeCount,
         int mediaPosition,
         Instant updatedAt,
-        AuthorResponse owner
+        AuthorResponse owner,
+        List<String> tags
 ) {
     public PublicMediaListResponse(
             UUID id,
@@ -38,7 +39,29 @@ public record PublicMediaListResponse(
             AuthorResponse owner
     ) {
         this(id, name, description, ordered, coverUrl, null, previewItems,
-                itemCount, null, null, likeCount, mediaPosition, updatedAt, owner);
+                itemCount, null, null, likeCount, mediaPosition, updatedAt, owner,
+                List.of());
+    }
+
+    public PublicMediaListResponse(
+            UUID id,
+            String name,
+            String description,
+            boolean ordered,
+            String coverUrl,
+            String backdropUrl,
+            List<MediaListPreviewResponse> previewItems,
+            long itemCount,
+            Long consumedItemCount,
+            Integer consumedPercentage,
+            long likeCount,
+            int mediaPosition,
+            Instant updatedAt,
+            AuthorResponse owner
+    ) {
+        this(id, name, description, ordered, coverUrl, backdropUrl,
+                previewItems, itemCount, consumedItemCount, consumedPercentage,
+                likeCount, mediaPosition, updatedAt, owner, List.of());
     }
 
     public static PublicMediaListResponse from(
@@ -65,7 +88,8 @@ public record PublicMediaListResponse(
                 list.getName(),
                 list.getDescription(),
                 list.isOrdered(),
-                list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getCoverUrl() : null,
                 list.getOwner().getAccountTier() == AccountTier.PRO
                         ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
@@ -81,7 +105,8 @@ public record PublicMediaListResponse(
                         list.getOwner().getDisplayName(),
                         list.getOwner().getAvatarUlr(),
                         list.getOwner().getAccountTier() == AccountTier.PRO
-                )
+                ),
+                list.getTags().stream().map(tag -> tag.getName()).toList()
         );
     }
 

@@ -12,6 +12,7 @@ import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.dto.response.LibraryFilterOptionsResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileLikeResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileTagResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileTaggedMediaResponse;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.LibraryRatingFilter;
@@ -170,6 +171,16 @@ public class UserController {
     ) {
         return userProfileService.findTags(
                 username, viewer == null ? null : viewer.id(), limit);
+    }
+
+    @GetMapping("/{username}/tagged-media")
+    public List<ProfileTaggedMediaResponse> findTaggedMedia(
+            @PathVariable String username,
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam @Size(min = 1, max = 100) String tag
+    ) {
+        return userProfileService.findTaggedMedia(
+                username, viewer == null ? null : viewer.id(), tag);
     }
 
     @PostMapping("/create")

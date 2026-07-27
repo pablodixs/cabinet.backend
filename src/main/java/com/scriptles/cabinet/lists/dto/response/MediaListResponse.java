@@ -19,7 +19,8 @@ public record MediaListResponse(
         List<MediaListPreviewResponse> previewItems,
         long itemCount,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        List<String> tags
 ) {
     public MediaListResponse(
             UUID id,
@@ -34,7 +35,24 @@ public record MediaListResponse(
             Instant updatedAt
     ) {
         this(id, name, description, visibility, ordered, coverUrl, null,
-                previewItems, itemCount, createdAt, updatedAt);
+                previewItems, itemCount, createdAt, updatedAt, List.of());
+    }
+
+    public MediaListResponse(
+            UUID id,
+            String name,
+            String description,
+            Visibility visibility,
+            boolean ordered,
+            String coverUrl,
+            String backdropUrl,
+            List<MediaListPreviewResponse> previewItems,
+            long itemCount,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, name, description, visibility, ordered, coverUrl, backdropUrl,
+                previewItems, itemCount, createdAt, updatedAt, List.of());
     }
 
     public static MediaListResponse from(MediaList list, long itemCount) {
@@ -52,13 +70,15 @@ public record MediaListResponse(
                 list.getDescription(),
                 list.getVisibility(),
                 list.isOrdered(),
-                list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getCoverUrl() : null,
                 list.getOwner().getAccountTier() == AccountTier.PRO
                         ? list.getBackdropUrl() : null,
                 List.copyOf(previewItems),
                 itemCount,
                 list.getCreatedAt(),
-                list.getUpdatedAt()
+                list.getUpdatedAt(),
+                list.getTags().stream().map(tag -> tag.getName()).toList()
         );
     }
 }

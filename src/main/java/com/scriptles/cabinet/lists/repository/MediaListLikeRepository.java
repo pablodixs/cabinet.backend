@@ -35,6 +35,8 @@ public interface MediaListLikeRepository extends JpaRepository<MediaListLike, UU
 
     long deleteByUserIdAndListId(UUID userId, UUID listId);
 
+    long deleteByListId(UUID listId);
+
     @Query("""
             select listLike.list.id as listId, count(listLike) as likeCount
             from MediaListLike listLike

@@ -72,6 +72,7 @@ public class DefaultMediaTranslationResolver implements MediaTranslationResolver
         FieldValue title = first(candidates, MediaTranslation::getTitle);
         FieldValue description = first(candidates, MediaTranslation::getDescription);
         FieldValue tagline = first(candidates, MediaTranslation::getTagline);
+        FieldValue cover = first(candidates, MediaTranslation::getCoverUrl);
         String canonicalLocale = nonBlank(media.getDefaultLocale())
                 ? media.getDefaultLocale()
                 : CatalogLocaleResolver.DEFAULT_LOCALE;
@@ -79,20 +80,24 @@ public class DefaultMediaTranslationResolver implements MediaTranslationResolver
         title = title.orElse(firstNonBlank(media.getTitle(), media.getOriginalTitle()), canonicalLocale);
         description = description.orElse(media.getDescription(), canonicalLocale);
         tagline = tagline.orElse(media.getTagline(), canonicalLocale);
+        cover = cover.orElse(media.getCoverUrl(), canonicalLocale);
 
         String resolvedLocale = title.locale() == null ? canonicalLocale : title.locale();
         boolean fallback = !requestedLocale.equals(resolvedLocale)
                 || differsFromRequested(description, requestedLocale)
-                || differsFromRequested(tagline, requestedLocale);
+                || differsFromRequested(tagline, requestedLocale)
+                || differsFromRequested(cover, requestedLocale);
         boolean partialFallback = requestedLocale.equals(resolvedLocale)
                 && (differsFromRequested(description, requestedLocale)
-                || differsFromRequested(tagline, requestedLocale));
+                || differsFromRequested(tagline, requestedLocale)
+                || differsFromRequested(cover, requestedLocale));
         MediaTranslation primary = title.translation();
         return new ResolvedMediaTranslation(
                 media.getId(),
                 title.value(),
                 description.value(),
                 tagline.value(),
+                cover.value(),
                 requestedLocale,
                 resolvedLocale,
                 fallback,

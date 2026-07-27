@@ -7,7 +7,9 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
+import com.scriptles.cabinet.lists.repository.MediaListRepository;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
@@ -76,6 +78,9 @@ class UserProfileServiceTest {
     private MediaLikeRepository mediaLikeRepository;
 
     @Mock
+    private RatingRepository ratingRepository;
+
+    @Mock
     private UserProfileFavoriteRepository favoriteRepository;
 
     @Mock
@@ -84,6 +89,9 @@ class UserProfileServiceTest {
     @Mock
     private UserMediaTagRepository mediaTagRepository;
 
+    @Mock
+    private MediaListRepository mediaListRepository;
+
     @InjectMocks
     private UserProfileService userProfileService;
 
@@ -91,6 +99,10 @@ class UserProfileServiceTest {
     void resolveCanonicalArtworkByDefault() {
         lenient().when(favoriteRepository.findAllByUserIdOrderByPositionAsc(
                 any(UUID.class))).thenReturn(List.of());
+        lenient().when(ratingRepository.ratingDistributionForUser(
+                any(UUID.class),
+                org.mockito.ArgumentMatchers.<Visibility>anyCollection()
+        )).thenReturn(List.of());
         lenient().when(userArtworkResolver.resolve(
                 any(UUID.class),
                 org.mockito.ArgumentMatchers.<java.util.Collection<Media>>any()
@@ -144,6 +156,14 @@ class UserProfileServiceTest {
         );
         when(userMediaRepository.findProfileStatistics(profileUser.getId(), false))
                 .thenReturn(statistics);
+        RatingRepository.RatingDistributionProjection ratingBucket =
+                mock(RatingRepository.RatingDistributionProjection.class);
+        when(ratingBucket.getRating()).thenReturn(new java.math.BigDecimal("4.5"));
+        when(ratingBucket.getRatingCount()).thenReturn(3L);
+        when(ratingRepository.ratingDistributionForUser(
+                profileUser.getId(),
+                List.of(Visibility.PUBLIC)
+        )).thenReturn(List.of(ratingBucket));
 
         UserProfileResponse response = userProfileService.findByUsername(
                 " maria ",
@@ -164,6 +184,12 @@ class UserProfileServiceTest {
         assertThat(response.stats().seriesConsumed()).isEqualTo(2);
         assertThat(response.stats().booksConsumed()).isEqualTo(5);
         assertThat(response.recentItems()).isEmpty();
+        assertThat(response.ratings().total()).isEqualTo(3);
+        assertThat(response.ratings().distribution()).singleElement()
+                .satisfies(bucket -> {
+                    assertThat(bucket.rating()).isEqualByComparingTo("4.5");
+                    assertThat(bucket.count()).isEqualTo(3);
+                });
     }
 
     @Test
@@ -316,6 +342,34 @@ class UserProfileServiceTest {
                 anyBoolean(),
                 any(Pageable.class)
         );
+    }
+
+    @Test
+    void returnsDistinctTaggedMediaFromDirectTagsAndVisibleActivities() {
+        User profileUser = user(Visibility.PUBLIC);
+        Media direct = new Media();
+        direct.setId(UUID.randomUUID());
+        direct.setType(MediaType.MOVIE);
+        direct.setTitle("Bacurau");
+        Media activity = new Media();
+        activity.setId(UUID.randomUUID());
+        activity.setType(MediaType.BOOK);
+        activity.setTitle("Arrival");
+        when(userRepository.findByUsernameIgnoreCase("maria"))
+                .thenReturn(Optional.of(profileUser));
+        when(mediaTagRepository.findTaggedMedia(
+                profileUser.getId(), "favoritos"))
+                .thenReturn(List.of(direct));
+        when(userMediaActivityRepository.findMediaByTag(
+                profileUser.getId(), List.of(Visibility.PUBLIC), "favoritos"))
+                .thenReturn(List.of(activity, direct));
+
+        var response = userProfileService.findTaggedMedia(
+                "maria", UUID.randomUUID(), "#Favoritos");
+
+        assertThat(response)
+                .extracting(item -> item.title())
+                .containsExactly("Arrival", "Bacurau");
     }
 
     private User user(Visibility visibility) {

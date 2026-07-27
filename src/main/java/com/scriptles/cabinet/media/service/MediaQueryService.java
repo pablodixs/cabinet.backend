@@ -31,6 +31,7 @@ import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.repository.TrackDetailsRepository;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.CatalogTranslationLoader;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
@@ -74,13 +75,18 @@ public class MediaQueryService {
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
     private final CatalogLocaleResolver catalogLocaleResolver;
+    private final CatalogTranslationLoader catalogTranslationLoader;
     private final MediaTranslationResolver mediaTranslationResolver;
 
     public PublicMediaDetailsResponse findDetails(UUID mediaId) {
         return findDetails(mediaId, "pt-BR");
     }
 
-    @Cacheable(cacheNames = "mediaDetails", key = "#mediaId + ':' + #locale")
+    @Cacheable(
+            cacheNames = "mediaDetails",
+            key = "#mediaId + ':' + #locale",
+            unless = "#result.translationFallback()"
+    )
     public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
         String requestedLocale = catalogLocaleResolver.normalize(locale);
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
@@ -109,6 +115,7 @@ public class MediaQueryService {
             externalReferences.putIfAbsent("wikidata", media.getWikidataId());
         }
 
+        catalogTranslationLoader.loadIfMissing(media, primaryReference, requestedLocale);
         List<ExternalMediaDetailsResponse.GenreResponse> genres = media.getGenres().stream()
                 .map(name -> new ExternalMediaDetailsResponse.GenreResponse(null, name, ExternalSource.MANUAL))
                 .toList();
@@ -124,7 +131,7 @@ public class MediaQueryService {
                 creditSummary.creator(),
                 translation.description(),
                 translation.tagline(),
-                media.getCoverUrl(),
+                translation.coverUrl(),
                 media.getBackdropUrl(),
                 media.getLogoUrl(),
                 externalUrl,

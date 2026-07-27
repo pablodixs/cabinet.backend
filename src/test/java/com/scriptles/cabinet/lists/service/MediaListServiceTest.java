@@ -3,6 +3,7 @@ package com.scriptles.cabinet.lists.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.DuplicateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
 import com.scriptles.cabinet.media.dto.response.ArtworkOptionResponse;
 import com.scriptles.cabinet.media.dto.response.ArtworkOptionsResponse;
@@ -23,9 +24,11 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.service.UserMediaArtworkService;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.entity.UserTag;
 import com.scriptles.cabinet.user.enums.AccountTier;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.UserTagService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,10 +38,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +73,8 @@ class MediaListServiceTest {
     private UserArtworkResolver userArtworkResolver;
     @Mock
     private UserMediaArtworkService userMediaArtworkService;
+    @Mock
+    private UserTagService userTagService;
 
     @InjectMocks
     private MediaListService mediaListService;
@@ -97,6 +104,12 @@ class MediaListServiceTest {
         User owner = new User();
         owner.setId(userId);
         when(userRepository.findById(userId)).thenReturn(Optional.of(owner));
+        UserTag tag = new UserTag();
+        tag.setName("para reler");
+        tag.setNormalizedName("para reler");
+        tag.setUser(owner);
+        when(userTagService.resolveTags(owner, Set.of("para reler")))
+                .thenReturn(List.of(tag));
         when(mediaListRepository.saveAndFlush(any(MediaList.class)))
                 .thenAnswer(invocation -> {
                     MediaList list = invocation.getArgument(0);
@@ -111,7 +124,8 @@ class MediaListServiceTest {
                         "  Para reler com calma.  ",
                         null,
                         null,
-                        "  "
+                        "  ",
+                        Set.of("para reler")
                 )
         );
 
@@ -124,8 +138,142 @@ class MediaListServiceTest {
         assertThat(saved.getVisibility()).isEqualTo(Visibility.PUBLIC);
         assertThat(saved.isOrdered()).isTrue();
         assertThat(saved.getCoverUrl()).isNull();
+        assertThat(saved.getTags()).containsExactly(tag);
         assertThat(response.id()).isNotNull();
         assertThat(response.itemCount()).isZero();
+        assertThat(response.tags()).containsExactly("para reler");
+    }
+
+    @Test
+    void duplicatesAccessibleListForProUserAsPrivateCopy() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setActive(true);
+        user.setAccountTier(AccountTier.PRO);
+
+        User sourceOwner = new User();
+        sourceOwner.setId(UUID.randomUUID());
+        MediaList source = mediaList("Cinema de estrada");
+        source.setOwner(sourceOwner);
+        source.setDescription("Filmes para atravessar o país.");
+        source.setCoverUrl("https://images.example/list.jpg");
+        UserTag sourceTag = new UserTag();
+        sourceTag.setName("viagem");
+        source.getTags().add(sourceTag);
+        Media media = new Media();
+        media.setId(UUID.randomUUID());
+        MediaListItem sourceItem = new MediaListItem();
+        sourceItem.setList(source);
+        sourceItem.setMedia(media);
+        sourceItem.setPosition(1);
+        sourceItem.setNotes("Começar por este.");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaListRepository.findWithOwnerById(source.getId()))
+                .thenReturn(Optional.of(source));
+        when(mediaListRepository.saveAndFlush(any(MediaList.class)))
+                .thenAnswer(invocation -> {
+                    MediaList list = invocation.getArgument(0);
+                    list.setId(UUID.randomUUID());
+                    return list;
+                });
+        when(mediaListItemRepository.findAllWithMediaByListId(source.getId()))
+                .thenReturn(List.of(sourceItem));
+        when(mediaListItemRepository.saveAllAndFlush(any()))
+                .thenAnswer(invocation -> {
+                    List<MediaListItem> items = invocation.getArgument(0);
+                    assertThat(items).hasSize(1);
+                    assertThat(items.getFirst().getMedia()).isSameAs(media);
+                    assertThat(items.getFirst().getPosition()).isEqualTo(1);
+                    assertThat(items.getFirst().getNotes()).isNull();
+                    return items;
+                });
+
+        MediaListResponse response = mediaListService.duplicate(
+                userId,
+                source.getId(),
+                new DuplicateMediaListRequest("Minha viagem de cinema")
+        );
+
+        ArgumentCaptor<MediaList> listCaptor =
+                ArgumentCaptor.forClass(MediaList.class);
+        verify(mediaListRepository).saveAndFlush(listCaptor.capture());
+        MediaList duplicate = listCaptor.getValue();
+        assertThat(duplicate.getOwner()).isSameAs(user);
+        assertThat(duplicate.getName()).isEqualTo("Minha viagem de cinema");
+        assertThat(duplicate.getDescription())
+                .isEqualTo("Filmes para atravessar o país.");
+        assertThat(duplicate.getVisibility()).isEqualTo(Visibility.PRIVATE);
+        assertThat(duplicate.getCoverUrl())
+                .isEqualTo("https://images.example/list.jpg");
+        assertThat(duplicate.getTags()).isEmpty();
+        assertThat(response.itemCount()).isEqualTo(1);
+        verify(userTagService, never()).resolveTags(any(), any());
+    }
+
+    @Test
+    void rejectsCustomListCoverForFreeOwner() {
+        UUID userId = UUID.randomUUID();
+        User owner = new User();
+        owner.setId(userId);
+        owner.setActive(true);
+        owner.setAccountTier(AccountTier.FREE);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(owner));
+
+        assertThatThrownBy(() -> mediaListService.create(
+                userId,
+                new CreateMediaListRequest(
+                        "Cinema",
+                        null,
+                        Visibility.PUBLIC,
+                        true,
+                        "https://images.example/custom-list.jpg"
+                )
+        )).isInstanceOfSatisfying(ApiException.class, exception -> {
+            assertThat(exception.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(exception.getCode()).isEqualTo("PRO_REQUIRED");
+        });
+
+        verify(mediaListRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsListDuplicationForFreeUser() {
+        UUID userId = UUID.randomUUID();
+        User user = new User();
+        user.setId(userId);
+        user.setActive(true);
+        user.setAccountTier(AccountTier.FREE);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() ->
+                mediaListService.duplicate(
+                        userId,
+                        UUID.randomUUID(),
+                        new DuplicateMediaListRequest("Cópia")
+                )
+        ).isInstanceOfSatisfying(ApiException.class, exception -> {
+            assertThat(exception.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(exception.getCode()).isEqualTo("PRO_REQUIRED");
+        });
+
+        verify(mediaListRepository, never()).findWithOwnerById(any());
+        verify(mediaListItemRepository, never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    void deletesOwnedListAndItsItemsAndLikes() {
+        UUID userId = UUID.randomUUID();
+        MediaList list = mediaList("Descartáveis");
+        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+                .thenReturn(Optional.of(list));
+
+        mediaListService.delete(userId, list.getId());
+
+        verify(mediaListLikeRepository).deleteByListId(list.getId());
+        verify(mediaListItemRepository).deleteByListId(list.getId());
+        verify(mediaListRepository).delete(list);
     }
 
     @Test

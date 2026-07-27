@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserProfileFavorite;
 import com.scriptles.cabinet.user.repository.UserProfileFavoriteRepository;
+import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,7 @@ public class ProfileFavoriteService {
     private final UserProfileFavoriteRepository favoriteRepository;
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
+    private final UserMediaRepository userMediaRepository;
 
     @Transactional
     public void replace(UUID userId, List<UUID> mediaIds) {
@@ -36,6 +38,12 @@ public class ProfileFavoriteService {
         if (uniqueIds.size() > 4) {
             throw badRequest("favorite_limit_exceeded",
                     "Você pode selecionar no máximo quatro obras favoritas");
+        }
+        if (uniqueIds.stream()
+                .anyMatch(mediaId -> !userMediaRepository.existsByUserIdAndMediaId(
+                        userId, mediaId))) {
+            throw badRequest("favorite_not_in_library",
+                    "As obras favoritas devem fazer parte da sua biblioteca");
         }
 
         Map<UUID, Media> mediaById = mediaRepository.findAllById(uniqueIds).stream()

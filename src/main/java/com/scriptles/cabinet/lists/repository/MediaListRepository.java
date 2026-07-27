@@ -26,6 +26,21 @@ public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
     );
 
     @Query("""
+            select tag.id as tagId, count(list.id) as usageCount
+            from MediaList list
+            join list.tags tag
+            where list.owner.id = :ownerId
+            group by tag.id
+            """)
+    List<TagUsageCount> countTagUsageByOwnerId(
+            @Param("ownerId") UUID ownerId);
+
+    interface TagUsageCount {
+        UUID getTagId();
+        long getUsageCount();
+    }
+
+    @Query("""
             select list
             from MediaList list
             join fetch list.owner

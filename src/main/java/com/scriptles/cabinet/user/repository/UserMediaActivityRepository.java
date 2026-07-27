@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.repository;
 
+import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.Visibility;
 import org.springframework.data.domain.Page;
@@ -120,6 +121,19 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             @Param("visibilities") Collection<Visibility> visibilities,
             Pageable pageable
     );
+
+    @Query("""
+            select distinct activity.media
+            from UserMediaActivity activity
+            join activity.tags tag
+            where activity.user.id = :userId
+              and activity.visibility in :visibilities
+              and lower(tag) = :normalizedName
+            """)
+    List<Media> findMediaByTag(
+            @Param("userId") UUID userId,
+            @Param("visibilities") Collection<Visibility> visibilities,
+            @Param("normalizedName") String normalizedName);
 
     interface ProfileTagCount {
         String getName();

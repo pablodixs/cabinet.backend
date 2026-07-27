@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.controller;
 
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.DuplicateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -96,6 +98,67 @@ class MediaListControllerTest {
                 eq(principal.id()),
                 any(CreateMediaListRequest.class)
         );
+    }
+
+    @Test
+    void duplicatesListForAuthenticatedUser() throws Exception {
+        AuthenticatedUser principal = principal();
+        UUID sourceListId = UUID.randomUUID();
+        UUID duplicatedListId = UUID.randomUUID();
+        MediaListResponse response = new MediaListResponse(
+                duplicatedListId,
+                "Ficções favoritas (cópia)",
+                null,
+                Visibility.PRIVATE,
+                true,
+                null,
+                List.of(),
+                3,
+                null,
+                null
+        );
+        when(mediaListService.duplicate(
+                eq(principal.id()),
+                eq(sourceListId),
+                any(DuplicateMediaListRequest.class)
+        ))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/v1/me/lists/{listId}/duplicate", sourceListId)
+                        .with(user(principal))
+                        .with(csrf())
+                        .contentType("application/json")
+                        .content("""
+                                {"name": "Ficções favoritas (cópia)"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(
+                        "Location",
+                        "/v1/me/lists/" + duplicatedListId
+                ))
+                .andExpect(jsonPath("$.name")
+                        .value("Ficções favoritas (cópia)"))
+                .andExpect(jsonPath("$.visibility").value("PRIVATE"))
+                .andExpect(jsonPath("$.itemCount").value(3));
+
+        verify(mediaListService).duplicate(
+                eq(principal.id()),
+                eq(sourceListId),
+                any(DuplicateMediaListRequest.class)
+        );
+    }
+
+    @Test
+    void deletesOwnedList() throws Exception {
+        AuthenticatedUser principal = principal();
+        UUID listId = UUID.randomUUID();
+
+        mockMvc.perform(delete("/v1/me/lists/{listId}", listId)
+                        .with(user(principal))
+                        .with(csrf()))
+                .andExpect(status().isNoContent());
+
+        verify(mediaListService).delete(principal.id(), listId);
     }
 
     @Test

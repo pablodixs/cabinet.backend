@@ -4,6 +4,7 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.DuplicateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionResponse;
@@ -31,6 +32,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
+import com.scriptles.cabinet.user.service.UserTagService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -40,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,6 +65,7 @@ public class MediaListService {
     private final UserArtworkResolver userArtworkResolver;
     private final UserMediaArtworkService userMediaArtworkService;
     private final SocialAccessPolicy socialAccessPolicy;
+    private final UserTagService userTagService;
 
     @Transactional(readOnly = true)
     public List<MediaListResponse> findMine(UUID userId) {
@@ -407,9 +411,71 @@ public class MediaListService {
         list.setDescription(normalizeOptional(request.description()));
         list.setVisibility(request.visibility() == null ? Visibility.PUBLIC : request.visibility());
         list.setOrdered(request.ordered() == null || request.ordered());
-        list.setCoverUrl(normalizeOptional(request.coverUrl()));
+        applyCover(owner, list, request.coverUrl());
+        list.setTags(new LinkedHashSet<>(
+                userTagService.resolveTags(owner, request.tags())));
 
         return MediaListResponse.from(mediaListRepository.saveAndFlush(list), 0);
+    }
+
+    @Transactional
+    public MediaListResponse duplicate(
+            UUID userId,
+            UUID sourceListId,
+            DuplicateMediaListRequest request
+    ) {
+        User owner = userRepository.findById(userId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND,
+                "USER_NOT_FOUND",
+                "Usuário não encontrado"
+        ));
+        requirePro(owner, "A duplicação de listas está disponível para usuários Pro");
+
+        MediaList source = mediaListRepository.findWithOwnerById(sourceListId)
+                .orElseThrow(() -> listNotFound());
+        boolean ownList = source.getOwner().getId().equals(userId);
+        boolean accessible = socialAccessPolicy == null
+                ? source.getVisibility() == Visibility.PUBLIC || ownList
+                : socialAccessPolicy.canViewContent(
+                        source.getOwner().getId(), userId, source.getVisibility());
+        if (!accessible) {
+            throw listNotFound();
+        }
+
+        MediaList duplicate = new MediaList();
+        duplicate.setOwner(owner);
+        duplicate.setName(request.name().trim());
+        duplicate.setDescription(source.getDescription());
+        duplicate.setVisibility(Visibility.PRIVATE);
+        duplicate.setOrdered(source.isOrdered());
+        duplicate.setCoverUrl(source.getCoverUrl());
+        duplicate.setBackdropUrl(source.getBackdropUrl());
+        duplicate.setBackdropMedia(source.getBackdropMedia());
+        duplicate.setBackdropKey(source.getBackdropKey());
+        MediaList savedList = mediaListRepository.saveAndFlush(duplicate);
+
+        List<MediaListItem> sourceItems =
+                mediaListItemRepository.findAllWithMediaByListId(sourceListId);
+        List<MediaListItem> copiedItems = sourceItems.stream()
+                .map(sourceItem -> {
+                    MediaListItem copiedItem = new MediaListItem();
+                    copiedItem.setList(savedList);
+                    copiedItem.setMedia(sourceItem.getMedia());
+                    copiedItem.setPosition(sourceItem.getPosition());
+                    return copiedItem;
+                })
+                .toList();
+        mediaListItemRepository.saveAllAndFlush(copiedItems);
+
+        return MediaListResponse.from(savedList, copiedItems.size());
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID listId) {
+        MediaList list = findOwnedList(userId, listId);
+        mediaListLikeRepository.deleteByListId(listId);
+        mediaListItemRepository.deleteByListId(listId);
+        mediaListRepository.delete(list);
     }
 
     @Transactional(readOnly = true)
@@ -432,7 +498,10 @@ public class MediaListService {
         list.setDescription(normalizeOptional(request.description()));
         list.setVisibility(request.visibility());
         list.setOrdered(request.ordered());
-        list.setCoverUrl(normalizeOptional(request.coverUrl()));
+        applyCover(list.getOwner(), list, request.coverUrl());
+        list.getTags().clear();
+        list.getTags().addAll(userTagService.resolveTags(
+                list.getOwner(), request.tags()));
         applyBackdrop(
                 list.getOwner(),
                 list,
@@ -705,6 +774,17 @@ public class MediaListService {
         mediaListRepository.save(list);
     }
 
+    private void applyCover(User owner, MediaList list, String requestedCoverUrl) {
+        String coverUrl = normalizeOptional(requestedCoverUrl);
+        if (coverUrl != null) {
+            requirePro(
+                    owner,
+                    "A capa personalizada de listas está disponível para usuários Pro"
+            );
+        }
+        list.setCoverUrl(coverUrl);
+    }
+
     private void applyBackdrop(
             User owner,
             MediaList list,
@@ -749,12 +829,19 @@ public class MediaListService {
     }
 
     private void requirePro(User owner) {
+        requirePro(
+                owner,
+                "O backdrop personalizável de listas está disponível para usuários Pro"
+        );
+    }
+
+    private void requirePro(User owner, String message) {
         if (!Boolean.TRUE.equals(owner.getActive())
                 || owner.getAccountTier() != AccountTier.PRO) {
             throw new ApiException(
                     HttpStatus.FORBIDDEN,
                     "PRO_REQUIRED",
-                    "O backdrop personalizável de listas está disponível para usuários Pro"
+                    message
             );
         }
     }

@@ -38,11 +38,14 @@ class DefaultMediaTranslationResolverTest {
                 TranslationStatus.AVAILABLE);
         MediaTranslation en = translation(media, "en-US", "Fight Club", "Description", null,
                 TranslationStatus.AVAILABLE);
+        pt.setCoverUrl("https://covers/fight-club-pt.jpg");
+        en.setCoverUrl("https://covers/fight-club-en.jpg");
         when(repository.findAllByMediaId(media.getId())).thenReturn(List.of(en, pt));
 
         ResolvedMediaTranslation result = resolver.resolve(media, "pt-BR");
 
         assertThat(result.title()).isEqualTo("Clube da Luta");
+        assertThat(result.coverUrl()).isEqualTo("https://covers/fight-club-pt.jpg");
         assertThat(result.resolvedLocale()).isEqualTo("pt-BR");
         assertThat(result.fallback()).isFalse();
     }
@@ -110,12 +113,30 @@ class DefaultMediaTranslationResolverTest {
     }
 
     @Test
+    void reportsPartialFallbackWhenOnlyTheLocalizedCoverIsMissing() {
+        Media media = media("Canonical title", "en-US");
+        media.setCoverUrl("https://covers/canonical.jpg");
+        MediaTranslation pt = translation(media, "pt-BR", "Título traduzido", null, null,
+                TranslationStatus.PARTIAL);
+        when(repository.findAllByMediaId(media.getId())).thenReturn(List.of(pt));
+
+        ResolvedMediaTranslation result = resolver.resolve(media, "pt-BR");
+
+        assertThat(result.title()).isEqualTo("Título traduzido");
+        assertThat(result.coverUrl()).isEqualTo("https://covers/canonical.jpg");
+        assertThat(result.partialFallback()).isTrue();
+        assertThat(result.fallback()).isTrue();
+    }
+
+    @Test
     void reportsCanonicalLocaleWhenNoTranslationExists() {
         Media media = media("Título canônico", "pt-BR");
+        media.setCoverUrl("https://covers/canonical.jpg");
         when(repository.findAllByMediaId(media.getId())).thenReturn(List.of());
 
         ResolvedMediaTranslation result = resolver.resolve(media, "en-US");
 
+        assertThat(result.coverUrl()).isEqualTo("https://covers/canonical.jpg");
         assertThat(result.resolvedLocale()).isEqualTo("pt-BR");
         assertThat(result.fallback()).isTrue();
         assertThat(result.status()).isEqualTo(TranslationStatus.FALLBACK);

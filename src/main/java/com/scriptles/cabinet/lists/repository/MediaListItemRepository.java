@@ -87,6 +87,8 @@ public interface MediaListItemRepository extends JpaRepository<MediaListItem, UU
 
     long countByListId(UUID listId);
 
+    long deleteByListId(UUID listId);
+
     long countByMediaIdAndListVisibility(UUID mediaId, Visibility visibility);
 
     @Query("""

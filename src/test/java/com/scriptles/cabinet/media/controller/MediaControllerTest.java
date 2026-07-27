@@ -1,12 +1,15 @@
 package com.scriptles.cabinet.media.controller;
 
+import com.scriptles.cabinet.media.dto.request.ImportExternalMediaRequest;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
 import com.scriptles.cabinet.media.dto.response.RelatedMediaResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.media.service.ExternalMediaService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +24,10 @@ import java.util.UUID;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -33,6 +39,9 @@ class MediaControllerTest {
 
     @MockitoBean
     private ExternalMediaService externalMediaService;
+
+    @MockitoBean
+    private CatalogLocaleResolver localeResolver;
 
     @Test
     void returnsCommunityStatsInMediaDetails() throws Exception {
@@ -127,5 +136,29 @@ class MediaControllerTest {
                         .param("language", "portuguese")
                         .param("maxResults", "41"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void importsUsingAcceptLanguageLocale() throws Exception {
+        when(localeResolver.resolve(null, "en-US")).thenReturn(SupportedLocale.EN_US);
+
+        mockMvc.perform(post("/v1/media/external/import")
+                        .with(user("reader"))
+                        .with(csrf())
+                        .header("Accept-Language", "en-US")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "source": "TMDB",
+                                  "externalId": "550",
+                                  "mediaType": "MOVIE"
+                                }
+                                """))
+                .andExpect(status().isCreated());
+
+        verify(externalMediaService).importMedia(
+                new ImportExternalMediaRequest(ExternalSource.TMDB, "550", MediaType.MOVIE),
+                "en-US"
+        );
     }
 }

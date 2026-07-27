@@ -41,6 +41,7 @@ public class CatalogOutboxWorker {
         try {
             CatalogEventPayload payload = event.getPayload();
             persistenceService.markEnriching(event.getAggregateId());
+            fetchSecondaryTranslation(event.getAggregateId(), payload);
             ExternalMedia external = providerRegistry.get(payload.source(), payload.mediaType())
                     .findEnrichmentById(payload.mediaType(), payload.externalId(), payload.locale())
                     .orElseThrow(() -> new IllegalArgumentException("External media not found"));
@@ -55,7 +56,6 @@ public class CatalogOutboxWorker {
                     ? external.wikidataId()
                     : wikidata.map(WikidataClient.WikidataEnrichment::wikidataId).orElse(null);
             persistenceService.complete(event.getAggregateId(), external, payload.locale(), wikidataId);
-            fetchSecondaryTranslation(event.getAggregateId(), payload);
             claimService.complete(eventId);
         } catch (RuntimeException failure) {
             boolean retrying = claimService.retry(eventId, failure);

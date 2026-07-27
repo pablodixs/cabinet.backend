@@ -19,7 +19,8 @@ public record MediaListDetailsResponse(
         long itemCount,
         Instant createdAt,
         Instant updatedAt,
-        List<MediaListItemResponse> items
+        List<MediaListItemResponse> items,
+        List<String> tags
 ) {
     public static MediaListDetailsResponse from(
             MediaList list,
@@ -31,13 +32,15 @@ public record MediaListDetailsResponse(
                 list.getDescription(),
                 list.getVisibility(),
                 list.isOrdered(),
-                list.getCoverUrl(),
+                list.getOwner().getAccountTier() == AccountTier.PRO
+                        ? list.getCoverUrl() : null,
                 list.getOwner().getAccountTier() == AccountTier.PRO
                         ? list.getBackdropUrl() : null,
                 items.size(),
                 list.getCreatedAt(),
                 list.getUpdatedAt(),
-                items
+                items,
+                list.getTags().stream().map(tag -> tag.getName()).toList()
         );
     }
 }

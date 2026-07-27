@@ -12,6 +12,7 @@ import java.util.UUID;
 
 public interface MediaTranslationRepository extends JpaRepository<MediaTranslation, UUID> {
     Optional<MediaTranslation> findByMediaIdAndLocale(UUID mediaId, String locale);
+    boolean existsByMediaIdAndLocale(UUID mediaId, String locale);
     List<MediaTranslation> findAllByMediaId(UUID mediaId);
 
     @Query("""

@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserProfileFavorite;
 import com.scriptles.cabinet.user.repository.UserProfileFavoriteRepository;
+import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +33,8 @@ class ProfileFavoriteServiceTest {
     private UserRepository userRepository;
     @Mock
     private MediaRepository mediaRepository;
+    @Mock
+    private UserMediaRepository userMediaRepository;
     @InjectMocks
     private ProfileFavoriteService service;
 
@@ -45,6 +48,10 @@ class ProfileFavoriteServiceTest {
         List<UUID> mediaIds = List.of(first.getId(), second.getId());
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(mediaRepository.findAllById(any())).thenReturn(List.of(first, second));
+        when(userMediaRepository.existsByUserIdAndMediaId(userId, first.getId()))
+                .thenReturn(true);
+        when(userMediaRepository.existsByUserIdAndMediaId(userId, second.getId()))
+                .thenReturn(true);
 
         service.replace(userId, mediaIds);
 
@@ -68,6 +75,18 @@ class ProfileFavoriteServiceTest {
         assertThatThrownBy(() -> service.replace(UUID.randomUUID(), mediaIds))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("quatro");
+    }
+
+    @Test
+    void rejectsFavoriteOutsideTheUsersLibrary() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        when(userMediaRepository.existsByUserIdAndMediaId(userId, mediaId))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.replace(userId, List.of(mediaId)))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("biblioteca");
     }
 
     private Media media() {

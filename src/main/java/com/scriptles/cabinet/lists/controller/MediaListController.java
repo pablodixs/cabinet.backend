@@ -2,6 +2,7 @@ package com.scriptles.cabinet.lists.controller;
 
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.DuplicateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionsResponse;
@@ -48,6 +49,28 @@ public class MediaListController {
         return ResponseEntity
                 .created(URI.create("/v1/me/lists/" + response.id()))
                 .body(response);
+    }
+
+    @PostMapping("/{listId}/duplicate")
+    public ResponseEntity<MediaListResponse> duplicate(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID listId,
+            @RequestBody @Valid DuplicateMediaListRequest request
+    ) {
+        MediaListResponse response = mediaListService.duplicate(
+                user.id(), listId, request);
+        return ResponseEntity
+                .created(URI.create("/v1/me/lists/" + response.id()))
+                .body(response);
+    }
+
+    @DeleteMapping("/{listId}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID listId
+    ) {
+        mediaListService.delete(user.id(), listId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{listId}")

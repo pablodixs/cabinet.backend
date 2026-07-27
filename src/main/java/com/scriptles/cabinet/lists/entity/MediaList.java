@@ -10,6 +10,8 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -60,6 +62,19 @@ public class MediaList {
 
     @Column(length = 700)
     private String originKey;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "media_list_tags",
+            joinColumns = @JoinColumn(name = "list_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id"),
+            uniqueConstraints = @UniqueConstraint(
+                    name = "uk_media_list_tag",
+                    columnNames = {"list_id", "tag_id"})
+    )
+    @OrderBy("name asc")
+    private Set<com.scriptles.cabinet.user.entity.UserTag> tags =
+            new LinkedHashSet<>();
 
     @CreationTimestamp
     private Instant createdAt;

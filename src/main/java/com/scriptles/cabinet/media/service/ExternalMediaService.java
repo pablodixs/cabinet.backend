@@ -474,12 +474,16 @@ public class ExternalMediaService {
     }
 
     public ExternalMediaResponse importMedia(ImportExternalMediaRequest request) {
+        return importMedia(request, "pt-BR");
+    }
+
+    public ExternalMediaResponse importMedia(ImportExternalMediaRequest request, String locale) {
         CatalogImportFacade.Result result = catalogImportFacade.materialize(new MediaTarget(
                 null,
                 request.source(),
                 request.externalId(),
                 request.mediaType(),
-                "pt-BR"
+                locale
         ));
         Media media = result.media();
         ExternalReference reference = externalReferenceRepository

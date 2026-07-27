@@ -79,6 +79,17 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
     );
 
     @Query("""
+            select r.value as rating, count(r.id) as ratingCount
+            from Rating r
+            where r.user.id = :userId and r.visibility in :visibilities
+            group by r.value order by r.value
+            """)
+    List<RatingDistributionProjection> ratingDistributionForUser(
+            @Param("userId") UUID userId,
+            @Param("visibilities") Collection<Visibility> visibilities
+    );
+
+    @Query("""
             select r.media as media, avg(r.value) as averageRating, count(r.id) as ratingCount
             from Rating r
             where r.visibility = :visibility and r.media.typeValue in :types

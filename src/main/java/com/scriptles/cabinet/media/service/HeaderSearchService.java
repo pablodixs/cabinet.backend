@@ -86,7 +86,7 @@ public class HeaderSearchService {
                     HeaderSearchEntityType.MEDIA,
                     title,
                     credits.getOrDefault(media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
-                    media.getCoverUrl(),
+                    translation == null ? media.getCoverUrl() : translation.coverUrl(),
                     media.getReleaseDate() == null ? null : media.getReleaseDate().getYear()
             );
             target.add(new RankedItem(

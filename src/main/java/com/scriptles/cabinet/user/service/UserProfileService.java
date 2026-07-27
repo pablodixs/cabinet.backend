@@ -11,13 +11,17 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.service.MediaCreditService;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
+import com.scriptles.cabinet.lists.repository.MediaListRepository;
 import com.scriptles.cabinet.user.dto.response.LibraryFilterOptionsResponse;
 import com.scriptles.cabinet.user.dto.response.LibraryMediaResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileActivityResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileStatsResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileLikeResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileTagResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileTaggedMediaResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileFavoriteResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileRatingBucketResponse;
+import com.scriptles.cabinet.user.dto.response.ProfileRatingSummaryResponse;
 import com.scriptles.cabinet.user.dto.response.UserSearchResponse;
 import com.scriptles.cabinet.user.dto.response.UserProfileResponse;
 import com.scriptles.cabinet.user.dto.response.UserSummaryResponse;
@@ -74,6 +78,7 @@ public class UserProfileService {
     private final UserProfileFavoriteRepository favoriteRepository;
     private final UserTagRepository tagRepository;
     private final UserMediaTagRepository mediaTagRepository;
+    private final MediaListRepository mediaListRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<UserSearchResponse> search(String query, int page, int size) {
@@ -187,6 +192,22 @@ public class UserProfileService {
         SocialAccessPolicy.Relationship relationship = socialAccessPolicy == null
                 ? new SocialAccessPolicy.Relationship(FollowState.NONE, false)
                 : socialAccessPolicy.relationship(viewerId, profileUser.getId());
+        List<RatingRepository.RatingDistributionProjection> ratingDistribution =
+                ratingRepository.ratingDistributionForUser(
+                        profileUser.getId(),
+                        visibleInteractions(access)
+                );
+        ProfileRatingSummaryResponse ratings = new ProfileRatingSummaryResponse(
+                ratingDistribution.stream()
+                        .mapToLong(RatingRepository.RatingDistributionProjection::getRatingCount)
+                        .sum(),
+                ratingDistribution.stream()
+                        .map(bucket -> new ProfileRatingBucketResponse(
+                                bucket.getRating(),
+                                bucket.getRatingCount()
+                        ))
+                        .toList()
+        );
 
         return new UserProfileResponse(
                 profileUser.getId(),
@@ -214,7 +235,8 @@ public class UserProfileService {
                 profileUser.getFollowingCount(),
                 isPrivateProfile(profileUser),
                 relationship.state(),
-                relationship.followsViewer()
+                relationship.followsViewer(),
+                ratings
         );
     }
 
@@ -413,6 +435,9 @@ public class UserProfileService {
                 .collect(Collectors.toMap(
                         UserMediaTagRepository.TagUsageCount::getTagId,
                         UserMediaTagRepository.TagUsageCount::getUsageCount));
+        mediaListRepository.countTagUsageByOwnerId(access.user().getId())
+                .forEach(usage -> mediaUsageByTag.merge(
+                        usage.getTagId(), usage.getUsageCount(), Long::sum));
         for (UserTag tag : tagRepository.findAllByUserIdOrderByNameAsc(
                 access.user().getId())) {
             long mediaUsage = mediaUsageByTag.getOrDefault(tag.getId(), 0L);
@@ -431,6 +456,48 @@ public class UserProfileService {
                 .limit(limit)
                 .map(tag -> new ProfileTagResponse(
                         tag.name(), tag.usageCount()))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProfileTaggedMediaResponse> findTaggedMedia(
+            String username,
+            UUID viewerId,
+            String tagName
+    ) {
+        ProfileAccess access = findProfileAccess(username, viewerId);
+        List<Visibility> visibilities = access.ownProfile()
+                ? List.of(Visibility.PUBLIC, Visibility.FOLLOWERS, Visibility.PRIVATE)
+                : access.followerAccess()
+                    ? List.of(Visibility.PUBLIC, Visibility.FOLLOWERS)
+                    : List.of(Visibility.PUBLIC);
+        String normalizedName = normalizeTagName(
+                tagName.replaceFirst("^#+\\s*", "").trim());
+        if (normalizedName.isBlank()) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, "INVALID_TAG", "Informe uma tag");
+        }
+
+        Map<UUID, com.scriptles.cabinet.media.entity.Media> mediaById =
+                new LinkedHashMap<>();
+        mediaTagRepository.findTaggedMedia(
+                        access.user().getId(), normalizedName)
+                .forEach(media -> mediaById.put(media.getId(), media));
+        userMediaActivityRepository.findMediaByTag(
+                        access.user().getId(), visibilities, normalizedName)
+                .forEach(media -> mediaById.putIfAbsent(media.getId(), media));
+
+        List<com.scriptles.cabinet.media.entity.Media> mediaItems =
+                mediaById.values().stream()
+                        .sorted(Comparator.comparing(
+                                com.scriptles.cabinet.media.entity.Media::getTitle,
+                                String.CASE_INSENSITIVE_ORDER))
+                        .toList();
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks =
+                resolveArtwork(access.user().getId(), mediaItems);
+        return mediaItems.stream()
+                .map(media -> ProfileTaggedMediaResponse.from(
+                        media, artworks.get(media.getId()).coverUrl()))
                 .toList();
     }
 

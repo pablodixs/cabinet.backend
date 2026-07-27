@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.repository;
 
+import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.user.entity.UserMediaTag;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -32,6 +33,16 @@ public interface UserMediaTagRepository extends JpaRepository<UserMediaTag, UUID
             group by mediaTag.tag.id
             """)
     List<TagUsageCount> countUsageByUserId(@Param("userId") UUID userId);
+
+    @Query("""
+            select distinct mediaTag.media
+            from UserMediaTag mediaTag
+            where mediaTag.tag.user.id = :userId
+              and mediaTag.tag.normalizedName = :normalizedName
+            """)
+    List<Media> findTaggedMedia(
+            @Param("userId") UUID userId,
+            @Param("normalizedName") String normalizedName);
 
     interface TagUsageCount {
         UUID getTagId();
