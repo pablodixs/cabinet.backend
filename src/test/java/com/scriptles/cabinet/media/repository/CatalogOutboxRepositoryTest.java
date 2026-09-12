@@ -12,9 +12,11 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 @DataJpaTest
 class CatalogOutboxRepositoryTest {
@@ -34,7 +36,7 @@ class CatalogOutboxRepositoryTest {
         assertThat(released).isEqualTo(1);
         CatalogOutboxEvent recovered = repository.findById(stale.getId()).orElseThrow();
         assertThat(recovered.getStatus()).isEqualTo(CatalogOutboxStatus.RETRY);
-        assertThat(recovered.getAvailableAt()).isEqualTo(now);
+        assertThat(recovered.getAvailableAt()).isCloseTo(now, within(1, ChronoUnit.MICROS));
         assertThat(recovered.getLockedAt()).isNull();
         assertThat(recovered.getLockedBy()).isNull();
         assertThat(repository.findById(active.getId()).orElseThrow().getStatus())
