@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.dto.response.AlbumTracksResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
 import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
@@ -73,6 +74,16 @@ public class MediaQueryController {
     @GetMapping("/{mediaId}/community")
     public MediaCommunityResponse findCommunity(@PathVariable UUID mediaId) {
         return mediaQueryService.findCommunity(mediaId);
+    }
+
+    @GetMapping("/{albumId}/tracks")
+    public ResponseEntity<AlbumTracksResponse> findAlbumTracks(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID albumId
+    ) {
+        return ResponseEntity.ok()
+                .header("Cache-Control", "private, no-store")
+                .body(mediaQueryService.findAlbumTracks(albumId, user == null ? null : user.id()));
     }
 
     @GetMapping("/{mediaId}/me")

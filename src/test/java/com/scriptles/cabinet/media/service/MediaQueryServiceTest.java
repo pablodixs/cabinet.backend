@@ -3,6 +3,7 @@ package com.scriptles.cabinet.media.service;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.entity.AlbumDetails;
+import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaLike;
@@ -90,6 +91,50 @@ class MediaQueryServiceTest {
 
     @InjectMocks
     private MediaQueryService mediaQueryService;
+
+    @Test
+    void returnsOrderedAlbumTracksWithCommunityAndPersonalRatings() {
+        UUID albumId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Media album = new Media();
+        album.setId(albumId);
+        album.setType(MediaType.ALBUM);
+
+        AlbumTrack first = albumTrack(album, 1, 1, "First");
+        AlbumTrack second = albumTrack(album, 1, 2, "Second");
+        when(mediaRepository.findById(albumId)).thenReturn(Optional.of(album));
+        when(albumTrackRepository.findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(albumId))
+                .thenReturn(List.of(first, second));
+        when(ratingSummaryService.items(
+                List.of(first.getTrackMedia().getId(), second.getTrackMedia().getId()), userId))
+                .thenReturn(java.util.Map.of(
+                        first.getTrackMedia().getId(), new RatingSummaryService.ItemStats(4.25, 8, 4.5),
+                        second.getTrackMedia().getId(), new RatingSummaryService.ItemStats(3.75, 3, null)
+                ));
+
+        var response = mediaQueryService.findAlbumTracks(albumId, userId);
+
+        assertThat(response.tracks()).extracting(ExternalMediaDetailsResponse.TrackResponse::title)
+                .containsExactly("First", "Second");
+        assertThat(response.tracks().getFirst().averageRating()).isEqualTo(4.25);
+        assertThat(response.tracks().getFirst().ratingCount()).isEqualTo(8);
+        assertThat(response.tracks().getFirst().myRating()).isEqualTo(4.5);
+        assertThat(response.tracks().get(1).myRating()).isNull();
+    }
+
+    private AlbumTrack albumTrack(Media album, int disc, int number, String title) {
+        Media trackMedia = new Media();
+        trackMedia.setId(UUID.randomUUID());
+        trackMedia.setType(MediaType.TRACK);
+        trackMedia.setTitle(title);
+        AlbumTrack track = new AlbumTrack();
+        track.setAlbum(album);
+        track.setTrackMedia(trackMedia);
+        track.setDiscNumber(disc);
+        track.setTrackNumber(number);
+        track.setTitle(title);
+        return track;
+    }
 
     @Test
     void returnsDirectAndTrackBasedAlbumRatingsSeparately() {

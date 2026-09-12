@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.dto.response.AlbumTracksResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.MediaExternalInfoResponse;
@@ -66,6 +67,25 @@ class MediaQueryControllerTest {
 
     @MockitoBean
     private CatalogLocaleResolver catalogLocaleResolver;
+
+    @Test
+    void returnsAlbumTracksWithoutAuthenticationAndDisablesCaching() throws Exception {
+        UUID albumId = UUID.randomUUID();
+        UUID trackId = UUID.randomUUID();
+        when(mediaQueryService.findAlbumTracks(albumId, null)).thenReturn(new AlbumTracksResponse(List.of(
+                new ExternalMediaDetailsResponse.TrackResponse(
+                        trackId, "recording-1", "Faixa 1", 1, 1, 180, false, 4.2, 5, null)
+        )));
+
+        mockMvc.perform(get("/v1/media/{albumId}/tracks", albumId))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.tracks[0].id").value(trackId.toString()))
+                .andExpect(jsonPath("$.tracks[0].averageRating").value(4.2))
+                .andExpect(jsonPath("$.tracks[0].myRating").doesNotExist());
+
+        verify(mediaQueryService).findAlbumTracks(albumId, null);
+    }
 
     @Test
     void returnsChildRatingsInCommunityContract() throws Exception {

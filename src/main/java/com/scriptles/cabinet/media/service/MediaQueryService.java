@@ -4,6 +4,7 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
+import com.scriptles.cabinet.media.dto.response.AlbumTracksResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
@@ -186,6 +187,35 @@ public class MediaQueryService {
                 community.recentCompleters(),
                 media.details()
         );
+    }
+
+    public AlbumTracksResponse findAlbumTracks(UUID albumId, UUID userId) {
+        Media album = mediaRepository.findById(albumId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND,
+                "MEDIA_NOT_FOUND",
+                "Mídia não encontrada"
+        ));
+        if (album.getType() != MediaType.ALBUM) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MEDIA_NOT_ALBUM",
+                    "A mídia informada não é um álbum"
+            );
+        }
+
+        List<AlbumTrack> tracks = albumTrackRepository
+                .findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(albumId);
+        List<UUID> trackIds = tracks.stream()
+                .map(track -> track.getTrackMedia().getId())
+                .toList();
+        Map<UUID, RatingSummaryService.ItemStats> stats = ratingSummaryService.items(trackIds, userId);
+
+        return new AlbumTracksResponse(tracks.stream()
+                .map(track -> toTrackResponse(
+                        track,
+                        stats.getOrDefault(track.getTrackMedia().getId(), RatingSummaryService.ItemStats.empty())
+                ))
+                .toList());
     }
 
     public PageResponse<ExternalMediaDetailsResponse.CreditResponse> findCredits(
