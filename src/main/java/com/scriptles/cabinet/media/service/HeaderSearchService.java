@@ -36,6 +36,7 @@ public class HeaderSearchService {
     private final MediaCreditService mediaCreditService;
     private final MediaTranslationResolver translationResolver;
     private final CatalogLocaleResolver localeResolver;
+    private final UserArtworkResolver userArtworkResolver;
 
     public HeaderSearchResponse search(String query, HeaderSearchScope scope, MediaType type) {
         return search(query, scope, type, CatalogLocaleResolver.DEFAULT_LOCALE);
@@ -47,12 +48,22 @@ public class HeaderSearchService {
             MediaType type,
             String locale
     ) {
+        return search(query, scope, type, locale, null);
+    }
+
+    public HeaderSearchResponse search(
+            String query,
+            HeaderSearchScope scope,
+            MediaType type,
+            String locale,
+            UUID viewerId
+    ) {
         String trimmedQuery = query.trim();
         String requestedLocale = localeResolver.normalize(locale);
         List<RankedItem> rankedItems = new ArrayList<>(RESULT_LIMIT * 2);
 
         if (scope != HeaderSearchScope.ARTIST) {
-            addMedia(rankedItems, trimmedQuery, type, requestedLocale);
+            addMedia(rankedItems, trimmedQuery, type, requestedLocale, viewerId);
         }
         if (scope != HeaderSearchScope.MEDIA) {
             addArtists(rankedItems, trimmedQuery, type);
@@ -69,7 +80,13 @@ public class HeaderSearchService {
         return new HeaderSearchResponse(items);
     }
 
-    private void addMedia(List<RankedItem> target, String query, MediaType type, String locale) {
+    private void addMedia(
+            List<RankedItem> target,
+            String query,
+            MediaType type,
+            String locale,
+            UUID viewerId
+    ) {
         List<Media> candidates = mediaRepository.findHeaderSearchCandidates(
                 query,
                 type == null ? null : type.name(),
@@ -77,6 +94,9 @@ public class HeaderSearchService {
         );
         Map<UUID, MediaCreditService.CreditSummary> credits = mediaCreditService.summaries(candidates);
         Map<UUID, ResolvedMediaTranslation> translations = translationResolver.resolveAll(candidates, locale);
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = viewerId == null
+                ? Map.of()
+                : userArtworkResolver.resolve(viewerId, candidates);
 
         for (Media media : candidates) {
             ResolvedMediaTranslation translation = translations.get(media.getId());
@@ -86,7 +106,7 @@ public class HeaderSearchService {
                     HeaderSearchEntityType.MEDIA,
                     title,
                     credits.getOrDefault(media.getId(), MediaCreditService.CreditSummary.empty()).creator(),
-                    translation == null ? media.getCoverUrl() : translation.coverUrl(),
+                    effectiveCover(media, translation, artworks.get(media.getId())),
                     media.getReleaseDate() == null ? null : media.getReleaseDate().getYear()
             );
             target.add(new RankedItem(
@@ -95,6 +115,16 @@ public class HeaderSearchService {
                     normalize(title)
             ));
         }
+    }
+
+    private String effectiveCover(
+            Media media,
+            ResolvedMediaTranslation translation,
+            UserArtworkResolver.ResolvedArtwork artwork
+    ) {
+        if (artwork != null && artwork.customCover()) return artwork.coverUrl();
+        if (translation != null && translation.coverUrl() != null) return translation.coverUrl();
+        return media.getCoverUrl();
     }
 
     private void addArtists(List<RankedItem> target, String query, MediaType type) {

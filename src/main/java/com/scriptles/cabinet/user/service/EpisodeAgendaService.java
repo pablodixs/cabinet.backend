@@ -2,8 +2,10 @@ package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.media.entity.ExternalReference;
+import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.service.SeriesTrackingSyncScheduler;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.common.time.CabinetTime;
@@ -20,8 +22,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +37,7 @@ public class EpisodeAgendaService {
     private final SeriesTrackingSyncScheduler syncScheduler;
     private final SeriesSeasonRepository seasonRepository;
     private final ExternalReferenceRepository referenceRepository;
+    private final UserArtworkResolver userArtworkResolver;
 
     @Transactional(readOnly = true)
     public EpisodeAgendaResponse find(UUID userId, int days, int overdueLimit) {
@@ -46,13 +51,20 @@ public class EpisodeAgendaService {
         List<SeriesEpisode> upcoming = watchRepository.findUpcoming(
                 userId, today, today.plusDays(days));
         Set<UUID> watchedIds = watchedIds(userId, upcoming);
+        List<Media> series = Stream.concat(overdue.stream(), upcoming.stream())
+                .map(episode -> episode.getSeason().getSeries())
+                .distinct()
+                .toList();
+        Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks =
+                userArtworkResolver.resolve(userId, series);
         SyncState syncState = syncState(trackedSeriesIds);
         return new EpisodeAgendaResponse(
                 syncState.pending(),
                 syncState.lastSyncedAt(),
                 watchRepository.countOverdue(userId, today),
-                overdue.stream().map(episode -> item(episode, false)).toList(),
-                upcoming.stream().map(episode -> item(episode, watchedIds.contains(episode.getId()))).toList()
+                overdue.stream().map(episode -> item(episode, false, artworks)).toList(),
+                upcoming.stream().map(episode -> item(
+                        episode, watchedIds.contains(episode.getId()), artworks)).toList()
         );
     }
 
@@ -81,13 +93,19 @@ public class EpisodeAgendaService {
         return new SyncState(pending, oldest);
     }
 
-    private EpisodeAgendaResponse.Item item(SeriesEpisode episode, boolean watched) {
+    private EpisodeAgendaResponse.Item item(
+            SeriesEpisode episode,
+            boolean watched,
+            Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks
+    ) {
         SeriesSeason season = episode.getSeason();
+        Media series = season.getSeries();
+        UserArtworkResolver.ResolvedArtwork artwork = artworks.get(series.getId());
         return new EpisodeAgendaResponse.Item(
                 episode.getEpisodeMedia().getId(),
-                season.getSeries().getId(),
-                season.getSeries().getTitle(),
-                season.getSeries().getCoverUrl(),
+                series.getId(),
+                series.getTitle(),
+                artwork == null ? series.getCoverUrl() : artwork.coverUrl(),
                 season.getSeasonNumber(),
                 episode.getEpisodeNumber(),
                 episode.getTitle(),

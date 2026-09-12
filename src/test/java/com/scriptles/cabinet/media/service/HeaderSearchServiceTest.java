@@ -39,6 +39,8 @@ class HeaderSearchServiceTest {
     private MediaTranslationResolver translationResolver;
     @Mock
     private CatalogLocaleResolver localeResolver;
+    @Mock
+    private UserArtworkResolver userArtworkResolver;
 
     private HeaderSearchService service;
 
@@ -49,7 +51,8 @@ class HeaderSearchServiceTest {
                 personRepository,
                 mediaCreditService,
                 translationResolver,
-                localeResolver
+                localeResolver,
+                userArtworkResolver
         );
         org.mockito.Mockito.lenient().when(localeResolver.normalize("pt-BR")).thenReturn("pt-BR");
         org.mockito.Mockito.lenient().when(translationResolver.resolveAll(
@@ -110,6 +113,31 @@ class HeaderSearchServiceTest {
                 "duna", MediaType.BOOK.name(), PageRequest.of(0, 5));
         verify(personRepository).findHeaderSearchCandidates(
                 "duna", MediaType.BOOK.name(), PageRequest.of(0, 5));
+    }
+
+    @Test
+    void personalizedCoverOverridesLocalizedCoverForAuthenticatedViewer() {
+        UUID viewerId = UUID.randomUUID();
+        Media media = media("Duna", "Dune", 2021);
+        var translation = new com.scriptles.cabinet.media.translation.ResolvedMediaTranslation(
+                media.getId(), "Duna", null, null,
+                "https://covers/localized.jpg", "pt-BR", "pt-BR",
+                false, false, null, null);
+        when(mediaRepository.findHeaderSearchCandidates(
+                "duna", null, PageRequest.of(0, 5))).thenReturn(List.of(media));
+        when(mediaCreditService.summaries(List.of(media))).thenReturn(Map.of());
+        when(translationResolver.resolveAll(List.of(media), "pt-BR"))
+                .thenReturn(Map.of(media.getId(), translation));
+        when(userArtworkResolver.resolve(viewerId, List.of(media))).thenReturn(Map.of(
+                media.getId(), new UserArtworkResolver.ResolvedArtwork(
+                        "https://covers/personal.jpg", null, true, false)));
+
+        HeaderSearchResponse response = service.search(
+                "duna", HeaderSearchScope.MEDIA, null, "pt-BR", viewerId);
+
+        assertThat(response.items()).singleElement().satisfies(item ->
+                assertThat(item.coverUrl()).isEqualTo("https://covers/personal.jpg"));
+        verify(userArtworkResolver).resolve(viewerId, List.of(media));
     }
 
     @Test
