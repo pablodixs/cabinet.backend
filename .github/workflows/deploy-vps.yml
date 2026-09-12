@@ -28,7 +28,7 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: ./mvnw --batch-mode --no-transfer-progress test
+        run: sh ./mvnw --batch-mode --no-transfer-progress test
 
       - name: Package source
         run: tar --exclude=.git --exclude=target --exclude='.local' -czf /tmp/cabinet-source.tar.gz .
