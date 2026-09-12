@@ -137,6 +137,8 @@ public class UserMediaArtworkService {
                 context.media().getBackdropUrl(),
                 preference == null ? null : preference.getCoverKey(),
                 preference == null ? null : preference.getBackdropKey(),
+                preference == null ? null : preference.getCoverUrl(),
+                preference == null ? null : preference.getBackdropUrl(),
                 context.catalog().covers().stream().map(ArtworkOptionResponse::from).toList(),
                 context.catalog().backdrops().stream().map(ArtworkOptionResponse::from).toList()
         );

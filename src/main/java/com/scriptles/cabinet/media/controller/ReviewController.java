@@ -1,9 +1,10 @@
 package com.scriptles.cabinet.media.controller;
 
-import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
 import com.scriptles.cabinet.media.dto.response.PopularReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
+import com.scriptles.cabinet.media.dto.response.ReviewWithMediaResponse;
+import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.service.ReviewService;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -95,6 +96,15 @@ public class ReviewController {
         return reviewService.findMine(user.id(), mediaId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/v1/me/reviews")
+    public PageResponse<ReviewWithMediaResponse> findMinePage(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
+    ) {
+        return reviewService.findMine(user.id(), page, size);
     }
 
     @PutMapping("/v1/me/reviews/{mediaId}")

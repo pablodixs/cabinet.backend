@@ -6,12 +6,14 @@ import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.DuplicateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.ReorderMediaListItemsRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListPreviewResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListMembershipResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicMediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.PublicListSearchResponse;
@@ -90,6 +92,14 @@ public class MediaListService {
                         itemCounts.getOrDefault(list.getId(), 0L),
                         previewItems.getOrDefault(list.getId(), List.of())
                 ))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<MediaListMembershipResponse> findMemberships(UUID userId, UUID mediaId) {
+        return mediaListItemRepository.findByMediaIdAndListOwnerId(mediaId, userId)
+                .stream()
+                .map(item -> new MediaListMembershipResponse(item.getList().getId(), item.getId()))
                 .toList();
     }
 
@@ -570,6 +580,31 @@ public class MediaListService {
         }
         mediaListItemRepository.delete(item);
         mediaListItemRepository.decrementPositionsAfter(listId, removedPosition);
+        touch(list);
+    }
+
+    @Transactional
+    public void reorderItems(UUID userId, UUID listId, ReorderMediaListItemsRequest request) {
+        MediaList list = findOwnedList(userId, listId);
+        if (!list.isOrdered()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "LIST_NOT_ORDERED",
+                    "Esta lista não permite ordenação manual");
+        }
+        List<MediaListItem> items = mediaListItemRepository.findAllWithMediaByListId(listId);
+        Set<UUID> current = items.stream().map(MediaListItem::getId).collect(Collectors.toSet());
+        List<UUID> requested = request.itemIds();
+        if (requested.size() != current.size()
+                || new java.util.HashSet<>(requested).size() != requested.size()
+                || !current.equals(new java.util.HashSet<>(requested))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_LIST_ORDER",
+                    "A ordem deve conter todos os itens da lista uma única vez");
+        }
+        Map<UUID, MediaListItem> byId = items.stream()
+                .collect(Collectors.toMap(MediaListItem::getId, item -> item));
+        for (int index = 0; index < requested.size(); index++) {
+            byId.get(requested.get(index)).setPosition(index + 1);
+        }
+        mediaListItemRepository.saveAllAndFlush(items);
         touch(list);
     }
 

@@ -49,6 +49,17 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     Optional<Review> findByActivityId(UUID activityId);
 
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
+    @Query("""
+            select review from Review review
+            where review.user.id = :userId
+              and review.content is not null
+              and trim(review.content) <> ''
+            order by coalesce(review.updatedAt, review.publishedAt, review.createdAt) desc,
+                     review.id desc
+            """)
+    Page<Review> findMine(@Param("userId") UUID userId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
     @Query("select r from Review r where r.id = :reviewId and r.visibility = :visibility")
     Optional<Review> findByIdAndVisibility(@Param("reviewId") UUID reviewId,
                                            @Param("visibility") Visibility visibility);

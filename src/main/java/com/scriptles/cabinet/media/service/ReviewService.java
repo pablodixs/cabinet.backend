@@ -7,6 +7,7 @@ import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.PopularReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewLikerResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
+import com.scriptles.cabinet.media.dto.response.ReviewWithMediaResponse;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
@@ -160,6 +161,24 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<ReviewWithMediaResponse> findMine(UUID userId, int page, int size) {
+        Page<Review> reviews = reviewRepository.findMine(
+                userId,
+                PageRequest.of(page, size)
+        );
+        List<Media> media = reviews.getContent().stream().map(Review::getMedia).toList();
+        Map<UUID, MediaSearchItemResponse> mediaById = mediaSearchItemAssembler.fromImported(media)
+                .stream()
+                .collect(Collectors.toMap(MediaSearchItemResponse::id, item -> item));
+        List<ReviewResponse> reviewResponses = responses(reviews.getContent(), userId);
+        List<ReviewWithMediaResponse> items = reviewResponses.stream()
+                .map(review -> new ReviewWithMediaResponse(review, mediaById.get(review.mediaId())))
+                .toList();
+        return new PageResponse<>(items, reviews.getNumber(), reviews.getSize(),
+                reviews.getTotalElements(), reviews.getTotalPages());
+    }
+
+    @Transactional(readOnly = true)
     public Optional<ReviewResponse> findByUserAndMedia(
             String username,
             UUID mediaId,
@@ -253,6 +272,16 @@ public class ReviewService {
     public void delete(UUID userId, UUID mediaId) {
         reviewRepository.findByUserIdAndMediaId(userId, mediaId)
                 .ifPresent(review -> {
+                    UserMediaActivity activity = review.getActivity();
+                    if (activity != null) {
+                        // A diary log is an independent record. Removing its
+                        // review must leave the log in place, but clear the
+                        // synchronized review fields and detach the relation.
+                        activity.setReviewContent(null);
+                        activity.setContainsSpoilers(false);
+                        review.setActivity(null);
+                        userMediaActivityRepository.save(activity);
+                    }
                     reviewLikeRepository.deleteByReviewId(review.getId());
                     reviewRepository.delete(review);
                 });

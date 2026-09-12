@@ -17,6 +17,7 @@ import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.media.validation.RatingValue;
 import com.scriptles.cabinet.user.dto.request.CreateDiaryEntryRequest;
+import com.scriptles.cabinet.user.dto.request.UpdateDiaryEntryRequest;
 import com.scriptles.cabinet.user.dto.response.DiaryEntryResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
@@ -151,6 +152,50 @@ public class DiaryService {
         activityRepository.delete(activity);
     }
 
+    @Transactional
+    public DiaryEntryResponse update(UUID userId, UUID entryId, UpdateDiaryEntryRequest request) {
+        UserMediaActivity activity = activityRepository.findByIdAndUserId(entryId, userId)
+                .orElseThrow(() -> notFound("DIARY_ENTRY_NOT_FOUND", "Registro do diário não encontrado"));
+        if (!DIARY_TYPES.contains(activity.getType())) {
+            throw notFound("DIARY_ENTRY_NOT_FOUND", "Registro do diário não encontrado");
+        }
+        validate(request);
+
+        User user = findUser(userId);
+        Media media = activity.getMedia();
+        mediaConsumptionPolicy.ensureReleased(media);
+        Rating rating = upsertCanonicalRating(user, media, request.rating());
+        String reviewContent = normalizeReview(request.review());
+
+        activity.setType(request.reconsumption()
+                ? reconsumedType(activity.getType())
+                : loggedType(activity.getType()));
+        activity.setOccurredOn(request.occurredOn());
+        activity.setRating(request.rating() == null ? null : rating.getValue());
+        activity.setReviewContent(reviewContent);
+        activity.setContainsSpoilers(reviewContent != null && Boolean.TRUE.equals(request.containsSpoilers()));
+        activity.setVisibility(request.visibility());
+        activity.setTags(normalizeTags(request.tags()));
+        userTagService.ensureTags(user, activity.getTags());
+        activity = activityRepository.saveAndFlush(activity);
+
+        Review review = reviewRepository.findByActivityId(entryId).orElse(null);
+        if (reviewContent != null) {
+            upsertCanonicalReview(user, media, rating, activity, reviewContent,
+                    activity.getContainsSpoilers(), request.visibility());
+        } else if (review != null) {
+            review.setActivity(null);
+            review.setContent(null);
+            review.setContainsSpoilers(false);
+            reviewRepository.saveAndFlush(review);
+        }
+        return DiaryEntryResponse.from(
+                activity,
+                findReference(media.getId()),
+                resolveArtwork(userId, List.of(media)).get(media.getId()).coverUrl()
+        );
+    }
+
     private PageResponse<DiaryEntryResponse> findEntries(
             UUID userId,
             boolean includePrivate,
@@ -250,6 +295,30 @@ public class DiaryService {
                     "O registro deve ser público ou privado");
         }
         if (request.rating() != null) RatingValue.normalize(request.rating());
+    }
+
+    private void validate(UpdateDiaryEntryRequest request) {
+        if (request.occurredOn().isAfter(CabinetTime.today())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DIARY_DATE",
+                    "A data do registro não pode estar no futuro");
+        }
+        if (request.visibility() != Visibility.PUBLIC
+                && request.visibility() != Visibility.FOLLOWERS
+                && request.visibility() != Visibility.PRIVATE) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DIARY_VISIBILITY",
+                    "O registro deve ser público ou privado");
+        }
+        if (request.rating() != null) RatingValue.normalize(request.rating());
+    }
+
+    private ProfileActivityType reconsumedType(ProfileActivityType current) {
+        return current == ProfileActivityType.WATCHED || current == ProfileActivityType.REWATCHED
+                ? ProfileActivityType.REWATCHED : ProfileActivityType.RELOGGED;
+    }
+
+    private ProfileActivityType loggedType(ProfileActivityType current) {
+        return current == ProfileActivityType.WATCHED || current == ProfileActivityType.REWATCHED
+                ? ProfileActivityType.WATCHED : ProfileActivityType.LOGGED;
     }
 
     private String normalizeReview(String review) {

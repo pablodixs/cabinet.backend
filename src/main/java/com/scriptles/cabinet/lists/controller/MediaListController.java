@@ -4,10 +4,12 @@ import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.DuplicateMediaListRequest;
 import com.scriptles.cabinet.lists.dto.request.UpdateMediaListRequest;
+import com.scriptles.cabinet.lists.dto.request.ReorderMediaListItemsRequest;
 import com.scriptles.cabinet.lists.dto.response.MediaListDetailsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListBackdropOptionsResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListItemResponse;
 import com.scriptles.cabinet.lists.dto.response.MediaListResponse;
+import com.scriptles.cabinet.lists.dto.response.MediaListMembershipResponse;
 import com.scriptles.cabinet.lists.service.MediaListService;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -38,6 +40,14 @@ public class MediaListController {
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
         return mediaListService.findMine(user.id());
+    }
+
+    @GetMapping("/memberships/{mediaId}")
+    public List<MediaListMembershipResponse> findMemberships(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID mediaId
+    ) {
+        return mediaListService.findMemberships(user.id(), mediaId);
     }
 
     @PostMapping
@@ -117,6 +127,16 @@ public class MediaListController {
             @PathVariable UUID itemId
     ) {
         mediaListService.removeItem(user.id(), listId, itemId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{listId}/items/order")
+    public ResponseEntity<Void> reorderItems(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID listId,
+            @RequestBody @Valid ReorderMediaListItemsRequest request
+    ) {
+        mediaListService.reorderItems(user.id(), listId, request);
         return ResponseEntity.noContent().build();
     }
 }

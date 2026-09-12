@@ -3,6 +3,7 @@ package com.scriptles.cabinet.user.dto.response;
 import java.util.List;
 import java.util.UUID;
 import com.scriptles.cabinet.user.enums.FollowState;
+import com.scriptles.cabinet.user.enums.Visibility;
 
 public record UserProfileResponse(
         UUID id,
@@ -21,6 +22,7 @@ public record UserProfileResponse(
         long followerCount,
         long followingCount,
         boolean privateProfile,
+        Visibility profileVisibility,
         FollowState followState,
         boolean followsViewer,
         ProfileRatingSummaryResponse ratings
@@ -59,6 +61,7 @@ public record UserProfileResponse(
     ) {
         this(id, username, displayName, biography, avatarUrl, pro, ownProfile,
                 libraryCount, completedCount, inProgressCount, stats, recentItems, List.of(),
-                0, 0, false, FollowState.NONE, false, ProfileRatingSummaryResponse.empty());
+                0, 0, false, Visibility.PUBLIC, FollowState.NONE, false,
+                ProfileRatingSummaryResponse.empty());
     }
 }

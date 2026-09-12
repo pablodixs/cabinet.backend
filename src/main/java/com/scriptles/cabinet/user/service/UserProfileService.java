@@ -234,6 +234,9 @@ public class UserProfileService {
                 profileUser.getFollowersCount(),
                 profileUser.getFollowingCount(),
                 isPrivateProfile(profileUser),
+                profileUser.getProfileVisibility() == null
+                        ? Visibility.PUBLIC
+                        : profileUser.getProfileVisibility(),
                 relationship.state(),
                 relationship.followsViewer(),
                 ratings
