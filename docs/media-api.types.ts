@@ -52,6 +52,25 @@ export interface ArtistWork {
   credits: ArtistWorkCredit[];
 }
 
+export interface PersonWorkCredit {
+  role: CreditRole;
+  characterName: string | null;
+}
+
+export interface PersonWork {
+  id: string | null;
+  externalId: string;
+  source: ExternalSource;
+  type: MediaType;
+  title: string;
+  coverUrl: string | null;
+  releaseDate: string | null;
+  imported: boolean;
+  credits: PersonWorkCredit[];
+}
+
+export type PersonWorksPage = PageResponse<PersonWork>;
+
 export type MoreByState = "READY" | "EMPTY" | "UNSUPPORTED";
 
 export interface MoreByPerson {

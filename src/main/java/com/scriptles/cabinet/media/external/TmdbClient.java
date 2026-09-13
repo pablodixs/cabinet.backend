@@ -128,17 +128,8 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
     public PersonWorks findPersonWorks(String personExternalId, String language) {
         JsonNode body = get("/person/" + personExternalId + "/movie_credits", null, language, false, null);
         List<Work> works = new ArrayList<>();
-        for (JsonNode credit : body.path("crew")) {
-            if (!"Director".equalsIgnoreCase(text(credit, "job"))
-                    || credit.path("adult").asBoolean(false)
-                    || text(credit, "id") == null) {
-                continue;
-            }
-            works.add(new Work(
-                    toMedia(credit, MediaType.MOVIE, false),
-                    credit.path("popularity").asDouble(0)
-            ));
-        }
+        addPersonWorks(works, body.path("cast"), CreditRole.ACTOR, true);
+        addPersonWorks(works, body.path("crew"), null, false);
         works.sort(java.util.Comparator
                 .comparingDouble(Work::relevance).reversed()
                 .thenComparing(
@@ -148,6 +139,38 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         java.util.LinkedHashMap<String, Work> distinct = new java.util.LinkedHashMap<>();
         works.forEach(work -> distinct.putIfAbsent(work.media().externalId(), work));
         return new PersonWorks(List.copyOf(distinct.values()), false);
+    }
+
+    private void addPersonWorks(
+            List<Work> works,
+            JsonNode credits,
+            CreditRole fixedRole,
+            boolean cast
+    ) {
+        for (JsonNode credit : credits) {
+            CreditRole role = cast ? fixedRole : personWorkRole(text(credit, "job"));
+            if (role == null
+                    || credit.path("adult").asBoolean(false)
+                    || text(credit, "id") == null) {
+                continue;
+            }
+            works.add(new Work(
+                    toMedia(credit, MediaType.MOVIE, false),
+                    role,
+                    cast ? text(credit, "character") : null,
+                    credit.path("popularity").asDouble(0)
+            ));
+        }
+    }
+
+    private CreditRole personWorkRole(String job) {
+        if (job == null) {
+            return null;
+        }
+        return switch (job.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "director" -> CreditRole.DIRECTOR;
+            default -> null;
+        };
     }
 
     public Optional<String> findImdbId(MediaType mediaType, String externalId) {

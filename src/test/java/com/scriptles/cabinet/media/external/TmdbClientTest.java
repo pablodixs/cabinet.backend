@@ -165,6 +165,35 @@ class TmdbClientTest {
     }
 
     @Test
+    void returnsCastAsActorAndPreservesCharacterName() {
+        server.expect(requestTo(startsWith(BASE_URL + "/person/287/movie_credits")))
+                .andExpect(queryParam("api_key", "api-key"))
+                .andExpect(queryParam("language", "pt-BR"))
+                .andRespond(withSuccess("""
+                        {
+                          "cast": [
+                            {"id": 550, "title": "Fight Club", "character": "Tyler Durden",
+                             "release_date": "1999-01-01", "popularity": 20},
+                            {"id": 551, "title": "Seven", "adult": true, "popularity": 100}
+                          ],
+                          "crew": [
+                            {"id": 807, "title": "Se7en", "job": "Director", "popularity": 10},
+                            {"id": 550, "title": "Fight Club", "job": "Director", "popularity": 1}
+                          ]
+                        }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        ExternalPersonWorksProvider.PersonWorks works = client.findPersonWorks("287", "pt-BR");
+
+        assertThat(works.items()).extracting(work -> work.media().externalId())
+                .containsExactly("550", "807");
+        assertThat(works.items().getFirst().role()).isEqualTo(CreditRole.ACTOR);
+        assertThat(works.items().getFirst().characterName()).isEqualTo("Tyler Durden");
+        assertThat(works.items().get(1).role()).isEqualTo(CreditRole.DIRECTOR);
+        server.verify();
+    }
+
+    @Test
     void resolvesTitleImdbIdentityFromExternalIds() {
         server.expect(requestTo(startsWith(BASE_URL + "/movie/550/external_ids")))
                 .andExpect(queryParam("api_key", "api-key"))

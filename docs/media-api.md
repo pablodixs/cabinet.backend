@@ -334,18 +334,48 @@ not load the complete crew to return the requested page.
 }
 ```
 
-## Artists
+## People and works
 
-Imported credits create artist profiles. Both artist endpoints are public:
+Imported credits create generic person profiles. The people endpoints are public:
 
 ```http
-GET /v1/artists/{artistId}
-GET /v1/artists/{artistId}/works?page=0&size=24
+GET /v1/people/{personId}
+GET /v1/people/{personId}/works?page=0&size=24&language=pt-BR&type=MOVIE
 ```
 
-The details response contains the artist name, biography and image when available, external identity, distinct work
-count, and the credit roles found in Cabinet. The works endpoint is paginated, lists each imported media item once,
-and includes every role and character associated with the artist in that work. `size` accepts values from 1 to 40.
+The details response contains the person's name, biography and image when available, external identity, distinct work
+count, and the credit roles found in Cabinet. The works endpoint combines imported media with TMDB and MusicBrainz
+catalogs for every external identity attached to the person. Imported media have priority when an external reference
+matches `(source, externalId)`, so each work is listed once. Local credits preserve every role and character; external
+previews expose the role returned by the provider. `language` defaults to `pt-BR`, `type` is optional, and `size`
+accepts values from 1 to 40.
+
+Supported examples are:
+
+```http
+GET /v1/people/{personId}/works
+GET /v1/people/{personId}/works?type=MOVIE
+GET /v1/people/{personId}/works?type=ALBUM&language=en-US
+```
+
+Each work has the following shape:
+
+```json
+{
+  "id": null,
+  "externalId": "550",
+  "source": "TMDB",
+  "type": "MOVIE",
+  "title": "Fight Club",
+  "coverUrl": null,
+  "releaseDate": "1999-10-15",
+  "imported": false,
+  "credits": [{"role": "ACTOR", "characterName": "Tyler Durden"}]
+}
+```
+
+The deprecated `/v1/artists/**` alias remains available for existing clients and returns the legacy artist-work
+shape. New clients should use `/v1/people/**`.
 
 Artist identities from TMDB and MusicBrainz are reconciled through their exact Wikidata QID. When both providers
 point to the same QID, Cabinet keeps one artist profile with references to both providers and combines all imported
@@ -353,12 +383,7 @@ works. Names alone are never used to merge people. Identity lookup is best-effor
 not prevent media import; importing an existing media item again also reconciles legacy credits incrementally.
 
 `/v1/artists` is a compatibility alias for the generic people resource. Alias responses include `Deprecation: true`
-and a `Link` header pointing to the successor route:
-
-```http
-GET /v1/people/{personId}
-GET /v1/people/{personId}/works?page=0&size=24
-```
+and a `Link` header pointing to the successor route.
 
 ## Awards
 

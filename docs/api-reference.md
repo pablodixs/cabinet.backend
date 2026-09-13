@@ -115,7 +115,7 @@ Future/unreleased media reject consumption, rating, and review writes with code 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
 | `GET /v1/people/{personId}` | Public | Person details. |
-| `GET /v1/people/{personId}/works` | Public | `page=0`, `size=24` (max 40). |
+| `GET /v1/people/{personId}/works` | Public | Unified local/provider works; optional `language` and `type`; `page=0`, `size=24` (max 40). |
 | `GET /v1/people/{personId}/awards` | Public | Optional `result`; `page=0`, `size=20` (max 100); may return `202`. |
 
 The same three routes exist under `/v1/artists/{artistId}`. They return `Deprecation: true` and a `Link` header pointing to `/v1/people/**`.

@@ -91,7 +91,7 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
         for (JsonNode item : body.path("release-groups")) {
             ExternalMedia album = toAlbum(item, List.of(), false);
             if (album.externalId() != null) {
-                works.add(new Work(album, 0));
+                works.add(new Work(album, CreditRole.ARTIST, null, 0));
             }
         }
         works.sort(java.util.Comparator

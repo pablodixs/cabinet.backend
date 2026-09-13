@@ -19,7 +19,7 @@ import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.PersonExternalReferenceRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -34,7 +34,6 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class MoreByService {
     private static final int LOCAL_FETCH_LIMIT = 120;
@@ -46,6 +45,50 @@ public class MoreByService {
     private final PersonWorksCatalogService catalogService;
     private final MediaSearchItemAssembler itemAssembler;
     private final AlbumCoverService albumCoverService;
+    private final PersonExternalIdentityResolver identityResolver;
+
+    @Autowired
+    public MoreByService(
+            MediaRepository mediaRepository,
+            MediaCreditRepository mediaCreditRepository,
+            PersonExternalReferenceRepository personExternalReferenceRepository,
+            ExternalReferenceRepository externalReferenceRepository,
+            PersonWorksCatalogService catalogService,
+            MediaSearchItemAssembler itemAssembler,
+            AlbumCoverService albumCoverService,
+            PersonExternalIdentityResolver identityResolver
+    ) {
+        this.mediaRepository = mediaRepository;
+        this.mediaCreditRepository = mediaCreditRepository;
+        this.personExternalReferenceRepository = personExternalReferenceRepository;
+        this.externalReferenceRepository = externalReferenceRepository;
+        this.catalogService = catalogService;
+        this.itemAssembler = itemAssembler;
+        this.albumCoverService = albumCoverService;
+        this.identityResolver = identityResolver;
+    }
+
+    /** Compatibility constructor for isolated callers of the legacy service. */
+    public MoreByService(
+            MediaRepository mediaRepository,
+            MediaCreditRepository mediaCreditRepository,
+            PersonExternalReferenceRepository personExternalReferenceRepository,
+            ExternalReferenceRepository externalReferenceRepository,
+            PersonWorksCatalogService catalogService,
+            MediaSearchItemAssembler itemAssembler,
+            AlbumCoverService albumCoverService
+    ) {
+        this(
+                mediaRepository,
+                mediaCreditRepository,
+                personExternalReferenceRepository,
+                externalReferenceRepository,
+                catalogService,
+                itemAssembler,
+                albumCoverService,
+                null
+        );
+    }
 
     public MoreByResponse find(UUID mediaId, String language, int limit) {
         return find(mediaId, language, limit, null, false);
@@ -177,6 +220,9 @@ public class MoreByService {
     }
 
     private String externalId(Person person, MediaCredit credit, ExternalSource source) {
+        if (identityResolver != null) {
+            return identityResolver.findExternalId(person, credit, source).orElse(null);
+        }
         String referenced = personExternalReferenceRepository.findFirstByPersonIdAndSource(person.getId(), source)
                 .map(PersonExternalReference::getExternalId)
                 .filter(this::hasText)

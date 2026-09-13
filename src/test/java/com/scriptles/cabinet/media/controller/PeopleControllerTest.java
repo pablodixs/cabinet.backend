@@ -1,10 +1,16 @@
 package com.scriptles.cabinet.media.controller;
 
+import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
+import com.scriptles.cabinet.media.dto.response.PersonWorkResponse;
 import com.scriptles.cabinet.media.enums.AwardSectionState;
 import com.scriptles.cabinet.media.enums.AwardSubjectType;
+import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ArtistService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
+import com.scriptles.cabinet.media.service.PersonWorksService;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +41,34 @@ class PeopleControllerTest {
     @MockitoBean
     private AwardQueryService awardQueryService;
 
+    @MockitoBean
+    private PersonWorksService personWorksService;
+
+    @Test
+    void returnsUnifiedPersonWorksWithFiltersAndPagination() throws Exception {
+        UUID personId = UUID.randomUUID();
+        PersonWorkResponse work = new PersonWorkResponse(
+                null, "550", ExternalSource.TMDB, MediaType.MOVIE, "Fight Club", null,
+                null, false, List.of(new PersonWorkResponse.CreditResponse(CreditRole.ACTOR, "Tyler Durden"))
+        );
+        when(personWorksService.findWorks(personId, 1, 12, "en-US", MediaType.MOVIE))
+                .thenReturn(new PageResponse<>(List.of(work), 1, 12, 13, 2));
+
+        mockMvc.perform(get("/v1/people/{personId}/works", personId)
+                        .param("page", "1")
+                        .param("size", "12")
+                        .param("language", "en-US")
+                        .param("type", "MOVIE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].externalId").value("550"))
+                .andExpect(jsonPath("$.items[0].credits[0].role").value("ACTOR"))
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(12))
+                .andExpect(jsonPath("$.totalElements").value(13));
+
+        verify(personWorksService).findWorks(personId, 1, 12, "en-US", MediaType.MOVIE);
+    }
+
     @Test
     void returnsAcceptedWhilePersonAwardsAreLoading() throws Exception {
         UUID personId = UUID.randomUUID();
@@ -58,6 +92,14 @@ class PeopleControllerTest {
         mockMvc.perform(get("/v1/people/{personId}/awards", UUID.randomUUID())
                         .param("page", "-1")
                         .param("size", "101"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void validatesWorksPagination() throws Exception {
+        mockMvc.perform(get("/v1/people/{personId}/works", UUID.randomUUID())
+                        .param("page", "-1")
+                        .param("size", "41"))
                 .andExpect(status().isBadRequest());
     }
 }

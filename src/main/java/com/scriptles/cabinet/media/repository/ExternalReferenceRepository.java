@@ -20,6 +20,8 @@ public interface ExternalReferenceRepository
 
     List<ExternalReference> findAllByMediaId(UUID mediaId);
 
+    List<ExternalReference> findAllByMediaIdIn(Collection<UUID> mediaIds);
+
     List<ExternalReference> findAllByMediaIdInAndPrimaryReferenceTrue(
             Collection<UUID> mediaIds
     );
