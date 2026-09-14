@@ -1,0 +1,4 @@
+package com.scriptles.cabinet.catalog.entity;
+import jakarta.persistence.*; import lombok.Getter; import lombok.NoArgsConstructor; import lombok.Setter; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="collection_sections", uniqueConstraints=@UniqueConstraint(name="uk_collection_section_key", columnNames={"collection_id","section_key"})) @Getter @Setter @NoArgsConstructor
+public class CollectionSection { @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="collection_id",nullable=false) private Collection collection; @Column(name="section_key",nullable=false,length=100) private String key; @Column(length=200) private String title; @Column(nullable=false) private int position; private Instant createdAt; private Instant updatedAt; }
