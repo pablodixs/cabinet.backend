@@ -88,6 +88,8 @@ public class SecurityConfig {
                                 "/v1/media/*/lists/**",
                                 "/v1/media/*/reviews",
                                 "/v1/media/*/reviews/**",
+                                "/v1/collections/**",
+                                "/v1/franchises/**",
                                 "/v1/lists/*",
                                 "/v1/lists/search",
                                 "/v1/lists/*/comments",
