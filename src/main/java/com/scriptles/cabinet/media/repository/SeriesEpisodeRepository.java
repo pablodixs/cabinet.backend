@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface SeriesEpisodeRepository extends JpaRepository<SeriesEpisode, UUID> {
+    @EntityGraph(attributePaths = {"season", "season.series"})
+    List<SeriesEpisode> findAllByEpisodeMediaIdIn(java.util.Collection<UUID> episodeMediaIds);
     List<SeriesEpisode> findAllBySeasonIdOrderByEpisodeNumberAsc(UUID seasonId);
     Optional<SeriesEpisode> findBySeasonIdAndEpisodeNumber(UUID seasonId, Integer episodeNumber);
     Optional<SeriesEpisode> findByEpisodeMediaId(UUID mediaId);

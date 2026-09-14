@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +16,35 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface UserEpisodeWatchRepository extends JpaRepository<UserEpisodeWatch, UUID> {
+    @Query("""
+            select watch
+            from UserEpisodeWatch watch
+            join fetch watch.episode episode
+            join fetch episode.season season
+            join fetch season.series series
+            join fetch episode.episodeMedia episodeMedia
+            where watch.user.id = :userId
+              and watch.watchedAt >= :fromInstant
+              and watch.watchedAt < :toInstant
+            order by watch.watchedAt asc, watch.id asc
+            """)
+    List<UserEpisodeWatch> findConsumptionWatches(
+            @Param("userId") UUID userId,
+            @Param("fromInstant") Instant fromInstant,
+            @Param("toInstant") Instant toInstant
+    );
+
+    @Query("""
+            select watch
+            from UserEpisodeWatch watch
+            join fetch watch.episode episode
+            join fetch episode.season season
+            join fetch season.series series
+            join fetch episode.episodeMedia episodeMedia
+            where watch.user.id = :userId
+            order by watch.watchedAt asc, watch.id asc
+            """)
+    List<UserEpisodeWatch> findAllConsumptionWatches(@Param("userId") UUID userId);
     Optional<UserEpisodeWatch> findByUserIdAndEpisodeId(UUID userId, UUID episodeId);
 
     boolean existsByUserIdAndEpisodeId(UUID userId, UUID episodeId);
