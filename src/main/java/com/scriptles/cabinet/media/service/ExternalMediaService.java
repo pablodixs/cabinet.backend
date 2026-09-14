@@ -92,6 +92,12 @@ public class ExternalMediaService {
     private final UserArtworkResolver userArtworkResolver;
     private final CatalogImportFacade catalogImportFacade;
     private final CatalogSnapshotCache catalogSnapshotCache;
+    private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setMetadataRefreshScheduler(CatalogMetadataRefreshScheduler metadataRefreshScheduler) {
+        this.metadataRefreshScheduler = metadataRefreshScheduler;
+    }
 
     @Transactional(readOnly = true)
     public List<ExternalMediaResponse> search(MediaType mediaType, String query, String language, int offset, int limit) {
@@ -117,6 +123,9 @@ public class ExternalMediaService {
                 .findBySourceAndExternalId(source, externalId)
                 .orElse(null);
         if (storedReference != null) {
+            if (metadataRefreshScheduler != null) {
+                metadataRefreshScheduler.scheduleIfStale(storedReference.getMedia().getId());
+            }
             return mediaQueryService.findLegacyDetails(storedReference.getMedia().getId());
         }
 

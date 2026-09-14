@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.entity;
 
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.ProviderAvailability;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -60,6 +61,12 @@ public class ExternalReference {
     private boolean primaryReference;
 
     private Instant lastSyncedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ProviderAvailability providerAvailability = ProviderAvailability.AVAILABLE;
+
+    private Instant providerUnavailableAt;
 
     @CreationTimestamp
     private Instant createdAt;

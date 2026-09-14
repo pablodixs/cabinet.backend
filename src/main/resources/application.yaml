@@ -50,6 +50,19 @@ catalog:
   outbox:
     poll-delay: ${CATALOG_OUTBOX_POLL_DELAY:1000}
     lock-timeout: ${CATALOG_OUTBOX_LOCK_TIMEOUT:15m}
+  tmdb-changes:
+    cron: ${CATALOG_TMDB_CHANGES_CRON:0 30 3 * * *}
+    zone: ${CATALOG_TMDB_CHANGES_ZONE:America/Sao_Paulo}
+    batch-size: ${CATALOG_TMDB_CHANGES_BATCH_SIZE:500}
+    initial-window: ${CATALOG_TMDB_CHANGES_INITIAL_WINDOW:2d}
+  staleness:
+    movie:
+      future: ${CATALOG_STALE_MOVIE_FUTURE:24h}
+      recent: ${CATALOG_STALE_MOVIE_RECENT:3d}
+      catalog: ${CATALOG_STALE_MOVIE_CATALOG:30d}
+    series:
+      active: ${CATALOG_STALE_SERIES_ACTIVE:24h}
+      inactive: ${CATALOG_STALE_SERIES_INACTIVE:30d}
 
 app:
   cors:

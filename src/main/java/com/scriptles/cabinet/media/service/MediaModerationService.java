@@ -8,6 +8,9 @@ import com.scriptles.cabinet.media.entity.AlbumDetails;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaMetadataRevision;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.enums.CatalogSyncReason;
+import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.MediaMetadataRevisionRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
@@ -37,6 +40,29 @@ public class MediaModerationService {
     private final MediaMetadataRevisionRepository revisionRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
+    private ExternalReferenceRepository externalReferenceRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setRefreshDependencies(
+            CatalogMetadataRefreshScheduler metadataRefreshScheduler,
+            ExternalReferenceRepository externalReferenceRepository
+    ) {
+        this.metadataRefreshScheduler = metadataRefreshScheduler;
+        this.externalReferenceRepository = externalReferenceRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public void requestRefresh(UUID mediaId) {
+        Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Obra não encontrada"));
+        if ((media.getType() != MediaType.MOVIE && media.getType() != MediaType.SERIES)
+                || externalReferenceRepository.findByMediaIdAndSource(mediaId, ExternalSource.TMDB).isEmpty()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TMDB_REFRESH_UNAVAILABLE",
+                    "A mídia não possui uma referência TMDB suportada");
+        }
+        metadataRefreshScheduler.schedule(mediaId, CatalogSyncReason.MANUAL);
+    }
 
     @Transactional(readOnly = true)
     public PageResponse<ModerationMediaResponse> findMedia(String query, int page, int size) {

@@ -119,6 +119,51 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         return body.isMissingNode() || body.isEmpty() ? Optional.empty() : Optional.of(toMedia(body, mediaType, true));
     }
 
+    public TmdbChangePage findChangedMoviePage(LocalDate startDate, LocalDate endDate, int page) {
+        return findChangePage("/movie/changes", startDate, endDate, page);
+    }
+
+    public TmdbChangePage findChangedSeriesPage(LocalDate startDate, LocalDate endDate, int page) {
+        return findChangePage("/tv/changes", startDate, endDate, page);
+    }
+
+    public List<String> findChangedMovieIds(LocalDate startDate, LocalDate endDate) {
+        return findAllChangedIds(startDate, endDate, MediaType.MOVIE);
+    }
+
+    public List<String> findChangedSeriesIds(LocalDate startDate, LocalDate endDate) {
+        return findAllChangedIds(startDate, endDate, MediaType.SERIES);
+    }
+
+    private List<String> findAllChangedIds(LocalDate startDate, LocalDate endDate, MediaType type) {
+        List<String> ids = new ArrayList<>();
+        TmdbChangePage first = type == MediaType.MOVIE
+                ? findChangedMoviePage(startDate, endDate, 1)
+                : findChangedSeriesPage(startDate, endDate, 1);
+        ids.addAll(first.ids());
+        for (int page = 2; page <= first.totalPages(); page++) {
+            TmdbChangePage next = type == MediaType.MOVIE
+                    ? findChangedMoviePage(startDate, endDate, page)
+                    : findChangedSeriesPage(startDate, endDate, page);
+            ids.addAll(next.ids());
+        }
+        return List.copyOf(ids);
+    }
+
+    private TmdbChangePage findChangePage(String path, LocalDate startDate, LocalDate endDate, int page) {
+        JsonNode body = get(path, null, null, false, page, startDate, endDate);
+        List<String> ids = new ArrayList<>();
+        body.path("results").forEach(item -> {
+            String id = item.path("id").asText(null);
+            if (id != null) ids.add(id);
+        });
+        return new TmdbChangePage(List.copyOf(ids), body.path("page").asInt(page),
+                body.path("total_pages").asInt(1));
+    }
+
+    public record TmdbChangePage(List<String> ids, int page, int totalPages) {
+    }
+
     public Optional<String> findPersonWikidataId(String personId) {
         JsonNode body = get("/person/" + personId + "/external_ids", null, null, false, null);
         return Optional.ofNullable(text(body, "wikidata_id"));
@@ -225,6 +270,18 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
     }
 
     private JsonNode get(String path, String query, String language, boolean includeCredits, Integer page) {
+        return get(path, query, language, includeCredits, page, null, null);
+    }
+
+    private JsonNode get(
+            String path,
+            String query,
+            String language,
+            boolean includeCredits,
+            Integer page,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
         boolean hasAccessToken = hasText(properties.tmdb().accessToken());
         if (!hasAccessToken && !hasText(properties.tmdb().apiKey())) {
             throw new ExternalMediaException("Configure TMDB_ACCESS_TOKEN or TMDB_API_KEY");
@@ -246,6 +303,9 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                             uriBuilder.queryParam("include_adult", false);
                             uriBuilder.queryParam("page", page == null ? 1 : page);
                         }
+                        if (startDate != null) uriBuilder.queryParam("start_date", startDate);
+                        if (endDate != null) uriBuilder.queryParam("end_date", endDate);
+                        if (page != null && query == null) uriBuilder.queryParam("page", page);
                         if (language != null) {
                             uriBuilder.queryParam("language", language);
                         }
@@ -262,6 +322,9 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw new ExternalMediaNotFoundException("TMDB resource was not found", exception);
+            }
             if (exception.getStatusCode().value() == 429) {
                 throw new ExternalMediaRateLimitException("TMDB rate limit exceeded", exception);
             }

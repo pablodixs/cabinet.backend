@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.SeriesDetails;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.CatalogSyncReason;
 import com.scriptles.cabinet.media.enums.SeriesStatus;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.TmdbClient;
@@ -36,6 +37,7 @@ public class SeriesTrackingSyncService {
     private final ExternalReferenceRepository referenceRepository;
     private final TmdbClient tmdbClient;
     private final SeasonEpisodeService seasonEpisodeService;
+    private final CatalogMetadataRefreshScheduler metadataRefreshScheduler;
 
     @Transactional
     @Caching(evict = {
@@ -51,8 +53,7 @@ public class SeriesTrackingSyncService {
         ExternalMedia external = snapshot.media();
         Media series = mediaRepository.findById(seriesId)
                 .orElseThrow(() -> new IllegalStateException("Series not found: " + seriesId));
-        updateSeries(series, external);
-        updateDetails(series, external);
+        metadataRefreshScheduler.schedule(seriesId, CatalogSyncReason.SERIES_TRACKING);
         upsertSeasons(series, external.seasons());
         reference.setLastSyncedAt(Instant.now());
         referenceRepository.save(reference);

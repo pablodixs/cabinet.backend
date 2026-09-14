@@ -31,6 +31,11 @@ public interface ExternalReferenceRepository
             Set<String> externalIds
     );
 
+    List<ExternalReference> findAllBySourceAndExternalIdIn(
+            ExternalSource source,
+            Collection<String> externalIds
+    );
+
     Optional<ExternalReference> findByMediaIdAndSource(
             UUID mediaId,
             ExternalSource source

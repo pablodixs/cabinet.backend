@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.UUID;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -37,7 +39,31 @@ public class CatalogOutboxPublisher {
         event.setId(UUID.randomUUID());
         event.setAggregateId(mediaId);
         event.setEventType(CatalogEventType.MEDIA_CORE_MATERIALIZED);
-        event.setPayload(new CatalogEventPayload(source, externalId, mediaType, locale));
+        event.setPayload(new CatalogEventPayload(source, externalId, mediaType, locale,
+                CatalogSyncReason.IMPORT_ENRICHMENT));
+        event.setStatus(CatalogOutboxStatus.PENDING);
+        event.setAvailableAt(Instant.now());
+        repository.save(event);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void publishRefresh(
+            UUID mediaId,
+            ExternalSource source,
+            String externalId,
+            MediaType mediaType,
+            String locale,
+            CatalogSyncReason reason
+    ) {
+        if (repository.existsByAggregateIdAndEventTypeAndStatusIn(
+                mediaId, CatalogEventType.MEDIA_REFRESH_REQUESTED, ACTIVE)) {
+            return;
+        }
+        CatalogOutboxEvent event = new CatalogOutboxEvent();
+        event.setId(UUID.randomUUID());
+        event.setAggregateId(mediaId);
+        event.setEventType(CatalogEventType.MEDIA_REFRESH_REQUESTED);
+        event.setPayload(new CatalogEventPayload(source, externalId, mediaType, locale, reason));
         event.setStatus(CatalogOutboxStatus.PENDING);
         event.setAvailableAt(Instant.now());
         repository.save(event);

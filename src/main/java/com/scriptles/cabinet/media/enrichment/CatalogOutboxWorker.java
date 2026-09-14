@@ -6,8 +6,11 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
+import com.scriptles.cabinet.media.external.ExternalMediaNotFoundException;
 import com.scriptles.cabinet.media.external.WikidataClient;
 import com.scriptles.cabinet.media.repository.CatalogOutboxRepository;
+import com.scriptles.cabinet.media.service.CatalogMetadataSyncService;
+import com.scriptles.cabinet.media.enums.CatalogEventType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +33,7 @@ public class CatalogOutboxWorker {
     private final CatalogEnrichmentPersistenceService persistenceService;
     private final ThreadPoolTaskExecutor executor;
     private final Duration lockTimeout;
+    private CatalogMetadataSyncService metadataSyncService;
 
     public CatalogOutboxWorker(
             CatalogOutboxRepository repository,
@@ -47,6 +51,11 @@ public class CatalogOutboxWorker {
         this.persistenceService = persistenceService;
         this.executor = executor;
         this.lockTimeout = lockTimeout;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setMetadataSyncService(CatalogMetadataSyncService metadataSyncService) {
+        this.metadataSyncService = metadataSyncService;
     }
 
     @Scheduled(fixedDelayString = "${catalog.outbox.poll-delay:1000}")
@@ -74,6 +83,14 @@ public class CatalogOutboxWorker {
         if (event == null) return;
         try {
             CatalogEventPayload payload = event.getPayload();
+            if (event.getEventType() == CatalogEventType.MEDIA_REFRESH_REQUESTED) {
+                metadataSyncService.synchronize(event.getAggregateId(),
+                        payload.reason() == null
+                                ? com.scriptles.cabinet.media.enums.CatalogSyncReason.IMPORT_ENRICHMENT
+                                : payload.reason());
+                claimService.complete(eventId);
+                return;
+            }
             persistenceService.markEnriching(event.getAggregateId());
             ExternalMedia external = providerRegistry.get(payload.source(), payload.mediaType())
                     .findEnrichmentById(payload.mediaType(), payload.externalId(), payload.locale())
@@ -94,7 +111,7 @@ public class CatalogOutboxWorker {
             claimService.complete(eventId);
         } catch (RuntimeException failure) {
             boolean retrying = claimService.retry(eventId, failure);
-            if (!retrying) {
+            if (!retrying && event.getEventType() != CatalogEventType.MEDIA_REFRESH_REQUESTED) {
                 persistenceService.markFailed(event.getAggregateId(), failure.getMessage());
             }
             log.warn("Catalog enrichment event {} failed: {}", eventId, failure.getMessage());

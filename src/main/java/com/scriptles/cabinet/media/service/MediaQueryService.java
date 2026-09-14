@@ -78,6 +78,12 @@ public class MediaQueryService {
     private final CatalogLocaleResolver catalogLocaleResolver;
     private final CatalogTranslationLoader catalogTranslationLoader;
     private final MediaTranslationResolver mediaTranslationResolver;
+    private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setMetadataRefreshScheduler(CatalogMetadataRefreshScheduler metadataRefreshScheduler) {
+        this.metadataRefreshScheduler = metadataRefreshScheduler;
+    }
 
     public PublicMediaDetailsResponse findDetails(UUID mediaId) {
         return findDetails(mediaId, "pt-BR");
@@ -90,6 +96,9 @@ public class MediaQueryService {
                     + "#result.catalogStatus() != T(com.scriptles.cabinet.media.enums.CatalogStatus).READY"
     )
     public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
+        if (metadataRefreshScheduler != null) {
+            metadataRefreshScheduler.scheduleIfStale(mediaId);
+        }
         String requestedLocale = catalogLocaleResolver.normalize(locale);
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND,

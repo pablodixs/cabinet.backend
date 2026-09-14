@@ -71,11 +71,20 @@ public class CatalogOutboxClaimService {
             return false;
         }
         event.setStatus(CatalogOutboxStatus.RETRY);
-        event.setAvailableAt(Instant.now().plus(backoff(attempts)));
+        event.setAvailableAt(Instant.now().plus(backoff(event, attempts)));
         return true;
     }
 
-    private Duration backoff(int attempts) {
+    private Duration backoff(CatalogOutboxEvent event, int attempts) {
+        if (event.getEventType() == com.scriptles.cabinet.media.enums.CatalogEventType.MEDIA_REFRESH_REQUESTED) {
+            return switch (attempts) {
+                case 1 -> Duration.ofMinutes(5);
+                case 2 -> Duration.ofMinutes(30);
+                case 3 -> Duration.ofHours(2);
+                case 4 -> Duration.ofHours(12);
+                default -> Duration.ofHours(24);
+            };
+        }
         return switch (attempts) {
             case 1 -> Duration.ofSeconds(30);
             case 2 -> Duration.ofMinutes(2);

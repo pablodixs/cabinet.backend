@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
 
 import java.util.UUID;
 
@@ -40,5 +41,11 @@ public class MediaModerationController {
             @AuthenticationPrincipal AuthenticatedUser editor
     ) {
         return mediaModerationService.update(mediaId, request, editor.id());
+    }
+
+    @PostMapping("/{mediaId}/refresh")
+    public ResponseEntity<Void> refresh(@PathVariable UUID mediaId) {
+        mediaModerationService.requestRefresh(mediaId);
+        return ResponseEntity.accepted().build();
     }
 }
