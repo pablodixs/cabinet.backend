@@ -39,6 +39,9 @@ import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
+import com.scriptles.cabinet.user.repository.UserAlbumRotationRepository;
+import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.cache.annotation.Cacheable;
@@ -51,6 +54,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.EnumSet;
 import java.util.stream.Collectors;
 
 @Service
@@ -72,6 +76,8 @@ public class MediaQueryService {
     private final MediaLikeRepository mediaLikeRepository;
     private final MediaListItemRepository mediaListItemRepository;
     private final UserMediaRepository userMediaRepository;
+    private final UserMediaActivityRepository userMediaActivityRepository;
+    private final UserAlbumRotationRepository userAlbumRotationRepository;
     private final MediaCreditService mediaCreditService;
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
@@ -218,11 +224,15 @@ public class MediaQueryService {
                 .map(track -> track.getTrackMedia().getId())
                 .toList();
         Map<UUID, RatingSummaryService.ItemStats> stats = ratingSummaryService.items(trackIds, userId);
+        java.util.Set<UUID> likedIds = userId == null || trackIds.isEmpty()
+                ? java.util.Set.of()
+                : java.util.Set.copyOf(mediaLikeRepository.findLikedMediaIds(userId, trackIds));
 
         return new AlbumTracksResponse(tracks.stream()
                 .map(track -> toTrackResponse(
                         track,
-                        stats.getOrDefault(track.getTrackMedia().getId(), RatingSummaryService.ItemStats.empty())
+                        stats.getOrDefault(track.getTrackMedia().getId(), RatingSummaryService.ItemStats.empty()),
+                        likedIds.contains(track.getTrackMedia().getId())
                 ))
                 .toList());
     }
@@ -265,7 +275,7 @@ public class MediaQueryService {
                                 details.getAlbumType() == null ? null : details.getAlbumType().name(),
                                 details.getNumberOfTracks(), details.getAnimatedCoverUrl(), tracks.stream()
                                 .map(track -> toTrackResponse(
-                                        track, RatingSummaryService.ItemStats.empty()))
+                                        track, RatingSummaryService.ItemStats.empty(), false))
                                 .toList());
                     })
                     .orElseGet(() -> new ExternalMediaDetailsResponse.AlbumDetails(null, null, null, List.of()));
@@ -294,7 +304,7 @@ public class MediaQueryService {
     }
 
     private ExternalMediaDetailsResponse.TrackResponse toTrackResponse(
-            AlbumTrack track, RatingSummaryService.ItemStats stats) {
+            AlbumTrack track, RatingSummaryService.ItemStats stats, boolean liked) {
         return new ExternalMediaDetailsResponse.TrackResponse(
                 track.getTrackMedia().getId(),
                 track.getExternalId(),
@@ -305,7 +315,8 @@ public class MediaQueryService {
                 track.getExplicit(),
                 stats.averageRating(),
                 stats.ratingCount(),
-                stats.myRating()
+                stats.myRating(),
+                liked
         );
     }
 
@@ -430,6 +441,18 @@ public class MediaQueryService {
         var rating = ratingRepository.findByUserIdAndMediaId(userId, mediaId).orElse(null);
         var review = reviewRepository.findByUserIdAndMediaId(userId, mediaId).orElse(null);
         UserArtworkResolver.ResolvedArtwork artwork = userArtworkResolver.resolve(userId, media);
+        EnumSet<ProfileActivityType> listenTypes = EnumSet.of(
+                ProfileActivityType.LOGGED, ProfileActivityType.RELOGGED);
+        long listenCount = media.getType() == MediaType.ALBUM || media.getType() == MediaType.TRACK
+                ? userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(userId, mediaId, listenTypes)
+                : 0;
+        java.time.LocalDate lastListenedOn = media.getType() == MediaType.ALBUM || media.getType() == MediaType.TRACK
+                ? userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                        userId, mediaId, listenTypes)
+                        .map(com.scriptles.cabinet.user.entity.UserMediaActivity::getOccurredOn).orElse(null)
+                : null;
+        boolean inRotation = media.getType() == MediaType.ALBUM
+                && userAlbumRotationRepository.existsByUserIdAndAlbumId(userId, mediaId);
 
         return new UserMediaStateResponse(
                 mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId),
@@ -438,7 +461,10 @@ public class MediaQueryService {
                 review == null ? null : review.getId(),
                 mediaListItemRepository.findListIdsByMediaIdAndOwnerId(mediaId, userId),
                 artwork.customCover() ? artwork.coverUrl() : null,
-                artwork.customBackdrop() ? artwork.backdropUrl() : null
+                artwork.customBackdrop() ? artwork.backdropUrl() : null,
+                listenCount,
+                lastListenedOn,
+                inRotation
         );
     }
 

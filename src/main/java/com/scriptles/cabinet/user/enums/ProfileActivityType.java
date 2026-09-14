@@ -10,5 +10,6 @@ public enum ProfileActivityType {
     REWATCHED,
     MARKED_WATCHED,
     LOGGED,
-    RELOGGED
+    RELOGGED,
+    ADDED_TO_ROTATION
 }

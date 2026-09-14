@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.Collection;
 import java.util.UUID;
 import java.util.List;
+import java.time.LocalDate;
 
 public interface UserMediaActivityRepository extends JpaRepository<UserMediaActivity, UUID> {
     Optional<UserMediaActivity> findByIdAndUserId(UUID id, UUID userId);
@@ -49,6 +50,7 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             join fetch activity.media
             where activity.user.id = :userId
               and activity.type in :types
+              and (:mediaType is null or activity.media.typeValue = :#{#mediaType == null ? null : #mediaType.name()})
               and (:includePrivate = true or activity.visibility = :publicVisibility)
             order by activity.occurredOn desc, activity.createdAt desc, activity.id desc
             """, countQuery = """
@@ -56,11 +58,13 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             from UserMediaActivity activity
             where activity.user.id = :userId
               and activity.type in :types
+              and (:mediaType is null or activity.media.typeValue = :#{#mediaType == null ? null : #mediaType.name()})
               and (:includePrivate = true or activity.visibility = :publicVisibility)
             """)
     Page<UserMediaActivity> findDiaryEntries(
             @Param("userId") UUID userId,
             @Param("types") Collection<com.scriptles.cabinet.user.enums.ProfileActivityType> types,
+            @Param("mediaType") com.scriptles.cabinet.media.enums.MediaType mediaType,
             @Param("includePrivate") boolean includePrivate,
             @Param("publicVisibility") Visibility publicVisibility,
             Pageable pageable
@@ -106,6 +110,7 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             join fetch activity.media
             where activity.user.id = :userId
               and activity.type in :types
+              and (:mediaType is null or activity.media.typeValue = :#{#mediaType == null ? null : #mediaType.name()})
               and activity.visibility in :visibilities
             order by activity.occurredOn desc, activity.createdAt desc, activity.id desc
             """, countQuery = """
@@ -113,11 +118,13 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             from UserMediaActivity activity
             where activity.user.id = :userId
               and activity.type in :types
+              and (:mediaType is null or activity.media.typeValue = :#{#mediaType == null ? null : #mediaType.name()})
               and activity.visibility in :visibilities
             """)
     Page<UserMediaActivity> findDiaryEntriesVisibleToFollower(
             @Param("userId") UUID userId,
             @Param("types") Collection<com.scriptles.cabinet.user.enums.ProfileActivityType> types,
+            @Param("mediaType") com.scriptles.cabinet.media.enums.MediaType mediaType,
             @Param("visibilities") Collection<Visibility> visibilities,
             Pageable pageable
     );
@@ -149,6 +156,18 @@ public interface UserMediaActivityRepository extends JpaRepository<UserMediaActi
             @Param("userId") UUID userId,
             @Param("visibilities") Collection<Visibility> visibilities,
             @Param("normalizedName") String normalizedName);
+
+    long countByUserIdAndMediaIdAndTypeIn(
+            UUID userId,
+            UUID mediaId,
+            Collection<com.scriptles.cabinet.user.enums.ProfileActivityType> types
+    );
+
+    java.util.Optional<UserMediaActivity> findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+            UUID userId,
+            UUID mediaId,
+            Collection<com.scriptles.cabinet.user.enums.ProfileActivityType> types
+    );
 
     interface ProfileTagCount {
         String getName();

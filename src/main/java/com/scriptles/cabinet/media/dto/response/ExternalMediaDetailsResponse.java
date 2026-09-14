@@ -62,7 +62,14 @@ public record ExternalMediaDetailsResponse(
                               String canonicalWorkWikidataId) {}
     public record TrackResponse(UUID id, String externalId, String title, Integer discNumber, Integer trackNumber,
                                 Integer durationSeconds, Boolean explicit, Double averageRating,
-                                long ratingCount, Double myRating) {}
+                                long ratingCount, Double myRating, boolean liked) {
+        public TrackResponse(UUID id, String externalId, String title, Integer discNumber, Integer trackNumber,
+                              Integer durationSeconds, Boolean explicit, Double averageRating,
+                              long ratingCount, Double myRating) {
+            this(id, externalId, title, discNumber, trackNumber, durationSeconds, explicit,
+                    averageRating, ratingCount, myRating, false);
+        }
+    }
     public record SeasonResponse(UUID id, String externalId, Integer seasonNumber, String name, String description,
                                  String coverUrl, Integer episodeCount, LocalDate airDate, Double averageRating,
                                  long ratingCount, Double myRating, long myRatedEpisodeCount,

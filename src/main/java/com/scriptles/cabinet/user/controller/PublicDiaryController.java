@@ -4,6 +4,7 @@ import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.dto.response.DiaryEntryResponse;
 import com.scriptles.cabinet.user.service.DiaryService;
+import com.scriptles.cabinet.media.enums.MediaType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
@@ -27,11 +28,13 @@ public class PublicDiaryController {
             @PathVariable String username,
             @AuthenticationPrincipal AuthenticatedUser viewer,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size,
+            @RequestParam(required = false) MediaType mediaType
     ) {
         return diaryService.findByUsername(
                 username,
                 viewer == null ? null : viewer.id(),
+                mediaType,
                 page,
                 size
         );

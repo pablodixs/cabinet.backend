@@ -112,13 +112,30 @@ public class DiaryService {
     @Transactional(readOnly = true)
     public PageResponse<DiaryEntryResponse> findMine(UUID userId, int page, int size) {
         findUser(userId);
-        return findEntries(userId, true, false, page, size);
+        return findEntries(userId, true, false, null, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DiaryEntryResponse> findMine(UUID userId, MediaType mediaType, int page, int size) {
+        findUser(userId);
+        return findEntries(userId, true, false, mediaType, page, size);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<DiaryEntryResponse> findByUsername(
             String username,
             UUID viewerId,
+            int page,
+            int size
+    ) {
+        return findByUsername(username, viewerId, null, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DiaryEntryResponse> findByUsername(
+            String username,
+            UUID viewerId,
+            MediaType mediaType,
             int page,
             int size
     ) {
@@ -135,7 +152,7 @@ public class DiaryService {
         boolean followerAccess = !ownProfile && viewerId != null
                 && socialAccessPolicy != null
                 && socialAccessPolicy.isAcceptedFollower(viewerId, user.getId());
-        return findEntries(user.getId(), ownProfile, followerAccess, page, size);
+        return findEntries(user.getId(), ownProfile, followerAccess, mediaType, page, size);
     }
 
     @Transactional
@@ -200,15 +217,16 @@ public class DiaryService {
             UUID userId,
             boolean includePrivate,
             boolean includeFollowers,
+            MediaType mediaType,
             int page,
             int size
     ) {
         Page<UserMediaActivity> entries = includeFollowers && !includePrivate
                 ? activityRepository.findDiaryEntriesVisibleToFollower(
-                        userId, DIARY_TYPES, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
+                        userId, DIARY_TYPES, mediaType, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
                         PageRequest.of(page, size))
                 : activityRepository.findDiaryEntries(
-                        userId, DIARY_TYPES, includePrivate, Visibility.PUBLIC,
+                        userId, DIARY_TYPES, mediaType, includePrivate, Visibility.PUBLIC,
                         PageRequest.of(page, size));
         Map<UUID, ExternalReference> references = findReferences(entries);
         Map<UUID, UserArtworkResolver.ResolvedArtwork> artworks = resolveArtwork(

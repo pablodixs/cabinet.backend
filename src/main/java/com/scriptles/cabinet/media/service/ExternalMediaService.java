@@ -432,7 +432,7 @@ public class ExternalMediaService {
                     external.albumType(), external.numberOfTracks(), null, external.tracks().stream()
                     .map(track -> new ExternalMediaDetailsResponse.TrackResponse(
                             null, track.externalId(), track.title(), track.discNumber(), track.trackNumber(),
-                            track.durationSeconds(), track.explicit(), null, 0, null)).toList());
+                            track.durationSeconds(), track.explicit(), null, 0, null, false)).toList());
             case SERIES -> new ExternalMediaDetailsResponse.SeriesDetails(
                     external.seriesStatus(), external.numberOfSeasons(), external.numberOfEpisodes(),
                     external.lastAirDate(), external.seasons().stream()

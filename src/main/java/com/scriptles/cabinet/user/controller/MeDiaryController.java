@@ -6,6 +6,7 @@ import com.scriptles.cabinet.user.dto.request.CreateDiaryEntryRequest;
 import com.scriptles.cabinet.user.dto.request.UpdateDiaryEntryRequest;
 import com.scriptles.cabinet.user.dto.response.DiaryEntryResponse;
 import com.scriptles.cabinet.user.service.DiaryService;
+import com.scriptles.cabinet.media.enums.MediaType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -37,9 +38,10 @@ public class MeDiaryController {
     public PageResponse<DiaryEntryResponse> find(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size,
+            @RequestParam(required = false) MediaType mediaType
     ) {
-        return diaryService.findMine(user.id(), page, size);
+        return diaryService.findMine(user.id(), mediaType, page, size);
     }
 
     @PostMapping
