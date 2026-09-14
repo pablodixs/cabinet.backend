@@ -104,12 +104,25 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
 
     @Override
     public PersonWorks findPersonWorks(String personExternalId, String language) {
-        JsonNode body = browseReleaseGroups(personExternalId);
+        List<JsonNode> pages = new ArrayList<>();
+        int offset = 0;
+        int total = Integer.MAX_VALUE;
+        while (offset < total) {
+            JsonNode page = browseReleaseGroups(personExternalId, offset, 100);
+            pages.add(page);
+            Integer count = integer(page, "release-group-count");
+            total = count == null ? offset + page.path("release-groups").size() : count;
+            int pageSize = page.path("release-groups").size();
+            if (pageSize == 0) break;
+            offset += pageSize;
+        }
         List<Work> works = new ArrayList<>();
-        for (JsonNode item : body.path("release-groups")) {
-            ExternalMedia album = toAlbum(item, List.of(), false);
-            if (album.externalId() != null) {
-                works.add(new Work(album, CreditRole.ARTIST, null, 0));
+        for (JsonNode body : pages) {
+            for (JsonNode item : body.path("release-groups")) {
+                ExternalMedia album = toAlbum(item, List.of(), false);
+                if (album.externalId() != null) {
+                    works.add(new Work(album, CreditRole.ARTIST, null, 0));
+                }
             }
         }
         works.sort(java.util.Comparator
@@ -118,11 +131,14 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
                 .thenComparing(work -> work.media().title(), java.util.Comparator.nullsLast(String::compareToIgnoreCase))
                 .thenComparing(work -> work.media().externalId()));
-        Integer total = integer(body, "release-group-count");
-        return new PersonWorks(List.copyOf(works), total != null && total > works.size());
+        return new PersonWorks(List.copyOf(works), false);
     }
 
     private JsonNode browseReleaseGroups(String artistId) {
+        return browseReleaseGroups(artistId, 0, 100);
+    }
+
+    private JsonNode browseReleaseGroups(String artistId, int offset, int limit) {
         waitForRateLimit();
         try {
             return restClientBuilder.clone().baseUrl(properties.musicbrainz().baseUrl()).build().get()
@@ -132,8 +148,8 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
                             .queryParam("artist", artistId)
                             .queryParam("inc", "artist-credits")
                             .queryParam("release-group-status", "website-default")
-                            .queryParam("offset", 0)
-                            .queryParam("limit", 100)
+                            .queryParam("offset", offset)
+                            .queryParam("limit", limit)
                             .build())
                     .header("User-Agent", properties.musicbrainz().userAgent())
                     .retrieve()
