@@ -20,7 +20,9 @@ public class MediaCacheConfiguration {
         SimpleCacheManager manager = new SimpleCacheManager();
         manager.setCaches(List.of(
                 cache("mediaDetails", Duration.ofHours(1), 10_000),
-                cache("mediaCommunity", Duration.ofMinutes(2), 10_000)
+                cache("mediaCommunity", Duration.ofMinutes(2), 10_000),
+                cache("collectionDetails", Duration.ofHours(1), 10_000),
+                cache("franchiseDetails", Duration.ofHours(1), 10_000)
         ));
         return manager;
     }
