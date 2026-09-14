@@ -2,6 +2,11 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.media.dto.response.HeaderSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.HeaderSearchResponse;
+import com.scriptles.cabinet.catalog.domain.CatalogEntityStatus;
+import com.scriptles.cabinet.catalog.entity.Collection;
+import com.scriptles.cabinet.catalog.entity.Franchise;
+import com.scriptles.cabinet.catalog.repository.CollectionRepository;
+import com.scriptles.cabinet.catalog.repository.FranchiseRepository;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.HeaderSearchEntityType;
@@ -37,6 +42,8 @@ public class HeaderSearchService {
     private final MediaTranslationResolver translationResolver;
     private final CatalogLocaleResolver localeResolver;
     private final UserArtworkResolver userArtworkResolver;
+    private final CollectionRepository collectionRepository;
+    private final FranchiseRepository franchiseRepository;
 
     public HeaderSearchResponse search(String query, HeaderSearchScope scope, MediaType type) {
         return search(query, scope, type, CatalogLocaleResolver.DEFAULT_LOCALE);
@@ -62,12 +69,14 @@ public class HeaderSearchService {
         String requestedLocale = localeResolver.normalize(locale);
         List<RankedItem> rankedItems = new ArrayList<>(RESULT_LIMIT * 2);
 
-        if (scope != HeaderSearchScope.ARTIST) {
+        if (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.MEDIA) {
             addMedia(rankedItems, trimmedQuery, type, requestedLocale, viewerId);
         }
-        if (scope != HeaderSearchScope.MEDIA) {
+        if (scope != HeaderSearchScope.MEDIA && scope != HeaderSearchScope.COLLECTION && scope != HeaderSearchScope.FRANCHISE) {
             addArtists(rankedItems, trimmedQuery, type);
         }
+        if (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.COLLECTION) addCollections(rankedItems, trimmedQuery);
+        if (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.FRANCHISE) addFranchises(rankedItems, trimmedQuery);
 
         List<HeaderSearchItemResponse> items = rankedItems.stream()
                 .sorted(Comparator.comparingInt(RankedItem::relevance)
@@ -78,6 +87,20 @@ public class HeaderSearchService {
                 .map(RankedItem::response)
                 .toList();
         return new HeaderSearchResponse(items);
+    }
+
+    private void addCollections(List<RankedItem> target, String query) {
+        for (Collection collection : collectionRepository.search(query, CatalogEntityStatus.ACTIVE, PageRequest.of(0, RESULT_LIMIT))) {
+            HeaderSearchItemResponse response = new HeaderSearchItemResponse(collection.getId(), HeaderSearchEntityType.COLLECTION, collection.getTitle(), null, collection.getPosterUrl(), collection.getStartDate() == null ? null : collection.getStartDate().getYear());
+            target.add(new RankedItem(response, relevance(query, collection.getTitle()), normalize(collection.getTitle())));
+        }
+    }
+
+    private void addFranchises(List<RankedItem> target, String query) {
+        for (Franchise franchise : franchiseRepository.search(query, CatalogEntityStatus.ACTIVE, PageRequest.of(0, RESULT_LIMIT))) {
+            HeaderSearchItemResponse response = new HeaderSearchItemResponse(franchise.getId(), HeaderSearchEntityType.FRANCHISE, franchise.getName(), null, franchise.getPosterUrl(), franchise.getStartDate() == null ? null : franchise.getStartDate().getYear());
+            target.add(new RankedItem(response, relevance(query, franchise.getName()), normalize(franchise.getName())));
+        }
     }
 
     private void addMedia(
