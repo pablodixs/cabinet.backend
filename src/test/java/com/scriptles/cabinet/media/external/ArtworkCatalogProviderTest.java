@@ -14,7 +14,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class ArtworkCatalogProviderTest {
     @Test
-    void tmdbFiltersUnsupportedLanguagesAndOrdersPortugueseFirst() {
+    void tmdbFiltersUnsupportedLanguagesAndReturnsOnlyTextlessBackdrops() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         ExternalApiProperties properties = new ExternalApiProperties(
@@ -32,6 +32,8 @@ class ArtworkCatalogProviderTest {
                             {"file_path":"/es.jpg","iso_639_1":"es","vote_count":500,"vote_average":10}
                           ],
                           "backdrops": [
+                            {"file_path":"/pt-with-text.jpg","iso_639_1":"pt","vote_count":100,"vote_average":9},
+                            {"file_path":"/en-with-text.jpg","iso_639_1":"en","vote_count":100,"vote_average":9},
                             {"file_path":"/bg.jpg","iso_639_1":null,"width":1920,"height":1080}
                           ]
                         }
@@ -42,8 +44,10 @@ class ArtworkCatalogProviderTest {
         assertThat(catalog.covers()).extracting(ArtworkAsset::key)
                 .containsExactly("/pt.jpg", "/en.jpg");
         assertThat(catalog.backdrops()).singleElement().satisfies(asset -> {
+            assertThat(asset.key()).isEqualTo("/bg.jpg");
             assertThat(asset.url()).isEqualTo("https://image.tmdb.org/t/p/original/bg.jpg");
             assertThat(asset.previewUrl()).isEqualTo("https://image.tmdb.org/t/p/w780/bg.jpg");
+            assertThat(asset.language()).isNull();
         });
         server.verify();
     }

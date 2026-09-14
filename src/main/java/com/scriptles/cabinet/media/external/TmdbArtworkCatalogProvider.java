@@ -81,16 +81,26 @@ public class TmdbArtworkCatalogProvider implements MediaArtworkCatalogProvider {
         return new ArtworkCatalog(
                 ArtworkProvider.TMDB,
                 assets(body.path("posters"), "w500", locale),
-                assets(body.path("backdrops"), "w780", locale)
+                assets(body.path("backdrops"), "w780", locale, true)
         );
     }
 
     private List<ArtworkAsset> assets(JsonNode images, String previewSize, String locale) {
+        return assets(images, previewSize, locale, false);
+    }
+
+    private List<ArtworkAsset> assets(
+            JsonNode images,
+            String previewSize,
+            String locale,
+            boolean textlessOnly
+    ) {
         Map<String, RankedAsset> distinct = new LinkedHashMap<>();
         for (JsonNode image : images) {
             String path = text(image, "file_path");
             String language = text(image, "iso_639_1");
             if (path == null || !(language == null || language.equals(locale) || language.equals("en"))) continue;
+            if (textlessOnly && language != null) continue;
             ArtworkAsset asset = new ArtworkAsset(
                     path,
                     IMAGE_BASE_URL + "/original" + path,
