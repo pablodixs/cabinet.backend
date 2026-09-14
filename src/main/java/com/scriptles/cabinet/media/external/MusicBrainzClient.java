@@ -84,6 +84,24 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
         return Optional.ofNullable(wikidataId(body));
     }
 
+    public List<OrganizationCredit> findOrganizationCredits(String releaseGroupId) {
+        JsonNode group = get("/release-group/" + releaseGroupId, null, 0, 0, "releases");
+        JsonNode summary = selectRelease(group.path("releases"));
+        if (summary == null || text(summary, "id") == null) return List.of();
+        JsonNode release = get("/release/" + text(summary, "id"), null, 0, 0, "label-info");
+        List<OrganizationCredit> result = new ArrayList<>();
+        for (JsonNode item : release.path("label-info")) {
+            JsonNode label = item.path("label");
+            String id = text(label, "id");
+            String name = text(label, "name");
+            if (id != null && name != null) result.add(new OrganizationCredit(
+                    id, name, text(label, "country-code"), "https://musicbrainz.org/label/" + id));
+        }
+        return List.copyOf(result);
+    }
+
+    public record OrganizationCredit(String externalId, String name, String countryCode, String externalUrl) {}
+
     @Override
     public PersonWorks findPersonWorks(String personExternalId, String language) {
         JsonNode body = browseReleaseGroups(personExternalId);

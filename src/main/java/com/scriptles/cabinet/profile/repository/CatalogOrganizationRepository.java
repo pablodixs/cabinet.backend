@@ -1,0 +1,3 @@
+package com.scriptles.cabinet.profile.repository;
+import com.scriptles.cabinet.profile.entity.CatalogOrganization; import org.springframework.data.domain.*; import org.springframework.data.jpa.repository.*; import org.springframework.data.repository.query.Param; import java.util.*;
+public interface CatalogOrganizationRepository extends JpaRepository<CatalogOrganization,UUID> { Optional<CatalogOrganization> findByPrimarySourceAndPrimaryExternalId(String source,String externalId); @Query("select o from CatalogOrganization o where lower(o.canonicalName) like lower(concat('%',:q,'%')) order by lower(o.canonicalName)") Page<CatalogOrganization> search(@Param("q") String q, Pageable pageable); }

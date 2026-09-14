@@ -226,6 +226,32 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         return Optional.ofNullable(text(body, "imdb_id"));
     }
 
+    public List<OrganizationCredit> findOrganizationCredits(MediaType mediaType, String externalId) {
+        if (!supports(mediaType)) return List.of();
+        JsonNode body = get(detailPath(mediaType, externalId), null, null, false, null);
+        List<OrganizationCredit> result = new ArrayList<>();
+        for (JsonNode company : body.path("production_companies")) {
+            String id = text(company, "id");
+            String name = text(company, "name");
+            if (id != null && name != null) result.add(new OrganizationCredit(
+                    id, name, countryCode(company), imageUrl(text(company, "logo_path"), LOGO_SIZE),
+                    OrganizationCredit.Kind.PRODUCTION_COMPANY, "https://www.themoviedb.org/company/" + id));
+        }
+        if (mediaType == MediaType.SERIES) for (JsonNode network : body.path("networks")) {
+            String id = text(network, "id");
+            String name = text(network, "name");
+            if (id != null && name != null) result.add(new OrganizationCredit(
+                    id, name, countryCode(network), imageUrl(text(network, "logo_path"), LOGO_SIZE),
+                    OrganizationCredit.Kind.NETWORK, "https://www.themoviedb.org/network/" + id));
+        }
+        return List.copyOf(result);
+    }
+
+    public record OrganizationCredit(String externalId, String name, String countryCode, String logoUrl,
+                                     Kind kind, String externalUrl) {
+        public enum Kind { PRODUCTION_COMPANY, NETWORK }
+    }
+
     public ExternalAvailability findWatchProviders(MediaType mediaType, String externalId, String countryCode) {
         if (!supports(mediaType)) {
             throw new IllegalArgumentException("TMDB watch providers only support movies and series");
@@ -461,6 +487,10 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
     }
 
     private String countryCode(JsonNode node) {
+        String direct = text(node, "origin_country");
+        if (direct == null) direct = text(node, "origin_country");
+        if (direct == null) direct = text(node, "country_code");
+        if (direct != null) return direct;
         JsonNode countries = node.path("production_countries");
         return countries.isArray() && !countries.isEmpty() ? text(countries.get(0), "iso_3166_1") : null;
     }

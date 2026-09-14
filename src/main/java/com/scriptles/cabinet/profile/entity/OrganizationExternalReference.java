@@ -1,0 +1,4 @@
+package com.scriptles.cabinet.profile.entity;
+import jakarta.persistence.*; import lombok.Getter; import lombok.NoArgsConstructor; import lombok.Setter; import java.util.UUID;
+@Entity @Table(name="organization_external_references", uniqueConstraints=@UniqueConstraint(name="uk_org_ext_source_id",columnNames={"source","external_id"})) @Getter @Setter @NoArgsConstructor
+public class OrganizationExternalReference { @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="organization_id",nullable=false) private CatalogOrganization organization; @Column(nullable=false,length=30) private String source; @Column(name="external_id",nullable=false,length=255) private String externalId; @Column(length=500) private String externalUrl; }

@@ -1,0 +1,3 @@
+package com.scriptles.cabinet.profile.repository;
+import com.scriptles.cabinet.profile.entity.HQClaim; import com.scriptles.cabinet.profile.enums.HQClaimRequestStatus; import org.springframework.data.jpa.repository.JpaRepository; import java.util.Optional; import java.util.UUID;
+public interface HQClaimRepository extends JpaRepository<HQClaim,UUID> { boolean existsByHqProfileIdAndRequestedByIdAndStatusIn(UUID hqId, UUID accountId, java.util.Collection<HQClaimRequestStatus> statuses); Optional<HQClaim> findByIdAndStatus(UUID id,HQClaimRequestStatus status); java.util.List<HQClaim> findByRequestedByIdOrderByCreatedAtDesc(UUID accountId); }

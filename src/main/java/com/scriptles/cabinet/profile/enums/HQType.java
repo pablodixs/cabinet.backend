@@ -1,0 +1,3 @@
+package com.scriptles.cabinet.profile.enums;
+
+public enum HQType { FILM_STUDIO, PRODUCTION_COMPANY, DISTRIBUTOR, STREAMING_SERVICE, TV_NETWORK, RECORD_LABEL, MUSIC_DISTRIBUTOR, OTHER }

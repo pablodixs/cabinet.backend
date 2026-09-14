@@ -1,0 +1,4 @@
+package com.scriptles.cabinet.profile.entity;
+import com.scriptles.cabinet.media.entity.Media; import com.scriptles.cabinet.profile.enums.OrganizationRelationship; import jakarta.persistence.*; import lombok.Getter; import lombok.NoArgsConstructor; import lombok.Setter; import java.util.UUID;
+@Entity @Table(name="media_organizations",uniqueConstraints=@UniqueConstraint(name="uk_media_org_role",columnNames={"media_id","organization_id","relationship"})) @Getter @Setter @NoArgsConstructor
+public class MediaOrganization { @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="media_id",nullable=false) private Media media; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="organization_id",nullable=false) private CatalogOrganization organization; @Enumerated(EnumType.STRING) @Column(nullable=false,length=30) private OrganizationRelationship relationship; }

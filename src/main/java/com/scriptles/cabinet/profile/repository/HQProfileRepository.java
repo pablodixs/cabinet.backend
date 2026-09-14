@@ -1,0 +1,3 @@
+package com.scriptles.cabinet.profile.repository;
+import com.scriptles.cabinet.profile.entity.HQProfile; import com.scriptles.cabinet.profile.enums.HQClaimStatus; import org.springframework.data.jpa.repository.JpaRepository; import java.util.Optional; import java.util.UUID;
+public interface HQProfileRepository extends JpaRepository<HQProfile,UUID> { Optional<HQProfile> findByProfileId(UUID profileId); Optional<HQProfile> findByProfileHandleIgnoreCase(String handle); Optional<HQProfile> findByExternalSourceAndExternalId(String source, String externalId); long countByClaimStatus(HQClaimStatus status); }

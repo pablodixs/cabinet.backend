@@ -5,6 +5,8 @@ import com.scriptles.cabinet.user.dto.request.UpdateUserProfile;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.profile.entity.Profile;
+import com.scriptles.cabinet.profile.repository.ProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ProfileRepository profileRepository;
 
     @Transactional
     public User createUser(CreateUserRequest request) {
@@ -44,7 +47,12 @@ public class UserService {
                 passwordHash
         );
 
-        return userRepository.save(newUser);
+        User saved = userRepository.save(newUser);
+        // Kept null-tolerant for legacy unit-test constructors; Spring always injects it in production.
+        if (profileRepository != null) {
+            profileRepository.save(Profile.member(saved));
+        }
+        return saved;
     }
 
     @Transactional

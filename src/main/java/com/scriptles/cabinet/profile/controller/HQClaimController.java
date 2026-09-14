@@ -1,0 +1,3 @@
+package com.scriptles.cabinet.profile.controller;
+import com.scriptles.cabinet.profile.dto.ClaimResponse; import com.scriptles.cabinet.profile.service.HQClaimService; import com.scriptles.cabinet.security.AuthenticatedUser; import lombok.RequiredArgsConstructor; import org.springframework.security.core.annotation.AuthenticationPrincipal; import org.springframework.web.bind.annotation.*; import java.util.List;
+@RestController @RequestMapping("/v1/me/hq-claims") @RequiredArgsConstructor public class HQClaimController { private final HQClaimService claims; @GetMapping public List<ClaimResponse> mine(@AuthenticationPrincipal AuthenticatedUser viewer){return claims.mine(viewer.id());} }
