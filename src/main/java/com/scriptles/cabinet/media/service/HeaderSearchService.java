@@ -42,8 +42,11 @@ public class HeaderSearchService {
     private final MediaTranslationResolver translationResolver;
     private final CatalogLocaleResolver localeResolver;
     private final UserArtworkResolver userArtworkResolver;
-    private final CollectionRepository collectionRepository;
-    private final FranchiseRepository franchiseRepository;
+    private CollectionRepository collectionRepository;
+    private FranchiseRepository franchiseRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setCatalogRepositories(CollectionRepository collections, FranchiseRepository franchises) { this.collectionRepository = collections; this.franchiseRepository = franchises; }
 
     public HeaderSearchResponse search(String query, HeaderSearchScope scope, MediaType type) {
         return search(query, scope, type, CatalogLocaleResolver.DEFAULT_LOCALE);
@@ -75,8 +78,8 @@ public class HeaderSearchService {
         if (scope != HeaderSearchScope.MEDIA && scope != HeaderSearchScope.COLLECTION && scope != HeaderSearchScope.FRANCHISE) {
             addArtists(rankedItems, trimmedQuery, type);
         }
-        if (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.COLLECTION) addCollections(rankedItems, trimmedQuery);
-        if (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.FRANCHISE) addFranchises(rankedItems, trimmedQuery);
+        if (collectionRepository != null && (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.COLLECTION)) addCollections(rankedItems, trimmedQuery);
+        if (franchiseRepository != null && (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.FRANCHISE)) addFranchises(rankedItems, trimmedQuery);
 
         List<HeaderSearchItemResponse> items = rankedItems.stream()
                 .sorted(Comparator.comparingInt(RankedItem::relevance)

@@ -5,4 +5,8 @@ import com.scriptles.cabinet.catalog.entity.*; import com.scriptles.cabinet.cata
  @PutMapping("/collections/{id}") public void updateCollection(@PathVariable UUID id,@RequestBody @Valid UpsertCollectionRequest r){service.saveCollection(id,r);}
  @PostMapping("/franchises") public ResponseEntity<Void> createFranchise(@RequestBody @Valid UpsertFranchiseRequest r){Franchise f=service.saveFranchise(null,r);return ResponseEntity.created(URI.create("/v1/franchises/"+f.getId())).build();}
  @PutMapping("/franchises/{id}") public void updateFranchise(@PathVariable UUID id,@RequestBody @Valid UpsertFranchiseRequest r){service.saveFranchise(id,r);}
+ @PutMapping("/collections/{id}/media") public ResponseEntity<Void> linkMedia(@PathVariable UUID id,@RequestBody @Valid LinkMediaRequest r){service.linkMedia(id,r);return ResponseEntity.noContent().build();}
+ @PutMapping("/franchises/{id}/collections") public ResponseEntity<Void> linkCollection(@PathVariable UUID id,@RequestBody @Valid LinkCollectionRequest r){service.linkCollection(id,r);return ResponseEntity.noContent().build();}
+ @DeleteMapping("/collections/{id}") public ResponseEntity<Void> hideCollection(@PathVariable UUID id){service.hideCollection(id);return ResponseEntity.noContent().build();}
+ @DeleteMapping("/franchises/{id}") public ResponseEntity<Void> hideFranchise(@PathVariable UUID id){service.hideFranchise(id);return ResponseEntity.noContent().build();}
 }

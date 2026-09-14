@@ -9,6 +9,9 @@ import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.catalog.api.CollectionSummaryResponse;
+import com.scriptles.cabinet.catalog.collection.CollectionType;
+import com.scriptles.cabinet.catalog.repository.CollectionArtistRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -30,6 +33,10 @@ import java.util.UUID;
 public class ArtistService {
     private final PersonRepository personRepository;
     private final MediaCreditRepository mediaCreditRepository;
+    private CollectionArtistRepository collectionArtistRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setCollectionArtistRepository(CollectionArtistRepository repository) { this.collectionArtistRepository = repository; }
 
     public ArtistResponse findDetails(UUID artistId) {
         Person artist = findArtist(artistId);
@@ -46,7 +53,11 @@ public class ArtistService {
                 artist.getExternalSource(),
                 artist.getExternalId(),
                 mediaCreditRepository.countDistinctMediaByPersonId(artistId),
-                roles
+                roles,
+                (collectionArtistRepository == null ? List.<com.scriptles.cabinet.catalog.entity.CollectionArtist>of() : collectionArtistRepository.findByArtistId(artistId)).stream()
+                        .filter(link -> link.getCollection().getType() == CollectionType.DISCOGRAPHY)
+                        .map(link -> new CollectionSummaryResponse(link.getCollection().getId(), link.getCollection().getSlug(), link.getCollection().getTitle(), link.getCollection().getType().name(), null, null))
+                        .toList()
         );
     }
 

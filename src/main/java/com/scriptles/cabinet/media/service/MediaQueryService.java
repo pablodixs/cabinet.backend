@@ -84,8 +84,11 @@ public class MediaQueryService {
     private final UserMediaRepository userMediaRepository;
     private final UserMediaActivityRepository userMediaActivityRepository;
     private final UserAlbumRotationRepository userAlbumRotationRepository;
-    private final CollectionItemRepository collectionItemRepository;
-    private final FranchiseMediaRepository franchiseMediaRepository;
+    private CollectionItemRepository collectionItemRepository;
+    private FranchiseMediaRepository franchiseMediaRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setCatalogRepositories(CollectionItemRepository items, FranchiseMediaRepository media) { this.collectionItemRepository = items; this.franchiseMediaRepository = media; }
     private final MediaCreditService mediaCreditService;
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
@@ -173,13 +176,13 @@ public class MediaQueryService {
                 translation.resolvedLocale(),
                 translation.fallback(),
                 media.getCatalogStatus(),
-                collectionItemRepository.findByMediaId(mediaId).stream()
+                (collectionItemRepository == null ? List.<CollectionItem>of() : collectionItemRepository.findByMediaId(mediaId)).stream()
                         .map(item -> new CollectionSummaryResponse(
                                 item.getCollection().getId(), item.getCollection().getSlug(), item.getCollection().getTitle(),
                                 item.getCollection().getType().name(), item.getPosition(),
                                 collectionItemRepository.findByCollectionIdOrderByPositionAsc(item.getCollection().getId()).size()))
                         .distinct().toList(),
-                franchiseMediaRepository.findByMediaId(mediaId).stream()
+                (franchiseMediaRepository == null ? List.<FranchiseMedia>of() : franchiseMediaRepository.findByMediaId(mediaId)).stream()
                         .map(link -> new FranchiseSummaryResponse(link.getFranchise().getId(), link.getFranchise().getSlug(), link.getFranchise().getName(), link.getFranchise().getType().name()))
                         .distinct().toList()
         );

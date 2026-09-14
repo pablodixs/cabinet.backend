@@ -107,13 +107,14 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
         List<JsonNode> pages = new ArrayList<>();
         int offset = 0;
         int total = Integer.MAX_VALUE;
+        boolean complete = false;
         while (offset < total) {
             JsonNode page = browseReleaseGroups(personExternalId, offset, 100);
             pages.add(page);
             Integer count = integer(page, "release-group-count");
             total = count == null ? offset + page.path("release-groups").size() : count;
             int pageSize = page.path("release-groups").size();
-            if (pageSize == 0) break;
+            if (pageSize == 0 || pageSize < 100) { complete = total <= offset + pageSize; break; }
             offset += pageSize;
         }
         List<Work> works = new ArrayList<>();
@@ -131,7 +132,7 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
                 .thenComparing(work -> work.media().title(), java.util.Comparator.nullsLast(String::compareToIgnoreCase))
                 .thenComparing(work -> work.media().externalId()));
-        return new PersonWorks(List.copyOf(works), false);
+        return new PersonWorks(List.copyOf(works), !complete && total > works.size());
     }
 
     private JsonNode browseReleaseGroups(String artistId) {
