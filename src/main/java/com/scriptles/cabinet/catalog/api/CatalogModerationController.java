@@ -1,5 +1,5 @@
 package com.scriptles.cabinet.catalog.api;
-import com.scriptles.cabinet.catalog.entity.*; import com.scriptles.cabinet.catalog.service.CatalogModerationService; import jakarta.validation.Valid; import lombok.RequiredArgsConstructor; import org.springframework.http.*; import org.springframework.security.access.prepost.PreAuthorize; import org.springframework.web.bind.annotation.*; import java.net.URI; import java.util.UUID;
+import com.scriptles.cabinet.catalog.entity.*; import com.scriptles.cabinet.catalog.service.CatalogModerationService; import com.scriptles.cabinet.common.api.PageResponse; import jakarta.validation.Valid; import lombok.RequiredArgsConstructor; import org.springframework.http.*; import org.springframework.security.access.prepost.PreAuthorize; import org.springframework.web.bind.annotation.*; import java.net.URI; import java.util.UUID;
 @RestController @RequestMapping("/v1/moderation") @PreAuthorize("@communityAuthorization.isModerator(authentication)") @RequiredArgsConstructor public class CatalogModerationController { private final CatalogModerationService service;
  @PostMapping("/collections") public ResponseEntity<Void> createCollection(@RequestBody @Valid UpsertCollectionRequest r){Collection c=service.saveCollection(null,r);return ResponseEntity.created(URI.create("/v1/collections/"+c.getId())).build();}
  @PutMapping("/collections/{id}") public void updateCollection(@PathVariable UUID id,@RequestBody @Valid UpsertCollectionRequest r){service.saveCollection(id,r);}
@@ -9,4 +9,6 @@ import com.scriptles.cabinet.catalog.entity.*; import com.scriptles.cabinet.cata
  @PutMapping("/franchises/{id}/collections") public ResponseEntity<Void> linkCollection(@PathVariable UUID id,@RequestBody @Valid LinkCollectionRequest r){service.linkCollection(id,r);return ResponseEntity.noContent().build();}
  @DeleteMapping("/collections/{id}") public ResponseEntity<Void> hideCollection(@PathVariable UUID id){service.hideCollection(id);return ResponseEntity.noContent().build();}
  @DeleteMapping("/franchises/{id}") public ResponseEntity<Void> hideFranchise(@PathVariable UUID id){service.hideFranchise(id);return ResponseEntity.noContent().build();}
+ @GetMapping("/collections") public PageResponse<CollectionSummaryResponse> collections(@RequestParam(defaultValue="") String query,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="50") int size){return service.collections(query,page,Math.min(size,100));}
+ @GetMapping("/franchises") public PageResponse<FranchiseSummaryResponse> franchises(@RequestParam(defaultValue="") String query,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="50") int size){return service.franchises(query,page,Math.min(size,100));}
 }
