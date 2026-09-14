@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.scriptles.cabinet.catalog.api.CollectionSummaryResponse;
+import com.scriptles.cabinet.catalog.api.FranchiseSummaryResponse;
 
 public record PublicMediaDetailsResponse(
         UUID id,
@@ -35,7 +37,9 @@ public record PublicMediaDetailsResponse(
         String requestedLocale,
         String resolvedLocale,
         boolean translationFallback,
-        CatalogStatus catalogStatus
+        CatalogStatus catalogStatus,
+        List<CollectionSummaryResponse> collections,
+        List<FranchiseSummaryResponse> franchises
 ) {
     public PublicMediaDetailsResponse(
             UUID id,
@@ -64,6 +68,6 @@ public record PublicMediaDetailsResponse(
         this(id, externalId, source, type, title, originalTitle, creator, description, tagline,
                 coverUrl, backdropUrl, logoUrl, externalUrl, releaseDate, originalLanguage, countryCode,
                 wikidataId, externalReferences, genres, credits, imported, details,
-                "pt-BR", "pt-BR", false, CatalogStatus.READY);
+                "pt-BR", "pt-BR", false, CatalogStatus.READY, List.of(), List.of());
     }
 }

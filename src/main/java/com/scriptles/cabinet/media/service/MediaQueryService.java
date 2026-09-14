@@ -10,6 +10,12 @@ import com.scriptles.cabinet.media.dto.response.MediaCommunityUserResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
 import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.UserMediaStateResponse;
+import com.scriptles.cabinet.catalog.api.CollectionSummaryResponse;
+import com.scriptles.cabinet.catalog.api.FranchiseSummaryResponse;
+import com.scriptles.cabinet.catalog.entity.CollectionItem;
+import com.scriptles.cabinet.catalog.entity.FranchiseMedia;
+import com.scriptles.cabinet.catalog.repository.CollectionItemRepository;
+import com.scriptles.cabinet.catalog.repository.FranchiseMediaRepository;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
@@ -78,6 +84,8 @@ public class MediaQueryService {
     private final UserMediaRepository userMediaRepository;
     private final UserMediaActivityRepository userMediaActivityRepository;
     private final UserAlbumRotationRepository userAlbumRotationRepository;
+    private final CollectionItemRepository collectionItemRepository;
+    private final FranchiseMediaRepository franchiseMediaRepository;
     private final MediaCreditService mediaCreditService;
     private final RatingSummaryService ratingSummaryService;
     private final UserArtworkResolver userArtworkResolver;
@@ -164,7 +172,16 @@ public class MediaQueryService {
                 requestedLocale,
                 translation.resolvedLocale(),
                 translation.fallback(),
-                media.getCatalogStatus()
+                media.getCatalogStatus(),
+                collectionItemRepository.findByMediaId(mediaId).stream()
+                        .map(item -> new CollectionSummaryResponse(
+                                item.getCollection().getId(), item.getCollection().getSlug(), item.getCollection().getTitle(),
+                                item.getCollection().getType().name(), item.getPosition(),
+                                collectionItemRepository.findByCollectionIdOrderByPositionAsc(item.getCollection().getId()).size()))
+                        .distinct().toList(),
+                franchiseMediaRepository.findByMediaId(mediaId).stream()
+                        .map(link -> new FranchiseSummaryResponse(link.getFranchise().getId(), link.getFranchise().getSlug(), link.getFranchise().getName(), link.getFranchise().getType().name()))
+                        .distinct().toList()
         );
     }
 
