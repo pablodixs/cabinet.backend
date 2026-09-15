@@ -12,7 +12,7 @@ On successful login, `AuthService`:
 4. ensures a CSRF token is created;
 5. returns a client-safe account representation.
 
-The session cookie is named `CABINET_SESSION`, is HTTP-only, lasts seven days, and uses the `Secure` flag when `SESSION_COOKIE_SECURE=true`. Session and CSRF cookies use `SameSite=Lax` by default. Set `SESSION_COOKIE_SAME_SITE=none` together with `SESSION_COOKIE_SECURE=true` when the frontend and API are on different sites. URL rewriting of session IDs is disabled.
+The session cookie is named `CABINET_SESSION`, is HTTP-only, lasts seven days, and uses the `Secure` flag by default. Session and CSRF cookies use `SameSite=None` by default so the deployed web client can authenticate against the API from a different site. The local development script overrides these settings with `Secure=false` and `SameSite=Lax`. URL rewriting of session IDs is disabled.
 
 Passwords are hashed with BCrypt. The authenticated principal contains account ID, email, username/display name, password hash, authorities, active flag, role, and tier. Its Spring Security username is the email, although login lookup accepts email or username.
 
@@ -62,7 +62,7 @@ Everything else is authenticated. A subtle consequence is that `GET /v1/users/{u
 
 CORS allows credentials, all headers, methods `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and `OPTIONS`, with a one-hour preflight cache. Allowed origin patterns come from comma-separated `CORS_ALLOWED_ORIGIN_PATTERNS`.
 
-Default patterns allow local hosts on any port. Production must explicitly set trusted HTTPS origins. Because credentials are enabled, avoid broad wildcard patterns.
+The default allowed origin is `https://cabinetbeta.vercel.app`. The local development script instead allows local hosts on any port. Production deployments with another frontend URL must explicitly set trusted HTTPS origins. Because credentials are enabled, avoid broad wildcard patterns.
 
 For a browser frontend hosted on a different site, set the exact frontend origin in `CORS_ALLOWED_ORIGIN_PATTERNS`, set `SESSION_COOKIE_SAME_SITE=none` and `SESSION_COOKIE_SECURE=true`, and send requests with credentials enabled. Browsers or privacy settings that block third-party cookies can still prevent cookie-based cross-site sessions.
 

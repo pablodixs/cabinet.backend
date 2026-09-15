@@ -37,8 +37,8 @@ server:
       cookie:
         name: CABINET_SESSION
         http-only: true
-        secure: ${SESSION_COOKIE_SECURE:false}
-        same-site: ${SESSION_COOKIE_SAME_SITE:lax}
+        secure: ${SESSION_COOKIE_SECURE:true}
+        same-site: ${SESSION_COOKIE_SAME_SITE:none}
 
 management:
   endpoints:
@@ -66,7 +66,7 @@ catalog:
 
 app:
   cors:
-    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*}
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:https://cabinetbeta.vercel.app}
   moderation:
     # Bootstrap only: these accounts can appoint the community team through the dashboard.
     admin-emails: ${ADMIN_EMAILS:}

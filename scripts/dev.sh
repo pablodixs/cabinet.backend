@@ -16,6 +16,9 @@ fi
 export DATABASE_URL='jdbc:postgresql://127.0.0.1:55432/cabinet'
 export DATABASE_USERNAME='cabinet'
 export DATABASE_PASSWORD=''
+export SESSION_COOKIE_SECURE=false
+export SESSION_COOKIE_SAME_SITE=lax
+export CORS_ALLOWED_ORIGIN_PATTERNS='http://localhost:*,http://127.0.0.1:*'
 # The migration history assumes a pre-existing schema. Local empty databases
 # use entity mappings until the backend has a complete baseline migration.
 export FLYWAY_ENABLED=false

@@ -35,9 +35,9 @@ The default server port is `8080`. The Docker entrypoint also accepts `PORT` and
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `FLYWAY_ENABLED` | `true` | Enables PostgreSQL migrations. Disabling it does not disable Hibernate schema update. |
-| `SESSION_COOKIE_SECURE` | `false` | Set to `true` behind production HTTPS. |
-| `SESSION_COOKIE_SAME_SITE` | `lax` | Set to `none` together with `SESSION_COOKIE_SECURE=true` when the frontend and API use different sites. Applies to session and CSRF cookies. |
-| `CORS_ALLOWED_ORIGIN_PATTERNS` | local `localhost` and `127.0.0.1` patterns | Comma-separated patterns; credentials are enabled. |
+| `SESSION_COOKIE_SECURE` | `true` | Keep enabled behind production HTTPS. The local development script overrides it to `false`. |
+| `SESSION_COOKIE_SAME_SITE` | `none` | Supports the cross-site web client. The local development script overrides it to `lax`. Applies to session and CSRF cookies. |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | `https://cabinetbeta.vercel.app` | Comma-separated patterns; credentials are enabled. The local development script allows `localhost` and `127.0.0.1`. |
 | `ADMIN_EMAILS` | empty | Bootstrap admin emails. This overrides a persisted role at authentication time. |
 | `SSE_MAX_CONNECTIONS_PER_USER` | `3` | Per-user in-memory SSE connection limit. |
 | `SSE_MAX_TOTAL_CONNECTIONS` | `1000` | Process-wide SSE connection limit. |
