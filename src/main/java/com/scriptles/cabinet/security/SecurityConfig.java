@@ -20,8 +20,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -37,7 +38,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             SecurityContextRepository securityContextRepository,
-            CookieCsrfTokenRepository csrfTokenRepository,
+            CsrfTokenRepository csrfTokenRepository,
             ObjectMapper objectMapper
     ) throws Exception {
 
@@ -168,16 +169,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CookieCsrfTokenRepository csrfTokenRepository(
-            @Value("${server.servlet.session.cookie.same-site:lax}") String sameSite,
-            @Value("${server.servlet.session.cookie.secure:false}") boolean secure
-    ) {
-        CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
-        repository.setCookiePath("/");
-        repository.setCookieCustomizer(cookie -> cookie
-                .sameSite(sameSite)
-                .secure(secure)
-        );
+    public CsrfTokenRepository csrfTokenRepository() {
+        HttpSessionCsrfTokenRepository repository = new HttpSessionCsrfTokenRepository();
+        repository.setHeaderName("X-XSRF-TOKEN");
         return repository;
     }
 

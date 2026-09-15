@@ -39,6 +39,7 @@ server:
         http-only: true
         secure: ${SESSION_COOKIE_SECURE:true}
         same-site: ${SESSION_COOKIE_SAME_SITE:none}
+        partitioned: ${SESSION_COOKIE_PARTITIONED:true}
 
 management:
   endpoints:

@@ -12,7 +12,7 @@ On successful login, `AuthService`:
 4. ensures a CSRF token is created;
 5. returns a client-safe account representation.
 
-The session cookie is named `CABINET_SESSION`, is HTTP-only, lasts seven days, and uses the `Secure` flag by default. Session and CSRF cookies use `SameSite=None` by default so the deployed web client can authenticate against the API from a different site. The local development script overrides these settings with `Secure=false` and `SameSite=Lax`. URL rewriting of session IDs is disabled.
+The session cookie is named `CABINET_SESSION`, is HTTP-only, lasts seven days, and uses `Secure`, `SameSite=None`, and `Partitioned` by default so the deployed web client can authenticate against the API from a different site even when third-party cookies are restricted. The local development script overrides these settings with `Secure=false`, `SameSite=Lax`, and `Partitioned=false`. URL rewriting of session IDs is disabled.
 
 Passwords are hashed with BCrypt. The authenticated principal contains account ID, email, username/display name, password hash, authorities, active flag, role, and tier. Its Spring Security username is the email, although login lookup accepts email or username.
 
@@ -24,9 +24,9 @@ CSRF is enabled using `CookieCsrfTokenRepository`. Before any state-changing req
 GET /v1/auth/csrf
 ```
 
-The response returns the token and required header name. Send that header and both CSRF/session cookies on `POST`, `PUT`, `PATCH`, and `DELETE`. The CSRF endpoint itself is public so a client can bootstrap before login or registration.
+The response returns the token and required header name. The expected token is stored in the HTTP session rather than a separate browser cookie, so clients send that header and the session cookie on `POST`, `PUT`, `PATCH`, and `DELETE`. The CSRF endpoint itself is public so a client can bootstrap before login or registration.
 
-CSRF failures are handled by Spring Security's access-denied flow. Browser and mobile clients must preserve cookies between the token request and mutation.
+CSRF failures are handled by Spring Security's access-denied flow. Browser and mobile clients must preserve the session cookie between the token request and mutation.
 
 ## Authorization levels
 

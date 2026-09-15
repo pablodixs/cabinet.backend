@@ -36,7 +36,8 @@ The default server port is `8080`. The Docker entrypoint also accepts `PORT` and
 | --- | --- | --- |
 | `FLYWAY_ENABLED` | `true` | Enables PostgreSQL migrations. Disabling it does not disable Hibernate schema update. |
 | `SESSION_COOKIE_SECURE` | `true` | Keep enabled behind production HTTPS. The local development script overrides it to `false`. |
-| `SESSION_COOKIE_SAME_SITE` | `none` | Supports the cross-site web client. The local development script overrides it to `lax`. Applies to session and CSRF cookies. |
+| `SESSION_COOKIE_SAME_SITE` | `none` | Supports the cross-site web client. The local development script overrides it to `lax`. |
+| `SESSION_COOKIE_PARTITIONED` | `true` | Allows the cross-site web client to retain the session when third-party cookies are restricted. The local development script overrides it to `false`. |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | `https://cabinetbeta.vercel.app` | Comma-separated patterns; credentials are enabled. The local development script allows `localhost` and `127.0.0.1`. |
 | `ADMIN_EMAILS` | empty | Bootstrap admin emails. This overrides a persisted role at authentication time. |
 | `SSE_MAX_CONNECTIONS_PER_USER` | `3` | Per-user in-memory SSE connection limit. |
