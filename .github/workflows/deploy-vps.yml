@@ -1,5 +1,8 @@
 name: Deploy Cabinet to Oracle VPS
 
+env:
+  TZ: America/Sao_Paulo
+
 on:
   push:
     branches: [master]
