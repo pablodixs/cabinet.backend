@@ -56,7 +56,7 @@ public class RecommendationService {
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
     private final MediaRankingService mediaRankingService;
 
-    public RecommendationResponse recommendations(UUID userId, MediaType type, int limit) {
+    public RecommendationResponse recommendations(UUID userId, MediaType type, int limit, String locale) {
         validateType(type);
         InterestGraphService.InterestProfile profile = interestGraphService.build(userId);
         Set<String> types = typeValues(type);
@@ -90,7 +90,8 @@ public class RecommendationService {
         candidateIds.addAll(relations.candidateIds());
         candidateIds.removeAll(profile.interactedMediaIds());
         if (candidateIds.isEmpty()) {
-            return new RecommendationResponse(fallback(userId, type, limit, profile.interactedMediaIds()));
+            return new RecommendationResponse(fallback(
+                    userId, type, limit, profile.interactedMediaIds(), locale));
         }
 
         List<Media> candidates = mediaRepository.findAllWithGenresByIdIn(candidateIds).stream()
@@ -115,14 +116,14 @@ public class RecommendationService {
                 .limit(limit)
                 .toList();
 
-        List<RecommendationItemResponse> personalized = assemblePersonalized(userId, scored);
+        List<RecommendationItemResponse> personalized = assemblePersonalized(userId, scored, locale);
         if (personalized.size() == limit) {
             return new RecommendationResponse(personalized);
         }
         Set<UUID> fallbackExcluded = new LinkedHashSet<>(profile.interactedMediaIds());
         personalized.stream().map(item -> item.media().id()).forEach(fallbackExcluded::add);
         List<RecommendationItemResponse> items = new ArrayList<>(personalized);
-        items.addAll(fallback(userId, type, limit - personalized.size(), fallbackExcluded));
+        items.addAll(fallback(userId, type, limit - personalized.size(), fallbackExcluded, locale));
         return new RecommendationResponse(List.copyOf(items));
     }
 
@@ -214,10 +215,10 @@ public class RecommendationService {
     }
 
     private List<RecommendationItemResponse> assemblePersonalized(
-            UUID userId, List<ScoredCandidate> scored) {
+            UUID userId, List<ScoredCandidate> scored, String locale) {
         List<Media> orderedMedia = scored.stream().map(ScoredCandidate::media).toList();
         Map<UUID, MediaSearchItemResponse> assembled = mediaSearchItemAssembler
-                .fromImported(orderedMedia, userId).stream()
+                .fromImported(orderedMedia, userId, locale).stream()
                 .collect(Collectors.toMap(MediaSearchItemResponse::id, item -> item));
         return scored.stream().map(candidate -> new RecommendationItemResponse(
                         assembled.get(candidate.media().getId()), RecommendationSource.PERSONALIZED,
@@ -227,9 +228,10 @@ public class RecommendationService {
     }
 
     private List<RecommendationItemResponse> fallback(
-            UUID userId, MediaType type, int limit, Set<UUID> excluded) {
+            UUID userId, MediaType type, int limit, Set<UUID> excluded, String locale) {
         if (limit <= 0) return List.of();
-        List<UUID> ids = mediaRankingService.trending(type, 7, MAX_TRENDING_CANDIDATES).items().stream()
+        List<UUID> ids = mediaRankingService.trending(
+                        type, 7, MAX_TRENDING_CANDIDATES, locale).items().stream()
                 .map(MediaSearchItemResponse::id)
                 .filter(Objects::nonNull)
                 .filter(id -> !excluded.contains(id))
@@ -239,11 +241,15 @@ public class RecommendationService {
         Map<UUID, Media> mediaById = mediaRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(Media::getId, media -> media));
         List<Media> ordered = ids.stream().map(mediaById::get).filter(Objects::nonNull).toList();
-        return mediaSearchItemAssembler.fromImported(ordered, userId).stream()
+        return mediaSearchItemAssembler.fromImported(ordered, userId, locale).stream()
                 .map(media -> new RecommendationItemResponse(media, RecommendationSource.TRENDING,
                         List.of(new RecommendationReasonResponse(
-                                RecommendationReasonType.TRENDING, null, "Em alta no Cabinet"))))
+                                RecommendationReasonType.TRENDING, null, trendingReason(locale)))))
                 .toList();
+    }
+
+    private String trendingReason(String locale) {
+        return "en-US".equals(locale) ? "Trending on Cabinet" : "Em alta no Cabinet";
     }
 
     private List<InterestGraphService.InterestNode> topPositive(

@@ -19,6 +19,7 @@ import com.scriptles.cabinet.media.service.AwardQueryService;
 import com.scriptles.cabinet.media.service.SeasonEpisodeService;
 import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.LocalizedResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -105,16 +106,19 @@ public class MediaQueryController {
     }
 
     @GetMapping("/{mediaId}/more-by")
-    public MoreByResponse findMoreBy(
+    public ResponseEntity<MoreByResponse> findMoreBy(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable UUID mediaId,
-            @RequestParam(defaultValue = "pt-BR")
+            @RequestParam(required = false)
             @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
-            @RequestParam(defaultValue = "12") @Min(1) @Max(40) int limit
+            @RequestParam(defaultValue = "12") @Min(1) @Max(40) int limit,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
-        return user == null
-                ? moreByService.find(mediaId, language, limit)
-                : moreByService.find(mediaId, language, limit, user.id());
+        String requestedLocale = catalogLocaleResolver.resolve(language, acceptLanguage).tag();
+        MoreByResponse response = user == null
+                ? moreByService.find(mediaId, requestedLocale, limit)
+                : moreByService.find(mediaId, requestedLocale, limit, user.id());
+        return LocalizedResponse.ok(response, requestedLocale, language == null || language.isBlank());
     }
 
     @GetMapping("/{mediaId}/external-info")
@@ -146,13 +150,19 @@ public class MediaQueryController {
     }
 
     @GetMapping("/{seriesId}/seasons/{seasonNumber}/episodes")
-    public SeasonEpisodesResponse findSeasonEpisodes(
+    public ResponseEntity<SeasonEpisodesResponse> findSeasonEpisodes(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable UUID seriesId,
             @PathVariable @Min(0) int seasonNumber,
-            @RequestParam(defaultValue = "pt-BR")
-            @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language
+            @RequestParam(required = false)
+            @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
-        return seasonEpisodeService.find(seriesId, seasonNumber, language, user == null ? null : user.id());
+        String requestedLocale = catalogLocaleResolver.resolve(language, acceptLanguage).tag();
+        return LocalizedResponse.ok(
+                seasonEpisodeService.find(seriesId, seasonNumber, requestedLocale, user == null ? null : user.id()),
+                requestedLocale,
+                language == null || language.isBlank()
+        );
     }
 }

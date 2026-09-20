@@ -53,7 +53,8 @@ public class MediaRankingService {
     private final MediaRepository mediaRepository;
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
 
-    public PageResponse<MediaSearchItemResponse> topRated(MediaType type, int page, int limit) {
+    public PageResponse<MediaSearchItemResponse> topRated(
+            MediaType type, int page, int limit, String locale) {
         Page<RatingRepository.RatedMediaProjection> ratings = ratingRepository.findTopRatedMedia(
                 typeValues(type),
                 Visibility.PUBLIC,
@@ -64,7 +65,7 @@ public class MediaRankingService {
                 .toList();
 
         return new PageResponse<>(
-                mediaSearchItemAssembler.fromImported(media),
+                mediaSearchItemAssembler.fromImported(media, locale),
                 ratings.getNumber(),
                 ratings.getSize(),
                 ratings.getTotalElements(),
@@ -72,7 +73,7 @@ public class MediaRankingService {
         );
     }
 
-    public TrendingMediaResponse trending(MediaType type, int periodDays, int limit) {
+    public TrendingMediaResponse trending(MediaType type, int periodDays, int limit, String locale) {
         Set<String> types = typeValues(type);
         Instant since = Instant.now(Clock.systemUTC()).minus(periodDays, ChronoUnit.DAYS);
         int candidateLimit = Math.min(limit * 5, 200);
@@ -108,7 +109,8 @@ public class MediaRankingService {
         Map<UUID, Media> mediaById = mediaRepository.findAllById(scores.keySet()).stream()
                 .collect(Collectors.toMap(Media::getId, media -> media));
         List<MediaSearchItemResponse> assembled = mediaSearchItemAssembler.fromImported(
-                scores.keySet().stream().map(mediaById::get).filter(java.util.Objects::nonNull).toList()
+                scores.keySet().stream().map(mediaById::get).filter(java.util.Objects::nonNull).toList(),
+                locale
         );
         Map<UUID, MediaSearchItemResponse> itemById = assembled.stream()
                 .collect(Collectors.toMap(MediaSearchItemResponse::id, item -> item));
@@ -128,7 +130,7 @@ public class MediaRankingService {
         return new TrendingMediaResponse(items, periodDays);
     }
 
-    public AnticipatedMediaResponse anticipated(int limit) {
+    public AnticipatedMediaResponse anticipated(int limit, String locale) {
         List<UserMediaRepository.AnticipatedMediaProjection> ranking =
                 userMediaRepository.findMostAnticipatedMovies(
                         UserMediaStatus.PLANNED,
@@ -144,7 +146,8 @@ public class MediaRankingService {
                 UserMediaRepository.AnticipatedMediaProjection::getPlannedCount
         ));
         List<MediaSearchItemResponse> assembled = mediaSearchItemAssembler.fromImported(
-                ranking.stream().map(UserMediaRepository.AnticipatedMediaProjection::getMedia).toList()
+                ranking.stream().map(UserMediaRepository.AnticipatedMediaProjection::getMedia).toList(),
+                locale
         );
         List<AnticipatedMediaItemResponse> items = assembled.stream()
                 .map(item -> AnticipatedMediaItemResponse.from(

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.user.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.security.SecurityConfig;
 import com.scriptles.cabinet.user.dto.response.InterestResponse;
@@ -32,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(InterestGraphController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, CatalogLocaleResolver.class})
 class InterestGraphControllerTest {
     @Autowired MockMvc mockMvc;
     @MockitoBean InterestGraphService interestGraphService;
@@ -43,6 +44,41 @@ class InterestGraphControllerTest {
         mockMvc.perform(get("/v1/me/recommendations"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void resolvesRecommendationLocaleFromHeader() throws Exception {
+        AuthenticatedUser principal = principal();
+        when(recommendationService.recommendations(principal.id(), null, 20, "en-US"))
+                .thenReturn(new RecommendationResponse(List.of()));
+
+        mockMvc.perform(get("/v1/me/recommendations")
+                        .with(user(principal))
+                        .header("Accept-Language", "en-US,en;q=0.9"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Content-Language", "en-US"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).contains("Accept-Language"));
+
+        verify(recommendationService).recommendations(principal.id(), null, 20, "en-US");
+    }
+
+    @Test
+    void explicitRecommendationLocaleOverridesHeader() throws Exception {
+        AuthenticatedUser principal = principal();
+        when(recommendationService.recommendations(principal.id(), null, 20, "pt-BR"))
+                .thenReturn(new RecommendationResponse(List.of()));
+
+        mockMvc.perform(get("/v1/me/recommendations")
+                        .with(user(principal))
+                        .param("locale", "pt-BR")
+                        .header("Accept-Language", "en-US"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Content-Language", "pt-BR"));
+
+        verify(recommendationService).recommendations(principal.id(), null, 20, "pt-BR");
     }
 
     @Test

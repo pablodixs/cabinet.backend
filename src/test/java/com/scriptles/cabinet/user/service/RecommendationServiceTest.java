@@ -81,17 +81,18 @@ class RecommendationServiceTest {
         when(mediaRepository.findAllWithGenresByIdIn(any())).thenReturn(List.of(preferred, penalized));
         when(mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(any())).thenReturn(List.of(credit));
         when(ratingRepository.summarizeRatings(any(), any())).thenReturn(List.of());
-        when(mediaSearchItemAssembler.fromImported(List.of(preferred), userId))
+        when(mediaSearchItemAssembler.fromImported(List.of(preferred), userId, "en-US"))
                 .thenReturn(List.of(response(preferred)));
 
-        var result = service.recommendations(userId, MediaType.MOVIE, 1);
+        var result = service.recommendations(userId, MediaType.MOVIE, 1, "en-US");
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.items().getFirst().media().title()).isEqualTo("Preferred");
         assertThat(result.items().getFirst().source()).isEqualTo(RecommendationSource.PERSONALIZED);
         assertThat(result.items().getFirst().reasons()).extracting(reason -> reason.targetType())
                 .containsExactly(RecommendationReasonType.GENRE);
-        verify(mediaRankingService, never()).trending(any(), any(Integer.class), any(Integer.class));
+        verify(mediaRankingService, never()).trending(
+                any(), any(Integer.class), any(Integer.class), any());
     }
 
     @Test
@@ -102,17 +103,20 @@ class RecommendationServiceTest {
                 new InterestGraphService.InterestProfile(Map.of(), Set.of()));
         when(mediaRepository.findInterestCandidates(any(), any(), any(), any(), any()))
                 .thenReturn(List.of());
-        when(mediaRankingService.trending(MediaType.MOVIE, 7, 200))
+        when(mediaRankingService.trending(MediaType.MOVIE, 7, 200, "en-US"))
                 .thenReturn(new TrendingMediaResponse(List.of(response(trending)), 7));
         when(mediaRepository.findAllById(List.of(trending.getId()))).thenReturn(List.of(trending));
-        when(mediaSearchItemAssembler.fromImported(List.of(trending), userId))
+        when(mediaSearchItemAssembler.fromImported(List.of(trending), userId, "en-US"))
                 .thenReturn(List.of(response(trending)));
 
-        var result = service.recommendations(userId, MediaType.MOVIE, 1);
+        var result = service.recommendations(userId, MediaType.MOVIE, 1, "en-US");
 
         assertThat(result.items().getFirst().source()).isEqualTo(RecommendationSource.TRENDING);
         assertThat(result.items().getFirst().reasons().getFirst().targetType())
                 .isEqualTo(RecommendationReasonType.TRENDING);
+        assertThat(result.items().getFirst().reasons().getFirst().label())
+                .isEqualTo("Trending on Cabinet");
+        verify(mediaRankingService).trending(MediaType.MOVIE, 7, 200, "en-US");
     }
 
     @Test
@@ -139,16 +143,37 @@ class RecommendationServiceTest {
         when(mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(Set.of(adaptation.getId())))
                 .thenReturn(List.of());
         when(ratingRepository.summarizeRatings(any(), any())).thenReturn(List.of());
-        when(mediaSearchItemAssembler.fromImported(List.of(adaptation), userId))
+        when(mediaSearchItemAssembler.fromImported(List.of(adaptation), userId, "en-US"))
                 .thenReturn(List.of(response(adaptation)));
 
-        var result = service.recommendations(userId, MediaType.MOVIE, 1);
+        var result = service.recommendations(userId, MediaType.MOVIE, 1, "en-US");
 
         assertThat(result.items()).singleElement().satisfies(item -> {
             assertThat(item.media().id()).isEqualTo(adaptation.getId());
             assertThat(item.reasons()).extracting(reason -> reason.targetType())
                     .containsExactly(RecommendationReasonType.MEDIA);
         });
+    }
+
+    @Test
+    void localizesTrendingFallbackReasonInPortuguese() {
+        UUID userId = UUID.randomUUID();
+        Media trending = media("Em alta", "Thriller");
+        when(interestGraphService.build(userId)).thenReturn(
+                new InterestGraphService.InterestProfile(Map.of(), Set.of()));
+        when(mediaRepository.findInterestCandidates(any(), any(), any(), any(), any()))
+                .thenReturn(List.of());
+        when(mediaRankingService.trending(MediaType.MOVIE, 7, 200, "pt-BR"))
+                .thenReturn(new TrendingMediaResponse(List.of(response(trending)), 7));
+        when(mediaRepository.findAllById(List.of(trending.getId()))).thenReturn(List.of(trending));
+        when(mediaSearchItemAssembler.fromImported(List.of(trending), userId, "pt-BR"))
+                .thenReturn(List.of(response(trending)));
+
+        var result = service.recommendations(userId, MediaType.MOVIE, 1, "pt-BR");
+
+        assertThat(result.items().getFirst().reasons().getFirst().label())
+                .isEqualTo("Em alta no Cabinet");
+        verify(mediaRankingService).trending(MediaType.MOVIE, 7, 200, "pt-BR");
     }
 
     private Media media(String title, String genre) {

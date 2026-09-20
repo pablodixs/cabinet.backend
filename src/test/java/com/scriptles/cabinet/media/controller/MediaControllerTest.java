@@ -7,7 +7,6 @@ import com.scriptles.cabinet.media.dto.response.RelatedMediaResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
-import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.media.service.ExternalMediaService;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.SecurityConfig;
@@ -29,19 +28,17 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MediaController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, CatalogLocaleResolver.class})
 class MediaControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
     @MockitoBean
     private ExternalMediaService externalMediaService;
-
-    @MockitoBean
-    private CatalogLocaleResolver localeResolver;
 
     @Test
     void returnsCommunityStatsInMediaDetails() throws Exception {
@@ -96,6 +93,9 @@ class MediaControllerTest {
 
         mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/550"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "pt-BR"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).contains("Accept-Language"))
                 .andExpect(jsonPath("$.likeCount").value(12))
                 .andExpect(jsonPath("$.recentLikers[0].username").value("ana"))
                 .andExpect(jsonPath("$.recentLikers[0].avatarUrl")
@@ -112,6 +112,35 @@ class MediaControllerTest {
                 .andExpect(jsonPath("$.recentCompleters[0].username").value("bia"))
                 .andExpect(jsonPath("$.recentCompleters[0].avatarUrl")
                         .value("https://example.com/bia.jpg"));
+    }
+
+    @Test
+    void usesAcceptLanguageForExternalDetailsAndExplicitLanguageOverridesIt() throws Exception {
+        when(externalMediaService.findDetails(
+                ExternalSource.TMDB, MediaType.MOVIE, "550", "en-US"))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/550")
+                        .header("Accept-Language", "en-US"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "en-US"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).contains("Accept-Language"));
+        verify(externalMediaService).findDetails(
+                ExternalSource.TMDB, MediaType.MOVIE, "550", "en-US");
+
+        when(externalMediaService.findDetails(
+                ExternalSource.TMDB, MediaType.MOVIE, "550", "pt-BR"))
+                .thenReturn(null);
+        mockMvc.perform(get("/v1/media/external/TMDB/MOVIE/550")
+                        .param("language", "pt-BR")
+                        .header("Accept-Language", "en-US"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "pt-BR"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).doesNotContain("Accept-Language"));
+        verify(externalMediaService).findDetails(
+                ExternalSource.TMDB, MediaType.MOVIE, "550", "pt-BR");
     }
 
     @Test
@@ -140,8 +169,6 @@ class MediaControllerTest {
 
     @Test
     void importsUsingAcceptLanguageLocale() throws Exception {
-        when(localeResolver.resolve(null, "en-US")).thenReturn(SupportedLocale.EN_US);
-
         mockMvc.perform(post("/v1/media/external/import")
                         .with(user("reader"))
                         .with(csrf())
@@ -154,7 +181,8 @@ class MediaControllerTest {
                                   "mediaType": "MOVIE"
                                 }
                                 """))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Content-Language", "en-US"));
 
         verify(externalMediaService).importMedia(
                 new ImportExternalMediaRequest(ExternalSource.TMDB, "550", MediaType.MOVIE),

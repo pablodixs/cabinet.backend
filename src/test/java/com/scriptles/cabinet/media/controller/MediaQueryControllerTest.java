@@ -12,7 +12,6 @@ import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
 import com.scriptles.cabinet.media.enums.CatalogStatus;
 import com.scriptles.cabinet.media.enums.MediaType;
-import com.scriptles.cabinet.media.enums.SupportedLocale;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalInfoSectionState;
 import com.scriptles.cabinet.media.enums.AwardSectionState;
@@ -45,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MediaQueryController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, CatalogLocaleResolver.class})
 class MediaQueryControllerTest {
     @Autowired
     private MockMvc mockMvc;
@@ -64,9 +63,6 @@ class MediaQueryControllerTest {
 
     @MockitoBean
     private AwardQueryService awardQueryService;
-
-    @MockitoBean
-    private CatalogLocaleResolver catalogLocaleResolver;
 
     @Test
     void returnsAlbumTracksWithoutAuthenticationAndDisablesCaching() throws Exception {
@@ -120,8 +116,6 @@ class MediaQueryControllerTest {
     @Test
     void resolvesAcceptLanguageAndReturnsRepresentationHeaders() throws Exception {
         UUID mediaId = UUID.randomUUID();
-        when(catalogLocaleResolver.resolve(null, "en-US,en;q=0.9"))
-                .thenReturn(SupportedLocale.EN_US);
         when(mediaQueryService.findDetails(mediaId, "en-US"))
                 .thenReturn(details(mediaId, "en-US", "en-US", false));
 
@@ -141,7 +135,6 @@ class MediaQueryControllerTest {
     @Test
     void explicitLocaleOverridesHeaderAndDoesNotVaryByHeader() throws Exception {
         UUID mediaId = UUID.randomUUID();
-        when(catalogLocaleResolver.resolve("pt-BR", "en-US")).thenReturn(SupportedLocale.PT_BR);
         when(mediaQueryService.findDetails(mediaId, "pt-BR"))
                 .thenReturn(details(mediaId, "pt-BR", "pt-BR", false));
 
@@ -157,7 +150,6 @@ class MediaQueryControllerTest {
     @Test
     void doesNotCacheDetailsWhileCatalogEnrichmentIsPending() throws Exception {
         UUID mediaId = UUID.randomUUID();
-        when(catalogLocaleResolver.resolve("pt-BR", null)).thenReturn(SupportedLocale.PT_BR);
         when(mediaQueryService.findDetails(mediaId, "pt-BR"))
                 .thenReturn(details(mediaId, "pt-BR", "pt-BR", false, CatalogStatus.ENRICHING));
 

@@ -143,6 +143,21 @@ class DefaultMediaTranslationResolverTest {
     }
 
     @Test
+    void usesPortugueseTranslationWhenEnglishIsUnavailable() {
+        Media media = media("Título canônico", "pt-BR");
+        MediaTranslation portuguese = translation(media, "pt-BR", "Título em português", "Descrição PT", null,
+                TranslationStatus.AVAILABLE);
+        when(repository.findAllByMediaId(media.getId())).thenReturn(List.of(portuguese));
+
+        ResolvedMediaTranslation result = resolver.resolve(media, "en-US");
+
+        assertThat(result.title()).isEqualTo("Título em português");
+        assertThat(result.description()).isEqualTo("Descrição PT");
+        assertThat(result.resolvedLocale()).isEqualTo("pt-BR");
+        assertThat(result.fallback()).isTrue();
+    }
+
+    @Test
     void batchResolutionUsesOneRepositoryQueryAndIsStableRegardlessOfDatabaseOrder() {
         Media first = media("Primeiro", "pt-BR");
         Media second = media("Segundo", "pt-BR");

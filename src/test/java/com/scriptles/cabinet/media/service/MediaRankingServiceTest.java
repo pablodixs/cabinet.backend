@@ -56,10 +56,10 @@ class MediaRankingServiceTest {
         when(ratingRepository.findTopRatedMedia(Set.of("MOVIE"),
                 com.scriptles.cabinet.user.enums.Visibility.PUBLIC, pageable))
                 .thenReturn(new PageImpl<>(List.of(firstProjection, secondProjection), pageable, 5));
-        when(mediaSearchItemAssembler.fromImported(List.of(first, second)))
+        when(mediaSearchItemAssembler.fromImported(List.of(first, second), "en-US"))
                 .thenReturn(List.of(item(first, 4.9, 20), item(second, 4.8, 40)));
 
-        var result = mediaRankingService.topRated(MediaType.MOVIE, 1, 2);
+        var result = mediaRankingService.topRated(MediaType.MOVIE, 1, 2, "en-US");
 
         assertThat(result.items()).extracting(MediaSearchItemResponse::title)
                 .containsExactly("Primeira", "Segunda");
@@ -86,14 +86,14 @@ class MediaRankingServiceTest {
                 .thenReturn(List.of(libraryActivity));
         when(mediaRepository.findAllById(any()))
                 .thenReturn(List.of(ratedMedia, likedMedia, libraryMedia));
-        when(mediaSearchItemAssembler.fromImported(any()))
+        when(mediaSearchItemAssembler.fromImported(any(), eq("en-US")))
                 .thenReturn(List.of(
                         item(libraryMedia, 5.0, 1),
                         item(likedMedia, 4.5, 4),
                         item(ratedMedia, 4.0, 8)
                 ));
 
-        var result = mediaRankingService.trending(null, 7, 3);
+        var result = mediaRankingService.trending(null, 7, 3, "en-US");
 
         assertThat(result.items()).extracting(MediaSearchItemResponse::title)
                 .containsExactly("Nota recente", "Curtidas recentes", "Biblioteca recente");
@@ -121,10 +121,10 @@ class MediaRankingServiceTest {
         when(userMediaRepository.findMostAnticipatedMovies(
                 eq(UserMediaStatus.PLANNED), any(), eq(PageRequest.of(0, 6))))
                 .thenReturn(List.of(firstProjection, secondProjection));
-        when(mediaSearchItemAssembler.fromImported(List.of(first, second)))
+        when(mediaSearchItemAssembler.fromImported(List.of(first, second), "en-US"))
                 .thenReturn(List.of(item(first, 0, 0), item(second, 0, 0)));
 
-        var result = mediaRankingService.anticipated(6);
+        var result = mediaRankingService.anticipated(6, "en-US");
 
         assertThat(result.items())
                 .extracting(item -> item.title(), item -> item.plannedCount())

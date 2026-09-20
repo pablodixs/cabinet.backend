@@ -19,7 +19,9 @@ GET /v1/media/{mediaId}
 Accept-Language: en-US,pt-BR;q=0.8
 ```
 
-The same locale rules apply to `/v1/media/search` and `/v1/search/header`. A stored title can be found in either
+The same locale rules apply to localized search, rankings, recommendations, external media, people works, episode,
+and “more by” endpoints. Use the endpoint's explicit `locale` or existing `language` query parameter when present;
+otherwise the backend reads `Accept-Language`, then falls back to `pt-BR`. A stored title can be found in either
 supported language, while the returned title uses the requested representation. Unsupported explicit locales
 return `400 Bad Request` with code `UNSUPPORTED_LOCALE`.
 
@@ -179,7 +181,7 @@ GET /v1/media/external/search?query=fight%20club&type=MOVIE&language=en-US&start
 GET /v1/media/external/search?query=speak%20to%20me&type=TRACK&language=en-US&startIndex=0&maxResults=20
 ```
 
-`type` is optional. Supported detail types are `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `BOOK`. Language defaults to `pt-BR`.
+`type` is optional. Supported detail types are `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `BOOK`. The optional `language` parameter overrides `Accept-Language`; when neither selects a supported locale, the response defaults to `pt-BR`.
 Search responses are summaries. `durationSeconds` is populated for MusicBrainz track searches, and `wikidataId` is populated whenever the primary provider includes the relationship.
 
 ```json
@@ -347,8 +349,8 @@ The details response contains the person's name, biography and image when availa
 count, and the credit roles found in Cabinet. The works endpoint combines imported media with TMDB and MusicBrainz
 catalogs for every external identity attached to the person. Imported media have priority when an external reference
 matches `(source, externalId)`, so each work is listed once. Local credits preserve every role and character; external
-previews expose the role returned by the provider. `language` defaults to `pt-BR`, `type` is optional, and `size`
-accepts values from 1 to 40.
+previews expose the role returned by the provider. `language` overrides `Accept-Language`; if neither is present,
+the locale defaults to `pt-BR`. `type` is optional, and `size` accepts values from 1 to 40.
 
 Supported examples are:
 

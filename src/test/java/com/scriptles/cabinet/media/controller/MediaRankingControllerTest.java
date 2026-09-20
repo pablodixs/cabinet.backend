@@ -8,6 +8,7 @@ import com.scriptles.cabinet.media.dto.response.TrendingMediaResponse;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.MediaRankingService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,10 +25,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MediaRankingController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, CatalogLocaleResolver.class})
 class MediaRankingControllerTest {
     @Autowired
     private MockMvc mockMvc;
@@ -38,31 +40,37 @@ class MediaRankingControllerTest {
     @Test
     void returnsPublicTopRatedRanking() throws Exception {
         MediaSearchItemResponse item = item("Central do Brasil", 4.8, 32);
-        when(mediaRankingService.topRated(MediaType.MOVIE, 0, 20))
+        when(mediaRankingService.topRated(MediaType.MOVIE, 0, 20, "en-US"))
                 .thenReturn(new PageResponse<>(List.of(item), 0, 20, 1, 1));
 
-        mockMvc.perform(get("/v1/media/rankings/top-rated").param("type", "MOVIE"))
+        mockMvc.perform(get("/v1/media/rankings/top-rated")
+                        .param("type", "MOVIE")
+                        .header("Accept-Language", "en-US"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "en-US"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).contains("Accept-Language"))
                 .andExpect(jsonPath("$.items[0].title").value("Central do Brasil"))
                 .andExpect(jsonPath("$.items[0].averageRating").value(4.8))
                 .andExpect(jsonPath("$.items[0].ratingCount").value(32))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
-        verify(mediaRankingService).topRated(MediaType.MOVIE, 0, 20);
+        verify(mediaRankingService).topRated(MediaType.MOVIE, 0, 20, "en-US");
     }
 
     @Test
     void returnsTrendingMediaWithDefaultWindow() throws Exception {
         MediaSearchItemResponse item = item("Ainda Estou Aqui", 4.7, 21);
-        when(mediaRankingService.trending(null, 7, 12))
+        when(mediaRankingService.trending(null, 7, 12, "en-US"))
                 .thenReturn(new TrendingMediaResponse(List.of(item), 7));
 
-        mockMvc.perform(get("/v1/media/rankings/trending"))
+        mockMvc.perform(get("/v1/media/rankings/trending").header("Accept-Language", "en-US"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "en-US"))
                 .andExpect(jsonPath("$.periodDays").value(7))
                 .andExpect(jsonPath("$.items[0].title").value("Ainda Estou Aqui"));
 
-        verify(mediaRankingService).trending(null, 7, 12);
+        verify(mediaRankingService).trending(null, 7, 12, "en-US");
     }
 
     @Test
@@ -70,7 +78,7 @@ class MediaRankingControllerTest {
         MediaSearchItemResponse media = item("O Agente Secreto 2", null, 0);
         AnticipatedMediaItemResponse anticipated =
                 AnticipatedMediaItemResponse.from(media, 23);
-        when(mediaRankingService.anticipated(6))
+        when(mediaRankingService.anticipated(6, "pt-BR"))
                 .thenReturn(new AnticipatedMediaResponse(List.of(anticipated)));
 
         mockMvc.perform(get("/v1/media/rankings/anticipated"))
@@ -79,7 +87,24 @@ class MediaRankingControllerTest {
                 .andExpect(jsonPath("$.items[0].type").value("MOVIE"))
                 .andExpect(jsonPath("$.items[0].plannedCount").value(23));
 
-        verify(mediaRankingService).anticipated(6);
+        verify(mediaRankingService).anticipated(6, "pt-BR");
+    }
+
+    @Test
+    void explicitLocaleOverridesAcceptLanguage() throws Exception {
+        when(mediaRankingService.anticipated(6, "pt-BR"))
+                .thenReturn(new AnticipatedMediaResponse(List.of()));
+
+        mockMvc.perform(get("/v1/media/rankings/anticipated")
+                        .param("limit", "6")
+                        .param("locale", "pt-BR")
+                        .header("Accept-Language", "en-US"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "pt-BR"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).doesNotContain("Accept-Language"));
+
+        verify(mediaRankingService).anticipated(6, "pt-BR");
     }
 
     @Test
