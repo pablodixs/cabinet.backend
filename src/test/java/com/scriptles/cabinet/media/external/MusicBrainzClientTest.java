@@ -113,6 +113,45 @@ class MusicBrainzClientTest {
     }
 
     @Test
+    void usesArtistCreditJoinPhrasesForFeaturedAndCollaboratingArtists() {
+        server.expect(requestTo(startsWith(BASE_URL + "/recording")))
+                .andExpect(queryParam("fmt", "json"))
+                .andRespond(withSuccess("""
+                        {
+                          "recordings": [{
+                            "id": "recording-id",
+                            "title": "A Song",
+                            "artist-credit": [
+                              {"name": "Artist A", "artist": {"id": "a", "name": "Artist A"}, "joinphrase": " feat. "},
+                              {"name": "Artist B", "artist": {"id": "b", "name": "Artist B"}, "joinphrase": ""},
+                              {"name": "Artist C", "artist": {"id": "c", "name": "Artist C"}, "joinphrase": " & "},
+                              {"name": "Artist D", "artist": {"id": "d", "name": "Artist D"}, "joinphrase": ""},
+                              {"name": "Artist E", "artist": {"id": "e", "name": "Artist E"}, "joinphrase": " ft. "},
+                              {"name": "Artist F", "artist": {"id": "f", "name": "Artist F"}, "joinphrase": ""},
+                              {"name": "Artist G", "artist": {"id": "g", "name": "Artist G"}, "joinphrase": " featuring "},
+                              {"name": "Artist H", "artist": {"id": "h", "name": "Artist H"}}
+                            ]
+                          }]
+                        }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        ExternalMedia recording = client.search(MediaType.TRACK, "song", "pt-BR", 0, 20).getFirst();
+
+        assertThat(recording.credits()).extracting(ExternalMedia.ExternalCredit::role)
+                .containsExactly(
+                        CreditRole.ARTIST,
+                        CreditRole.FEATURED_ARTIST,
+                        CreditRole.ARTIST,
+                        CreditRole.ARTIST,
+                        CreditRole.ARTIST,
+                        CreditRole.FEATURED_ARTIST,
+                        CreditRole.ARTIST,
+                        CreditRole.FEATURED_ARTIST
+                );
+        server.verify();
+    }
+
+    @Test
     void mapsAlbumWikidataAndUsesOfficialReleaseWithRecordingLengthFallback() {
         server.expect(requestTo(startsWith(BASE_URL + "/release-group/album-id")))
                 .andExpect(queryParam("fmt", "json"))
@@ -203,11 +242,16 @@ class MusicBrainzClientTest {
                           "release-group-count": 101,
                           "release-groups": [
                             {"id": "old", "title": "Old", "first-release-date": "2000",
-                             "artist-credit": [{"name": "An Artist"}]},
+                             "artist-credit": [{"name": "An Artist", "artist": {"id": "artist-id", "name": "An Artist"}}]},
                             {"id": "new", "title": "New", "first-release-date": "2024-03-01",
-                             "artist-credit": [{"name": "An Artist"}]}
+                             "artist-credit": [{"name": "An Artist", "artist": {"id": "artist-id", "name": "An Artist"}}]}
                           ]
                         }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+        server.expect(requestTo(startsWith(BASE_URL + "/release")))
+                .andExpect(queryParam("artist", "artist-id"))
+                .andRespond(withSuccess("""
+                        {"release-count": 0, "releases": []}
                         """, org.springframework.http.MediaType.APPLICATION_JSON));
 
         ExternalPersonWorksProvider.PersonWorks works = client.findPersonWorks("artist-id", "pt-BR");
@@ -217,6 +261,78 @@ class MusicBrainzClientTest {
                 .containsExactly("new", "old");
         assertThat(works.items()).allSatisfy(work -> assertThat(work.media().type())
                 .isEqualTo(MediaType.ALBUM));
+        server.verify();
+    }
+
+    @Test
+    void personWorksUseTheSameFeaturedRoleNormalizationAsMediaCredits() {
+        server.expect(requestTo(startsWith(BASE_URL + "/release-group")))
+                .andExpect(queryParam("artist", "artist-b"))
+                .andRespond(withSuccess("""
+                        {
+                          "release-group-count": 1,
+                          "release-groups": [{
+                            "id": "album-id",
+                            "title": "Fortnight",
+                            "artist-credit": [
+                              {"name": "Artist A", "artist": {"id": "artist-a", "name": "Artist A"}, "joinphrase": " feat. "},
+                              {"name": "Artist B", "artist": {"id": "artist-b", "name": "Artist B"}}
+                            ]
+                          }]
+                        }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+        server.expect(requestTo(startsWith(BASE_URL + "/release")))
+                .andExpect(queryParam("artist", "artist-b"))
+                .andRespond(withSuccess("""
+                        {"release-count": 0, "releases": []}
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        ExternalPersonWorksProvider.PersonWorks works = client.findPersonWorks("artist-b", "pt-BR");
+
+        assertThat(works.items()).singleElement().satisfies(work -> {
+            assertThat(work.media().title()).isEqualTo("Fortnight");
+            assertThat(work.role()).isEqualTo(CreditRole.FEATURED_ARTIST);
+        });
+        server.verify();
+    }
+
+    @Test
+    void mapsStructuredReleaseProducerAndComposerRelationships() {
+        server.expect(requestTo(startsWith(BASE_URL + "/release-group")))
+                .andExpect(queryParam("artist", "producer-composer"))
+                .andRespond(withSuccess("""
+                        {"release-group-count": 0, "release-groups": []}
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+        server.expect(requestTo(startsWith(BASE_URL + "/release")))
+                .andExpect(queryParam("artist", "producer-composer"))
+                .andExpect(queryParam("inc", "artist-rels+release-groups"))
+                .andRespond(withSuccess("""
+                        {
+                          "release-count": 1,
+                          "releases": [{
+                            "id": "release-id",
+                            "release-group": {
+                              "id": "album-id",
+                              "title": "A Produced Album",
+                              "first-release-date": "2024"
+                            },
+                            "relations": [
+                              {"type": "producer", "artist": {"id": "producer-composer"}},
+                              {"type": "composer", "artist": {"id": "producer-composer"}},
+                              {"type": "engineer", "artist": {"id": "producer-composer"}},
+                              {"type": "producer", "artist": {"id": "someone-else"}}
+                            ]
+                          }]
+                        }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        ExternalPersonWorksProvider.PersonWorks works = client.findPersonWorks("producer-composer", "pt-BR");
+
+        assertThat(works.items()).extracting(ExternalPersonWorksProvider.Work::role)
+                .containsExactly(CreditRole.PRODUCER, CreditRole.COMPOSER);
+        assertThat(works.items()).extracting(work -> work.media().externalId())
+                .containsOnly("album-id");
+        assertThat(works.incomplete()).isFalse();
         server.verify();
     }
 

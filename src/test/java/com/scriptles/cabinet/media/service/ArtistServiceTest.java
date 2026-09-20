@@ -35,6 +35,8 @@ class ArtistServiceTest {
     private PersonRepository personRepository;
     @Mock
     private MediaCreditRepository mediaCreditRepository;
+    @Mock
+    private RatingSummaryService ratingSummaryService;
 
     @InjectMocks
     private ArtistService artistService;
@@ -46,13 +48,54 @@ class ArtistServiceTest {
         when(mediaCreditRepository.countDistinctMediaByPersonId(artist.getId())).thenReturn(4L);
         when(mediaCreditRepository.findDistinctRolesByPersonId(artist.getId()))
                 .thenReturn(List.of(CreditRole.PRODUCER, CreditRole.DIRECTOR));
+        when(mediaCreditRepository.findDistinctMediaIdsByPersonId(artist.getId()))
+                .thenReturn(List.of());
+        when(ratingSummaryService.aggregate(List.of()))
+                .thenReturn(RatingSummaryService.AggregateStats.empty());
 
         var response = artistService.findDetails(artist.getId());
 
         assertThat(response.name()).isEqualTo("David Fincher");
         assertThat(response.workCount()).isEqualTo(4);
         assertThat(response.roles()).containsExactly(CreditRole.DIRECTOR, CreditRole.PRODUCER);
+        assertThat(response.averageRating()).isNull();
         assertThat(response.source()).isEqualTo(ExternalSource.TMDB);
+    }
+
+    @Test
+    void aggregatesCabinetRatingOncePerDistinctImportedWork() {
+        Person artist = artist("David Fincher");
+        UUID firstMediaId = UUID.randomUUID();
+        UUID secondMediaId = UUID.randomUUID();
+        List<UUID> distinctMediaIds = List.of(firstMediaId, secondMediaId);
+        when(personRepository.findById(artist.getId())).thenReturn(Optional.of(artist));
+        when(mediaCreditRepository.findDistinctRolesByPersonId(artist.getId())).thenReturn(List.of(CreditRole.ACTOR));
+        when(mediaCreditRepository.findDistinctMediaIdsByPersonId(artist.getId()))
+                .thenReturn(List.of(firstMediaId, firstMediaId, secondMediaId));
+        when(mediaCreditRepository.countDistinctMediaByPersonId(artist.getId())).thenReturn(2L);
+        when(ratingSummaryService.aggregate(distinctMediaIds)).thenReturn(
+                new RatingSummaryService.AggregateStats(4.25, 3, List.of()));
+
+        var response = artistService.findDetails(artist.getId());
+
+        assertThat(response.averageRating()).isEqualTo(4.25);
+        assertThat(response.workCount()).isEqualTo(2);
+        verify(ratingSummaryService).aggregate(distinctMediaIds);
+    }
+
+    @Test
+    void reportsUnavailableRatingForImportedWorksWithoutPublicRatings() {
+        Person artist = artist("David Fincher");
+        UUID mediaId = UUID.randomUUID();
+        when(personRepository.findById(artist.getId())).thenReturn(Optional.of(artist));
+        when(mediaCreditRepository.findDistinctRolesByPersonId(artist.getId())).thenReturn(List.of(CreditRole.DIRECTOR));
+        when(mediaCreditRepository.findDistinctMediaIdsByPersonId(artist.getId())).thenReturn(List.of(mediaId));
+        when(mediaCreditRepository.countDistinctMediaByPersonId(artist.getId())).thenReturn(1L);
+        when(ratingSummaryService.aggregate(List.of(mediaId))).thenReturn(RatingSummaryService.AggregateStats.empty());
+
+        var response = artistService.findDetails(artist.getId());
+
+        assertThat(response.averageRating()).isNull();
     }
 
     @Test

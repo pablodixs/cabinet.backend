@@ -57,6 +57,27 @@ class RatingSummaryServiceTest {
     }
 
     @Test
+    void aggregateReturnsTheAverageForOneRatedWork() {
+        UUID mediaId = UUID.randomUUID();
+        RatingRepository.AggregateRatingProjection summary =
+                mock(RatingRepository.AggregateRatingProjection.class);
+        RatingRepository.RatingDistributionProjection ratingBucket =
+                mock(RatingRepository.RatingDistributionProjection.class);
+        when(summary.getAverageRating()).thenReturn(4.5);
+        when(summary.getRatingCount()).thenReturn(1L);
+        when(ratingBucket.getRating()).thenReturn(new BigDecimal("4.5"));
+        when(ratingBucket.getRatingCount()).thenReturn(1L);
+        when(ratingRepository.aggregateRatings(List.of(mediaId), Visibility.PUBLIC)).thenReturn(summary);
+        when(ratingRepository.ratingDistributionForMediaIds(List.of(mediaId), Visibility.PUBLIC))
+                .thenReturn(List.of(ratingBucket));
+
+        var result = service.aggregate(List.of(mediaId));
+
+        assertThat(result.averageRating()).isEqualTo(4.5);
+        assertThat(result.ratingCount()).isEqualTo(1);
+    }
+
+    @Test
     void emptyAggregateHasNoAverageAndTenEmptyBuckets() {
         var result = service.aggregate(List.of());
 

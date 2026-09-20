@@ -33,7 +33,7 @@ public class InterestScoringPolicy {
 
     public double role(CreditRole role, Integer position) {
         return switch (role) {
-            case AUTHOR, CREATOR, DIRECTOR, ARTIST -> 1.0;
+            case AUTHOR, CREATOR, DIRECTOR, ARTIST, FEATURED_ARTIST -> 1.0;
             case COMPOSER, SCREENWRITER -> 0.75;
             case PRODUCER -> 0.5;
             case ACTOR -> position != null && position < 10 ? 0.5 : 0.2;

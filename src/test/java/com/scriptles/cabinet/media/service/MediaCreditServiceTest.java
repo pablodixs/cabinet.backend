@@ -10,6 +10,7 @@ import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
 import com.scriptles.cabinet.media.repository.PersonExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
+import com.scriptles.cabinet.media.repository.RatingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +33,8 @@ class MediaCreditServiceTest {
     private MediaCreditRepository mediaCreditRepository;
     @Autowired
     private PersonExternalReferenceRepository personExternalReferenceRepository;
+    @Autowired
+    private RatingRepository ratingRepository;
 
     private MediaCreditService mediaCreditService;
     private ArtistService artistService;
@@ -54,7 +57,8 @@ class MediaCreditServiceTest {
                 identityEnricher
         );
         mediaCreditService = new MediaCreditService(personIdentityService, mediaCreditRepository);
-        artistService = new ArtistService(personRepository, mediaCreditRepository);
+        artistService = new ArtistService(
+                personRepository, mediaCreditRepository, new RatingSummaryService(ratingRepository));
     }
 
     @Test

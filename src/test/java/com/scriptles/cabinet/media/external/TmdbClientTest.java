@@ -137,19 +137,19 @@ class TmdbClientTest {
 
     @Test
     void returnsDistinctNonAdultDirectorMoviesByPopularity() {
-        server.expect(requestTo(startsWith(BASE_URL + "/person/7467/movie_credits")))
+        server.expect(requestTo(startsWith(BASE_URL + "/person/7467/combined_credits")))
                 .andExpect(queryParam("api_key", "api-key"))
                 .andExpect(queryParam("language", "pt-BR"))
                 .andRespond(withSuccess("""
                         {
                           "crew": [
-                            {"id": 10, "title": "Older popular", "job": "Director",
+                            {"id": 10, "media_type": "movie", "title": "Older popular", "job": "Director",
                              "release_date": "2000-01-01", "popularity": 20},
-                            {"id": 11, "title": "Newer less popular", "job": "Director",
+                            {"id": 11, "media_type": "movie", "title": "Newer less popular", "job": "Director",
                              "release_date": "2020-01-01", "popularity": 10},
-                            {"id": 10, "title": "Duplicate", "job": "Director", "popularity": 1},
-                            {"id": 12, "title": "Adult", "job": "Director", "adult": true, "popularity": 100},
-                            {"id": 13, "title": "Produced", "job": "Producer", "popularity": 50}
+                            {"id": 10, "media_type": "movie", "title": "Duplicate", "job": "Director", "popularity": 1},
+                            {"id": 12, "media_type": "movie", "title": "Adult", "job": "Director", "adult": true, "popularity": 100},
+                            {"id": 13, "media_type": "movie", "title": "Produced", "job": "Producer", "popularity": 50}
                           ]
                         }
                         """, org.springframework.http.MediaType.APPLICATION_JSON));
@@ -158,27 +158,33 @@ class TmdbClientTest {
 
         assertThat(works.incomplete()).isFalse();
         assertThat(works.items()).extracting(work -> work.media().externalId())
-                .containsExactly("10", "11");
+                .containsExactly("13", "10", "11");
         assertThat(works.items()).extracting(ExternalPersonWorksProvider.Work::relevance)
-                .containsExactly(20.0, 10.0);
+                .containsExactly(50.0, 20.0, 10.0);
+        assertThat(works.items().getFirst().role()).isEqualTo(CreditRole.PRODUCER);
         server.verify();
     }
 
     @Test
     void returnsCastAsActorAndPreservesCharacterName() {
-        server.expect(requestTo(startsWith(BASE_URL + "/person/287/movie_credits")))
+        server.expect(requestTo(startsWith(BASE_URL + "/person/287/combined_credits")))
                 .andExpect(queryParam("api_key", "api-key"))
                 .andExpect(queryParam("language", "pt-BR"))
                 .andRespond(withSuccess("""
                         {
                           "cast": [
-                            {"id": 550, "title": "Fight Club", "character": "Tyler Durden",
+                            {"id": 550, "media_type": "movie", "title": "Fight Club", "character": "Tyler Durden",
                              "release_date": "1999-01-01", "popularity": 20},
-                            {"id": 551, "title": "Seven", "adult": true, "popularity": 100}
+                            {"id": 551, "media_type": "movie", "title": "Seven", "adult": true, "popularity": 100},
+                            {"id": 562, "media_type": "tv", "name": "The Series", "character": "Himself",
+                             "first_air_date": "2020-01-01", "popularity": 12}
                           ],
                           "crew": [
-                            {"id": 807, "title": "Se7en", "job": "Director", "popularity": 10},
-                            {"id": 550, "title": "Fight Club", "job": "Director", "popularity": 1}
+                            {"id": 807, "media_type": "movie", "title": "Se7en", "job": "Director", "popularity": 10},
+                            {"id": 550, "media_type": "movie", "title": "Fight Club", "job": "Producer", "popularity": 1},
+                            {"id": 563, "media_type": "tv", "name": "Another Series", "job": "Executive Producer", "popularity": 5},
+                            {"id": 564, "media_type": "movie", "title": "Written", "job": "Screenplay", "popularity": 4},
+                            {"id": 565, "media_type": "movie", "title": "Composed", "job": "Original Music Composer", "popularity": 3}
                           ]
                         }
                         """, org.springframework.http.MediaType.APPLICATION_JSON));
@@ -186,10 +192,15 @@ class TmdbClientTest {
         ExternalPersonWorksProvider.PersonWorks works = client.findPersonWorks("287", "pt-BR");
 
         assertThat(works.items()).extracting(work -> work.media().externalId())
-                .containsExactly("550", "807");
+                .containsExactly("550", "562", "807", "563", "564", "565", "550");
         assertThat(works.items().getFirst().role()).isEqualTo(CreditRole.ACTOR);
         assertThat(works.items().getFirst().characterName()).isEqualTo("Tyler Durden");
-        assertThat(works.items().get(1).role()).isEqualTo(CreditRole.DIRECTOR);
+        assertThat(works.items().get(1).media().type()).isEqualTo(MediaType.SERIES);
+        assertThat(works.items().get(2).role()).isEqualTo(CreditRole.DIRECTOR);
+        assertThat(works.items().get(3).role()).isEqualTo(CreditRole.PRODUCER);
+        assertThat(works.items().get(4).role()).isEqualTo(CreditRole.SCREENWRITER);
+        assertThat(works.items().get(5).role()).isEqualTo(CreditRole.COMPOSER);
+        assertThat(works.items().getLast().role()).isEqualTo(CreditRole.PRODUCER);
         server.verify();
     }
 

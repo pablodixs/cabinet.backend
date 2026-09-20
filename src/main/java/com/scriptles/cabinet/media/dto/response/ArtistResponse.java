@@ -16,9 +16,16 @@ public record ArtistResponse(
         String externalId,
         long workCount,
         List<CreditRole> roles,
-        List<CollectionSummaryResponse> discographies
+        List<CollectionSummaryResponse> discographies,
+        Double averageRating
 ) {
     public ArtistResponse(UUID id,String name,String biography,String imageUrl,ExternalSource source,String externalId,long workCount,List<CreditRole> roles) {
-        this(id,name,biography,imageUrl,source,externalId,workCount,roles,List.of());
+        this(id,name,biography,imageUrl,source,externalId,workCount,roles,List.of(),null);
+    }
+
+    public ArtistResponse(UUID id, String name, String biography, String imageUrl, ExternalSource source,
+                          String externalId, long workCount, List<CreditRole> roles,
+                          List<CollectionSummaryResponse> discographies) {
+        this(id, name, biography, imageUrl, source, externalId, workCount, roles, discographies, null);
     }
 }

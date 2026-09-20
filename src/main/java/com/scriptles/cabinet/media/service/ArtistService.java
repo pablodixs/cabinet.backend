@@ -33,6 +33,7 @@ import java.util.UUID;
 public class ArtistService {
     private final PersonRepository personRepository;
     private final MediaCreditRepository mediaCreditRepository;
+    private final RatingSummaryService ratingSummaryService;
     private CollectionArtistRepository collectionArtistRepository;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -44,6 +45,11 @@ public class ArtistService {
                 .stream()
                 .sorted(Comparator.comparingInt(CreditRole::ordinal))
                 .toList();
+        List<UUID> mediaIds = mediaCreditRepository.findDistinctMediaIdsByPersonId(artistId)
+                .stream()
+                .distinct()
+                .toList();
+        Double averageRating = ratingSummaryService.aggregate(mediaIds).averageRating();
 
         return new ArtistResponse(
                 artist.getId(),
@@ -57,7 +63,8 @@ public class ArtistService {
                 (collectionArtistRepository == null ? List.<com.scriptles.cabinet.catalog.entity.CollectionArtist>of() : collectionArtistRepository.findByArtistId(artistId)).stream()
                         .filter(link -> link.getCollection().getType() == CollectionType.DISCOGRAPHY)
                         .map(link -> new CollectionSummaryResponse(link.getCollection().getId(), link.getCollection().getSlug(), link.getCollection().getTitle(), link.getCollection().getType().name(), null, null))
-                        .toList()
+                        .toList(),
+                averageRating
         );
     }
 
