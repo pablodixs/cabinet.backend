@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.Optional;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -23,6 +24,11 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
     Optional<UserMedia> findByUserIdAndMediaId(
             UUID userId,
             UUID mediaId
+    );
+
+    List<UserMedia> findAllByUserIdAndMediaIdIn(
+            UUID userId,
+            Collection<UUID> mediaIds
     );
 
     @EntityGraph(attributePaths = "media")
