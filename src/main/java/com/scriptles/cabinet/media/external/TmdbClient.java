@@ -208,6 +208,19 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         );
     }
 
+    public Optional<TmdbCollectionMembership> findMovieCollectionMembership(String movieExternalId, String language) {
+        JsonNode body = get("/movie/" + movieExternalId, null, language, false, null);
+        JsonNode collection = body.path("belongs_to_collection");
+        if (!collection.isObject()) return Optional.empty();
+
+        String collectionId = text(collection, "id");
+        String collectionName = text(collection, "name");
+        if (collectionId == null || collectionName == null) {
+            throw new ExternalMediaException("TMDB movie collection reference was incomplete");
+        }
+        return Optional.of(new TmdbCollectionMembership(collectionId, collectionName));
+    }
+
     @Override
     public PersonWorks findPersonWorks(String personExternalId, String language) {
         JsonNode body = get("/person/" + personExternalId + "/movie_credits", null, language, false, null);
