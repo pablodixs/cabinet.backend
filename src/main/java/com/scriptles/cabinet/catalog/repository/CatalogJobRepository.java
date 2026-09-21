@@ -51,16 +51,25 @@ public interface CatalogJobRepository extends JpaRepository<CatalogJob, UUID> {
 
     List<CatalogJob> findByStatusOrderByCreatedAtAsc(String status, Pageable pageable);
 
-    @Query("""
-            select job from CatalogJob job
-            where (:status is null or job.status = :status)
-              and (:jobType is null or job.jobType = :jobType)
-              and (:provider is null or job.provider = :provider)
-              and (:query is null or lower(coalesce(job.externalId, '')) like lower(concat('%', :query, '%'))
-                   or lower(cast(job.id as string)) like lower(concat('%', :query, '%'))
-                   or (:operationId is not null and job.operationId = :operationId))
-            order by job.createdAt desc
-            """)
+    @Query(value = """
+            select * from catalog_jobs
+            where (:status is null or status = :status)
+              and (:jobType is null or job_type = :jobType)
+              and (:provider is null or provider = :provider)
+              and (:query is null or lower(coalesce(external_id, '')) like lower(concat('%', :query, '%'))
+                   or lower(cast(id as varchar)) like lower(concat('%', :query, '%'))
+                   or (:operationId is not null and operation_id = :operationId))
+            order by created_at desc
+            """,
+            countQuery = """
+            select count(*) from catalog_jobs
+            where (:status is null or status = :status)
+              and (:jobType is null or job_type = :jobType)
+              and (:provider is null or provider = :provider)
+              and (:query is null or lower(coalesce(external_id, '')) like lower(concat('%', :query, '%'))
+                   or lower(cast(id as varchar)) like lower(concat('%', :query, '%'))
+                   or (:operationId is not null and operation_id = :operationId))
+            """, nativeQuery = true)
     org.springframework.data.domain.Page<CatalogJob> search(
             @Param("status") String status,
             @Param("jobType") String jobType,
