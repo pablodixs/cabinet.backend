@@ -16,6 +16,10 @@ import com.scriptles.cabinet.notifications.dto.NotificationResponse;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.notifications.event.NotificationChangedEvent;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
+import com.scriptles.cabinet.status.BackgroundJobTracker.JobRunResult;
+import com.scriptles.cabinet.status.BackgroundJobRetention;
+import com.scriptles.cabinet.status.JobKey;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
@@ -23,6 +27,7 @@ import com.scriptles.cabinet.user.importer.LetterboxdImportJob;
 import com.scriptles.cabinet.user.repository.UserEpisodeWatchRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -34,6 +39,7 @@ import jakarta.persistence.EntityManager;
 import java.util.Optional;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -49,7 +55,18 @@ class NotificationServiceTest {
     @Mock SeriesEpisodeRepository seriesEpisodeRepository;
     @Mock UserMediaRepository userMediaRepository;
     @Mock UserEpisodeWatchRepository episodeWatchRepository;
+    @Mock BackgroundJobRunner jobRunner;
+    @Mock BackgroundJobRetention backgroundJobRetention;
     @InjectMocks NotificationService notificationService;
+
+    @BeforeEach
+    @SuppressWarnings("unchecked")
+    void runTrackedWorkInline() {
+        lenient().when(jobRunner.execute(any(JobKey.class), any(Supplier.class))).thenAnswer(invocation -> {
+            ((Supplier<JobRunResult>) invocation.getArgument(1)).get();
+            return null;
+        });
+    }
 
     @Test
     void groupsActiveListLikesAndReopensTheNotification() {

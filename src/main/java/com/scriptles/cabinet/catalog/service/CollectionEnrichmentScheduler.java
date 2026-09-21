@@ -5,6 +5,9 @@ import com.scriptles.cabinet.catalog.collection.CollectionType;
 import com.scriptles.cabinet.catalog.event.TmdbCollectionReferenceLinkedEvent;
 import com.scriptles.cabinet.catalog.repository.CollectionExternalReferenceRepository;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
+import com.scriptles.cabinet.status.BackgroundJobTracker;
+import com.scriptles.cabinet.status.JobKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -28,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class CollectionEnrichmentScheduler {
     private final CollectionExternalReferenceRepository referenceRepository;
     private final CollectionEnrichmentService enrichmentService;
+    private final BackgroundJobRunner jobRunner;
     private final Executor executor;
     private final Duration staleAfter;
     private final String locale;
@@ -38,12 +43,14 @@ public class CollectionEnrichmentScheduler {
     public CollectionEnrichmentScheduler(
             CollectionExternalReferenceRepository referenceRepository,
             CollectionEnrichmentService enrichmentService,
+            BackgroundJobRunner jobRunner,
             @Qualifier("externalInfoTaskExecutor") Executor executor,
             @Value("${catalog.collections.tmdb-sync.stale-after:24h}") Duration staleAfter,
             @Value("${catalog.collections.tmdb-sync.locale:pt-BR}") String locale
     ) {
         this.referenceRepository = referenceRepository;
         this.enrichmentService = enrichmentService;
+        this.jobRunner = jobRunner;
         this.executor = executor;
         this.staleAfter = staleAfter;
         this.locale = locale;
@@ -55,8 +62,8 @@ public class CollectionEnrichmentScheduler {
     }
 
     @Scheduled(
-            cron = "${catalog.collections.tmdb-sync.cron:0 0 5 * * *}",
-            zone = "${catalog.collections.tmdb-sync.zone:America/Sao_Paulo}"
+            cron = "${catalog.collections.tmdb-sync.cron}",
+            zone = "${catalog.collections.tmdb-sync.zone}"
     )
     public void syncStaleCollections() {
         Instant cutoff = Instant.now().minus(staleAfter);
@@ -86,16 +93,26 @@ public class CollectionEnrichmentScheduler {
 
     private void drainPending() {
         try {
-            UUID collectionId;
-            while ((collectionId = pending.poll()) != null) {
-                try {
-                    enrichmentService.sync(collectionId, locale);
-                } catch (RuntimeException failure) {
-                    log.warn("Unable to synchronize TMDB collection {}: {}", collectionId, failure.getMessage());
-                } finally {
-                    queuedOrRunning.remove(collectionId);
+            jobRunner.execute(JobKey.COLLECTION_SYNC, () -> {
+                AtomicInteger processed = new AtomicInteger();
+                AtomicInteger updated = new AtomicInteger();
+                AtomicInteger failed = new AtomicInteger();
+                UUID collectionId;
+                while ((collectionId = pending.poll()) != null) {
+                    try {
+                        updated.addAndGet(enrichmentService.sync(collectionId, locale));
+                    } catch (RuntimeException failure) {
+                        failed.incrementAndGet();
+                        log.warn("Unable to synchronize TMDB collection {}: {}", collectionId,
+                                failure.getMessage());
+                    } finally {
+                        processed.incrementAndGet();
+                        queuedOrRunning.remove(collectionId);
+                    }
                 }
-            }
+                return BackgroundJobTracker.JobRunResult.completed(processed.get(), updated.get(),
+                        processed.get() - failed.get(), failed.get(), "Collections synchronized");
+            });
         } finally {
             workerRunning.set(false);
             if (!pending.isEmpty()) startWorker();

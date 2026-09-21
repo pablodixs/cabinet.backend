@@ -20,4 +20,13 @@ public interface LetterboxdImportJobRepository extends JpaRepository<LetterboxdI
             Instant expiresAt,
             Collection<LetterboxdImportJobState> states
     );
+
+    long countByStateIn(Collection<LetterboxdImportJobState> states);
+
+    long countByStateInAndCompletedAtAfter(Collection<LetterboxdImportJobState> states, Instant completedAt);
+
+    List<LetterboxdImportJob> findTop10ByStateInAndCompletedAtAfterOrderByCompletedAtDesc(
+            Collection<LetterboxdImportJobState> states,
+            Instant completedAt
+    );
 }

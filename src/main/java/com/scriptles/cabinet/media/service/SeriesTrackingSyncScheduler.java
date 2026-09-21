@@ -5,6 +5,9 @@ import com.scriptles.cabinet.media.event.SeriesTrackingRequestedEvent;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
+import com.scriptles.cabinet.status.BackgroundJobTracker;
+import com.scriptles.cabinet.status.JobKey;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,7 @@ public class SeriesTrackingSyncScheduler {
     private final UserMediaRepository userMediaRepository;
     private final SeriesSeasonRepository seasonRepository;
     private final ExternalReferenceRepository referenceRepository;
+    private final BackgroundJobRunner jobRunner;
     private final Set<UUID> inFlight = ConcurrentHashMap.newKeySet();
 
     public SeriesTrackingSyncScheduler(
@@ -39,13 +43,15 @@ public class SeriesTrackingSyncScheduler {
             SeriesTrackingSyncService syncService,
             UserMediaRepository userMediaRepository,
             SeriesSeasonRepository seasonRepository,
-            ExternalReferenceRepository referenceRepository
+            ExternalReferenceRepository referenceRepository,
+            BackgroundJobRunner jobRunner
     ) {
         this.executor = executor;
         this.syncService = syncService;
         this.userMediaRepository = userMediaRepository;
         this.seasonRepository = seasonRepository;
         this.referenceRepository = referenceRepository;
+        this.jobRunner = jobRunner;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -53,10 +59,14 @@ public class SeriesTrackingSyncScheduler {
         schedule(event.seriesId());
     }
 
-    @Scheduled(cron = "0 0 4 * * *", zone = "America/Sao_Paulo")
+    @Scheduled(cron = "${catalog.series-tracking.cron}", zone = "${catalog.series-tracking.zone}")
     public void refreshTrackedSeries() {
-        userMediaRepository.findDistinctSeriesIdsByStatus(UserMediaStatus.IN_PROGRESS)
-                .forEach(this::schedule);
+        jobRunner.execute(JobKey.SERIES_TRACKING_SCAN, () -> {
+            List<UUID> seriesIds = userMediaRepository.findDistinctSeriesIdsByStatus(UserMediaStatus.IN_PROGRESS);
+            seriesIds.forEach(this::schedule);
+            return BackgroundJobTracker.JobRunResult.completed(seriesIds.size(), seriesIds.size(),
+                    seriesIds.size(), 0, "Tracked series refresh scheduled");
+        });
     }
 
     public void scheduleIfStale(UUID seriesId) {
@@ -78,7 +88,11 @@ public class SeriesTrackingSyncScheduler {
         try {
             executor.execute(() -> {
                 try {
-                    syncService.synchronize(seriesId);
+                    jobRunner.execute(JobKey.SERIES_TRACKING_SYNC, () -> {
+                        syncService.synchronize(seriesId);
+                        return BackgroundJobTracker.JobRunResult.completed(1, 1, 1, 0,
+                                "Tracked series refreshed");
+                    });
                 } catch (RuntimeException exception) {
                     log.warn("Unable to synchronize tracked series {}: {}", seriesId, exception.getMessage());
                 } finally {

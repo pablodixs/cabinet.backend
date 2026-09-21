@@ -19,6 +19,8 @@ Rejected submissions are caught and logged for external-info/award/series schedu
 | Schedule | Time | Behavior |
 | --- | --- | --- |
 | Catalog outbox | Every second by default | Recovers stale claims, claims only free executor capacity, and dispatches enrichment concurrently. |
+| TMDB catalog changes | Daily at `03:30 America/Sao_Paulo` by default | Scans changed movies and series and queues stale catalog enrichment. Configurable with `CATALOG_TMDB_CHANGES_CRON` and `CATALOG_TMDB_CHANGES_ZONE`. |
+| Collection synchronization | Daily at `05:00 America/Sao_Paulo` by default | Queues referenced film collections whose TMDB data is stale. Configurable with `CATALOG_COLLECTION_TMDB_SYNC_CRON` and `CATALOG_COLLECTION_TMDB_SYNC_ZONE`. |
 | Notification SSE heartbeat | Every 25 seconds | Sends `heartbeat: ping` to all process-local connections and removes broken emitters. |
 | Notification retention | Daily at `03:20` scheduler/JVM zone | Deletes notifications whose `activityAt` is older than 90 days. |
 | Tracked series refresh | Daily at `04:00 America/Sao_Paulo` | Schedules every series with at least one `IN_PROGRESS` library entry. |
@@ -81,6 +83,12 @@ Each `SseEmitter` has a 30-minute timeout. The defaults allow three streams per 
 
 Emitters are stored in concurrent in-memory sets. Completion, timeout, send error, or initial-send failure removes them and releases the process-wide slot.
 
+## Operational status
+
+`GET /v1/status` returns a public, product-oriented summary for the Cabinet Status page. The endpoint reads persisted job executions, grouped catalog outbox counts, and aggregate Letterboxd import state; it does not call external providers. It omits raw provider errors and per-item outbox details.
+
+Important high-level executions are stored in `background_job_runs` with stable job keys and separate execution and product-health states. Start, completion, and failure writes use independent transactions so a failed scheduled operation remains visible even if its own transaction rolls back. Job-run history older than 30 days is removed during the existing notification retention maintenance. The durable catalog outbox remains a separate fine-grained work queue and is aggregated by status for the endpoint.
+
 ## Multi-instance implications
 
 Running more than one replica is safe for most database writes because of transactions and uniqueness constraints, but background behavior is not coordinated:
@@ -95,4 +103,4 @@ For reliable horizontal scaling, introduce distributed locks for cron jobs, a du
 
 ## Observability
 
-Workers log provider refresh failures and Letterboxd duration/count metrics. There is no Actuator or metrics registry dependency, so queue depth, executor saturation, cron success, provider latency, and SSE counts are not exported. Production deployments should collect structured logs and add metrics before depending on these jobs for strict delivery guarantees.
+Workers log provider refresh failures and Letterboxd duration/count metrics. The Status page exposes persisted high-level execution history and current outbox/import aggregates, but it is not a live executor or provider-latency monitor. There is no Actuator or metrics registry dependency, so executor saturation, provider latency, and SSE counts are not exported. Production deployments should collect structured logs and add metrics before depending on these jobs for strict delivery guarantees.

@@ -43,6 +43,14 @@ Most application errors have this shape:
 
 Security failures use `AUTHENTICATION_REQUIRED` (`401`) or `ACCESS_DENIED` (`403`). External provider and invalid media requests may instead use RFC 9457-style `ProblemDetail`, with `400`, `429`, or `502`.
 
+## Cabinet status
+
+| Method and path | Access | Purpose |
+| --- | --- | --- |
+| `GET /v1/status` | Public | Product-oriented health summary, synchronization state, scheduled jobs, background queue/import counts, and recent activity. |
+
+The response includes an overall `status` (`OPERATIONAL`, `RUNNING`, `DELAYED`, `DEGRADED`, or `ATTENTION_REQUIRED`), `updatedAt`, system summaries, synchronization details, `backgroundProcessing` counts (`processing`, `waiting`, `retrying`, `failed`), Letterboxd `importProcessing` counts, scheduled jobs, and recent activity. Schedules are returned as readable frequency/time/time-zone values rather than cron expressions. Run metrics and timestamps can be `null` before the first recorded execution. The endpoint aggregates persisted state and does not contact external providers or return raw provider errors or individual outbox records. See [Background Processing](background-processing.md#operational-status) for the execution history and retention model.
+
 ## Authentication
 
 | Method and path | Access | Purpose |

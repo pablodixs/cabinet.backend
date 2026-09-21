@@ -1,6 +1,9 @@
 package com.scriptles.cabinet.user.importer;
 
 import com.scriptles.cabinet.notifications.service.NotificationService;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
+import com.scriptles.cabinet.status.BackgroundJobTracker;
+import com.scriptles.cabinet.status.JobKey;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -22,6 +25,7 @@ public class LetterboxdImportScheduler {
     private final Executor executor;
     private final LetterboxdImportJobRepository jobRepository;
     private final LetterboxdImportItemRepository itemRepository;
+    private final BackgroundJobRunner jobRunner;
     private final LetterboxdImportMatcher matcher;
     private final LetterboxdImportApplier applier;
     private final LetterboxdImportService service;
@@ -31,6 +35,7 @@ public class LetterboxdImportScheduler {
             @Qualifier("letterboxdImportExecutor") Executor executor,
             LetterboxdImportJobRepository jobRepository,
             LetterboxdImportItemRepository itemRepository,
+            BackgroundJobRunner jobRunner,
             LetterboxdImportMatcher matcher,
             LetterboxdImportApplier applier,
             LetterboxdImportService service,
@@ -39,6 +44,7 @@ public class LetterboxdImportScheduler {
         this.executor = executor;
         this.jobRepository = jobRepository;
         this.itemRepository = itemRepository;
+        this.jobRunner = jobRunner;
         this.matcher = matcher;
         this.applier = applier;
         this.service = service;
@@ -101,25 +107,32 @@ public class LetterboxdImportScheduler {
         }
     }
 
-    @Scheduled(cron = "0 17 * * * *")
+    @Scheduled(cron = "${app.letterboxd.cleanup-cron}")
     @Transactional
     public void expireAndRedact() {
-        Instant now = Instant.now();
-        jobRepository.findAllByExpiresAtBeforeAndStateIn(now, EnumSet.of(LetterboxdImportJobState.READY))
-                .forEach(job -> {
-                    job.setState(LetterboxdImportJobState.CANCELLED);
-                    job.setCompletedAt(now);
-                    itemRepository.redactPayloads(job.getId());
-                    job.setExpiresAt(null);
-                });
-        jobRepository.findAllByExpiresAtBeforeAndStateIn(now, EnumSet.of(
-                LetterboxdImportJobState.COMPLETED,
-                LetterboxdImportJobState.COMPLETED_WITH_ERRORS,
-                LetterboxdImportJobState.FAILED,
-                LetterboxdImportJobState.CANCELLED
-        )).forEach(job -> {
-            itemRepository.redactPayloads(job.getId());
-            job.setExpiresAt(null);
+        jobRunner.execute(JobKey.LETTERBOXD_CLEANUP, () -> {
+            Instant now = Instant.now();
+            var expired = jobRepository.findAllByExpiresAtBeforeAndStateIn(
+                    now, EnumSet.of(LetterboxdImportJobState.READY));
+            int redactedItems = 0;
+            for (LetterboxdImportJob job : expired) {
+                job.setState(LetterboxdImportJobState.CANCELLED);
+                job.setCompletedAt(now);
+                redactedItems += itemRepository.redactPayloads(job.getId());
+                job.setExpiresAt(null);
+            }
+            var terminal = jobRepository.findAllByExpiresAtBeforeAndStateIn(now, EnumSet.of(
+                    LetterboxdImportJobState.COMPLETED,
+                    LetterboxdImportJobState.COMPLETED_WITH_ERRORS,
+                    LetterboxdImportJobState.FAILED,
+                    LetterboxdImportJobState.CANCELLED));
+            for (LetterboxdImportJob job : terminal) {
+                redactedItems += itemRepository.redactPayloads(job.getId());
+                job.setExpiresAt(null);
+            }
+            int jobs = expired.size() + terminal.size();
+            return BackgroundJobTracker.JobRunResult.completed(jobs, redactedItems, jobs, 0,
+                    "Expired import details were removed");
         });
     }
 

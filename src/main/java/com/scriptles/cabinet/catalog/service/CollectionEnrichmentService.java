@@ -33,7 +33,7 @@ public class CollectionEnrichmentService {
     private final CatalogImportFacade catalogImportFacade;
     private final CollectionSyncWriter syncWriter;
 
-    public void sync(UUID collectionId, String locale) {
+    public int sync(UUID collectionId, String locale) {
         String normalizedLocale = SupportedLocale.from(locale).tag();
         Collection collection = collectionRepository.findById(collectionId)
                 .orElseThrow(() -> new ApiException(
@@ -76,5 +76,6 @@ public class CollectionEnrichmentService {
 
         syncWriter.reconcile(collectionId, reference.getExternalId(), snapshot,
                 materializedMovies, Instant.now());
+        return materializedMovies.size();
     }
 }

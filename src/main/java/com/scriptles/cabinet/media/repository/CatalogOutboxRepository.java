@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.UUID;
 
 public interface CatalogOutboxRepository extends JpaRepository<CatalogOutboxEvent, UUID> {
+    @Query("select e.status as status, count(e) as count from CatalogOutboxEvent e group by e.status")
+    List<OutboxStatusCount> countByStatus();
+
     boolean existsByAggregateIdAndEventTypeAndStatusIn(
             UUID aggregateId,
             CatalogEventType eventType,
@@ -41,4 +44,9 @@ public interface CatalogOutboxRepository extends JpaRepository<CatalogOutboxEven
               and locked_at < :cutoff
             """, nativeQuery = true)
     int releaseStaleProcessing(Instant cutoff, Instant availableAt);
+
+    interface OutboxStatusCount {
+        CatalogOutboxStatus getStatus();
+        long getCount();
+    }
 }

@@ -5,12 +5,16 @@ import com.scriptles.cabinet.catalog.collection.CollectionType;
 import com.scriptles.cabinet.catalog.event.TmdbCollectionReferenceLinkedEvent;
 import com.scriptles.cabinet.catalog.repository.CollectionExternalReferenceRepository;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
+import com.scriptles.cabinet.status.BackgroundJobTracker.JobRunResult;
+import com.scriptles.cabinet.status.JobKey;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,6 +29,7 @@ class CollectionEnrichmentSchedulerTest {
     void periodicallySchedulesDueExternalFilmCollectionsAndContinuesAfterFailure() {
         CollectionExternalReferenceRepository references = mock(CollectionExternalReferenceRepository.class);
         CollectionEnrichmentService service = mock(CollectionEnrichmentService.class);
+        BackgroundJobRunner tracker = trackingInline();
         UUID firstId = UUID.randomUUID();
         UUID secondId = UUID.randomUUID();
         when(references.findCollectionIdsDueForSync(
@@ -34,7 +39,7 @@ class CollectionEnrichmentSchedulerTest {
                 .when(service).sync(firstId, "pt-BR");
 
         CollectionEnrichmentScheduler scheduler = new CollectionEnrichmentScheduler(
-                references, service, Runnable::run, Duration.ofHours(24), "pt-BR");
+                references, service, tracker, Runnable::run, Duration.ofHours(24), "pt-BR");
         scheduler.syncStaleCollections();
 
         org.mockito.ArgumentCaptor<Instant> cutoff = org.mockito.ArgumentCaptor.forClass(Instant.class);
@@ -51,13 +56,23 @@ class CollectionEnrichmentSchedulerTest {
     void syncsImmediatelyAfterTheTmdbReferenceTransactionCommits() {
         CollectionExternalReferenceRepository references = mock(CollectionExternalReferenceRepository.class);
         CollectionEnrichmentService service = mock(CollectionEnrichmentService.class);
+        BackgroundJobRunner tracker = trackingInline();
         UUID collectionId = UUID.randomUUID();
         CollectionEnrichmentScheduler scheduler = new CollectionEnrichmentScheduler(
-                references, service, Runnable::run, Duration.ofHours(24), "en-US");
+                references, service, tracker, Runnable::run, Duration.ofHours(24), "en-US");
 
         scheduler.referenceLinked(new TmdbCollectionReferenceLinkedEvent(collectionId));
 
         verify(service).sync(collectionId, "en-US");
         verify(references, never()).findCollectionIdsDueForSync(any(), any(), any(), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private BackgroundJobRunner trackingInline() {
+        BackgroundJobRunner tracker = mock(BackgroundJobRunner.class);
+        when(tracker.execute(org.mockito.ArgumentMatchers.any(JobKey.class),
+                org.mockito.ArgumentMatchers.any(Supplier.class))).thenAnswer(invocation ->
+                ((Supplier<JobRunResult>) invocation.getArgument(1)).get());
+        return tracker;
     }
 }
