@@ -58,7 +58,7 @@ catalog:
     initial-window: ${CATALOG_TMDB_CHANGES_INITIAL_WINDOW:2d}
   collections:
     tmdb-sync:
-      cron: ${CATALOG_COLLECTION_TMDB_SYNC_CRON:0 0 16 * * *}
+      cron: ${CATALOG_COLLECTION_TMDB_SYNC_CRON:0 0 5 * * *}
       zone: ${CATALOG_COLLECTION_TMDB_SYNC_ZONE:America/Sao_Paulo}
       stale-after: ${CATALOG_COLLECTION_TMDB_SYNC_STALE_AFTER:24h}
       locale: ${CATALOG_COLLECTION_TMDB_SYNC_LOCALE:pt-BR}
