@@ -14,8 +14,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.UUID;
+import java.time.Instant;
 
 @Service
 @RequiredArgsConstructor
@@ -23,9 +25,21 @@ public class TmdbCollectionDiscoveryWriter {
     private final CollectionRepository collectionRepository;
     private final CollectionExternalReferenceRepository referenceRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final JdbcTemplate jdbcTemplate;
 
     @Transactional
     public UUID ensureLinkedCollection(TmdbCollectionMembership membership) {
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                insert into external_catalog_entities
+                    (id, provider, entity_type, external_id, display_name, first_seen_at, last_seen_at,
+                     state, created_at, updated_at)
+                values (gen_random_uuid(), 'TMDB', 'COLLECTION', ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                on conflict (provider, entity_type, external_id) do update set
+                    display_name = coalesce(excluded.display_name, external_catalog_entities.display_name),
+                    last_seen_at = excluded.last_seen_at, state = 'ACTIVE', removed_at = null,
+                    updated_at = excluded.updated_at
+                """, membership.externalId(), membership.name(), now, now, now, now);
         CollectionExternalReference existingReference = referenceRepository
                 .findByProviderAndExternalId(ExternalSource.TMDB, membership.externalId())
                 .orElse(null);

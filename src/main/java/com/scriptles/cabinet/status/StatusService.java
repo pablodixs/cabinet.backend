@@ -2,6 +2,7 @@ package com.scriptles.cabinet.status;
 
 import com.scriptles.cabinet.media.enums.CatalogOutboxStatus;
 import com.scriptles.cabinet.media.repository.CatalogOutboxRepository;
+import com.scriptles.cabinet.catalog.repository.CatalogJobRepository;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJob;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJobRepository;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJobState;
@@ -34,6 +35,7 @@ public class StatusService {
 
     private final BackgroundJobRunRepository runRepository;
     private final CatalogOutboxRepository outboxRepository;
+    private final CatalogJobRepository catalogJobs;
     private final LetterboxdImportJobRepository importRepository;
 
     @Value("${catalog.tmdb-changes.cron}")
@@ -76,11 +78,15 @@ public class StatusService {
 
         Map<CatalogOutboxStatus, Integer> queue = new EnumMap<>(CatalogOutboxStatus.class);
         outboxRepository.countByStatus().forEach(count -> queue.put(count.getStatus(), safeInt(count.getCount())));
+        int catalogProcessing = safeInt(catalogJobs.countByStatus("PROCESSING"));
+        int catalogWaiting = safeInt(catalogJobs.countByStatus("PENDING"));
+        int catalogRetrying = safeInt(catalogJobs.countByStatus("RETRY"));
+        int catalogDead = safeInt(catalogJobs.countByStatus("DEAD"));
         BackgroundProcessingStatus background = new BackgroundProcessingStatus(
-                value(queue, CatalogOutboxStatus.PROCESSING),
-                value(queue, CatalogOutboxStatus.PENDING),
-                value(queue, CatalogOutboxStatus.RETRY),
-                value(queue, CatalogOutboxStatus.DEAD));
+                value(queue, CatalogOutboxStatus.PROCESSING) + catalogProcessing,
+                value(queue, CatalogOutboxStatus.PENDING) + catalogWaiting,
+                value(queue, CatalogOutboxStatus.RETRY) + catalogRetrying,
+                value(queue, CatalogOutboxStatus.DEAD) + catalogDead);
 
         int importsProcessing = safeInt(importRepository.countByStateIn(List.of(
                 LetterboxdImportJobState.PARSING,

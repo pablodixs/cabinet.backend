@@ -14,6 +14,11 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -193,7 +198,9 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                     firstNonBlank(text(part, "title"), text(part, "original_title"), movieId),
                     text(part, "original_title"),
                     date(text(part, "release_date")),
-                    imageUrl(text(part, "poster_path"), POSTER_SIZE)
+                    imageUrl(text(part, "poster_path"), POSTER_SIZE),
+                    imageUrl(text(part, "backdrop_path"), BACKDROP_SIZE),
+                    text(part, "original_language")
             ));
         }
 
@@ -400,11 +407,29 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                 throw new ExternalMediaNotFoundException("TMDB resource was not found", exception);
             }
             if (exception.getStatusCode().value() == 429) {
-                throw new ExternalMediaRateLimitException("TMDB rate limit exceeded", exception);
+                throw new ExternalMediaRateLimitException("TMDB rate limit exceeded", exception,
+                        retryAfter(exception));
             }
             throw new ExternalMediaException("TMDB responded with HTTP " + exception.getStatusCode().value(), exception);
         } catch (RestClientException exception) {
             throw new ExternalMediaException("Unable to query TMDB", exception);
+        }
+    }
+
+    private Duration retryAfter(RestClientResponseException exception) {
+        if (exception.getResponseHeaders() == null) return null;
+        String value = exception.getResponseHeaders().getFirst(org.springframework.http.HttpHeaders.RETRY_AFTER);
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Duration.ofSeconds(Math.max(0, Long.parseLong(value.trim())));
+        } catch (NumberFormatException ignored) {
+            try {
+                Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+                return Duration.between(Instant.now(), retryAt).isNegative()
+                        ? Duration.ZERO : Duration.between(Instant.now(), retryAt);
+            } catch (DateTimeParseException invalid) {
+                return null;
+            }
         }
     }
 

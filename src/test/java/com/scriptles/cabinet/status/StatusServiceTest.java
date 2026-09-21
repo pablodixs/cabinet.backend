@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.status;
 
 import com.scriptles.cabinet.media.repository.CatalogOutboxRepository;
+import com.scriptles.cabinet.catalog.repository.CatalogJobRepository;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJobRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -20,6 +21,7 @@ class StatusServiceTest {
     void returnsProductSummaryAndDoesNotExposeStoredFailureDetails() {
         BackgroundJobRunRepository runs = mock(BackgroundJobRunRepository.class);
         CatalogOutboxRepository outbox = mock(CatalogOutboxRepository.class);
+        CatalogJobRepository catalogJobs = mock(CatalogJobRepository.class);
         LetterboxdImportJobRepository imports = mock(LetterboxdImportJobRepository.class);
         BackgroundJobRun failedTmdbRun = run(JobKey.TMDB_CATALOG_SYNC, JobRunStatus.FAILED,
                 "secret provider payload and IllegalStateException stack");
@@ -32,11 +34,12 @@ class StatusServiceTest {
         when(runs.countRecentFailures(any(), any())).thenReturn(0L);
         when(runs.findAllByFinishedAtIsNotNullOrderByFinishedAtDesc(any())).thenReturn(List.of(failedTmdbRun));
         when(outbox.countByStatus()).thenReturn(List.of());
+        when(catalogJobs.countByStatus("PENDING")).thenReturn(2L);
         when(imports.countByStateIn(anyList())).thenReturn(0L);
         when(imports.findTop10ByStateInAndCompletedAtAfterOrderByCompletedAtDesc(anyList(), any()))
                 .thenReturn(List.of());
 
-        StatusService service = new StatusService(runs, outbox, imports);
+        StatusService service = new StatusService(runs, outbox, catalogJobs, imports);
         ReflectionTestUtils.setField(service, "tmdbCron", "0 30 3 * * *");
         ReflectionTestUtils.setField(service, "tmdbZone", "America/Sao_Paulo");
         ReflectionTestUtils.setField(service, "collectionsCron", "0 0 5 * * *");
@@ -56,6 +59,7 @@ class StatusServiceTest {
                 .filter(sync -> sync.key().equals("COLLECTIONS")).findFirst().orElseThrow().status())
                 .isEqualTo(HealthStatus.OPERATIONAL);
         assertThat(response.status()).isNotNull();
+        assertThat(response.backgroundProcessing().waiting()).isEqualTo(2);
         assertThat(response.scheduledJobs()).extracting(StatusResponse.ScheduledJobStatus::key)
                 .contains("TMDB_CATALOG_SYNC", "COLLECTION_SYNC", "SERIES_TRACKING_SCAN");
         assertThat(response.scheduledJobs()).allSatisfy(job ->
