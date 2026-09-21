@@ -169,6 +169,45 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         return Optional.ofNullable(text(body, "wikidata_id"));
     }
 
+    public TmdbCollectionSnapshot findCollectionById(String externalId, String language) {
+        JsonNode body = get("/collection/" + externalId, null, language, false, null);
+        if (body.isMissingNode() || body.isEmpty()) {
+            throw new ExternalMediaNotFoundException("TMDB collection was not found", null);
+        }
+
+        String name = text(body, "name");
+        if (name == null) {
+            throw new ExternalMediaException("TMDB collection response did not contain a name");
+        }
+
+        List<TmdbCollectionSnapshot.Movie> movies = new ArrayList<>();
+        boolean complete = body.path("parts").isArray();
+        for (JsonNode part : body.path("parts")) {
+            String movieId = text(part, "id");
+            if (movieId == null) {
+                complete = false;
+                continue;
+            }
+            movies.add(new TmdbCollectionSnapshot.Movie(
+                    movieId,
+                    firstNonBlank(text(part, "title"), text(part, "original_title"), movieId),
+                    text(part, "original_title"),
+                    date(text(part, "release_date")),
+                    imageUrl(text(part, "poster_path"), POSTER_SIZE)
+            ));
+        }
+
+        return new TmdbCollectionSnapshot(
+                text(body, "id") == null ? externalId : text(body, "id"),
+                name,
+                text(body, "overview"),
+                imageUrl(text(body, "poster_path"), POSTER_SIZE),
+                imageUrl(text(body, "backdrop_path"), BACKDROP_SIZE),
+                movies,
+                complete
+        );
+    }
+
     @Override
     public PersonWorks findPersonWorks(String personExternalId, String language) {
         JsonNode body = get("/person/" + personExternalId + "/movie_credits", null, language, false, null);
@@ -595,6 +634,13 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
     private String text(JsonNode node, String field) {
         String value = node.path(field).asText(null);
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) return value;
+        }
+        return null;
     }
 
     private Integer integer(JsonNode node, String field) {

@@ -75,6 +75,62 @@ class TmdbClientTest {
     }
 
     @Test
+    void mapsTmdbCollectionAndMovieParts() {
+        server.expect(requestTo(startsWith(BASE_URL + "/collection/10")))
+                .andExpect(queryParam("api_key", "api-key"))
+                .andExpect(queryParam("language", "pt-BR"))
+                .andRespond(withSuccess("""
+                        {
+                          "id": 10,
+                          "name": "The Hunger Games Collection",
+                          "overview": "A series of films",
+                          "poster_path": "/collection.jpg",
+                          "backdrop_path": "/backdrop.jpg",
+                          "parts": [
+                            {"id": 1, "title": "The Hunger Games", "original_title": "The Hunger Games",
+                             "release_date": "2012-03-23", "poster_path": "/one.jpg"},
+                            {"id": 2, "title": "Catching Fire", "original_title": "The Hunger Games: Catching Fire",
+                             "release_date": "2013-11-22", "poster_path": "/two.jpg"}
+                          ]
+                        }
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        TmdbCollectionSnapshot snapshot = client.findCollectionById("10", "pt-BR");
+
+        assertThat(snapshot.externalId()).isEqualTo("10");
+        assertThat(snapshot.name()).isEqualTo("The Hunger Games Collection");
+        assertThat(snapshot.overview()).isEqualTo("A series of films");
+        assertThat(snapshot.posterUrl()).endsWith("/w500/collection.jpg");
+        assertThat(snapshot.backdropUrl()).endsWith("/original/backdrop.jpg");
+        assertThat(snapshot.complete()).isTrue();
+        assertThat(snapshot.movies()).extracting(TmdbCollectionSnapshot.Movie::externalId)
+                .containsExactly("1", "2");
+        assertThat(snapshot.movies().getFirst()).satisfies(movie -> {
+            assertThat(movie.title()).isEqualTo("The Hunger Games");
+            assertThat(movie.originalTitle()).isEqualTo("The Hunger Games");
+            assertThat(movie.releaseDate()).isEqualTo(java.time.LocalDate.of(2012, 3, 23));
+            assertThat(movie.posterUrl()).endsWith("/w500/one.jpg");
+        });
+        server.verify();
+    }
+
+    @Test
+    void marksCollectionIncompleteWhenPartHasNoId() {
+        server.expect(requestTo(startsWith(BASE_URL + "/collection/10")))
+                .andRespond(withSuccess("""
+                        {"id": 10, "name": "Collection", "parts": [
+                          {"id": 1, "title": "Valid"}, {"title": "Malformed"}
+                        ]}
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+
+        TmdbCollectionSnapshot snapshot = client.findCollectionById("10", "en-US");
+
+        assertThat(snapshot.complete()).isFalse();
+        assertThat(snapshot.movies()).extracting(TmdbCollectionSnapshot.Movie::externalId).containsExactly("1");
+        server.verify();
+    }
+
+    @Test
     void mapsSeriesCreatorsToTheCreatorRole() {
         server.expect(requestTo(startsWith(BASE_URL + "/tv/1396")))
                 .andRespond(withSuccess("""
