@@ -463,6 +463,19 @@ public class MediaQueryService {
         UserArtworkResolver.ResolvedArtwork artwork = userArtworkResolver.resolve(userId, media);
         EnumSet<ProfileActivityType> listenTypes = EnumSet.of(
                 ProfileActivityType.LOGGED, ProfileActivityType.RELOGGED);
+        EnumSet<ProfileActivityType> logTypes = EnumSet.of(
+                ProfileActivityType.LOGGED,
+                ProfileActivityType.RELOGGED,
+                ProfileActivityType.WATCHED,
+                ProfileActivityType.REWATCHED
+        );
+        long logCount = userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, mediaId, logTypes);
+        java.time.LocalDate lastLoggedOn = userMediaActivityRepository
+                .findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                        userId, mediaId, logTypes)
+                .map(com.scriptles.cabinet.user.entity.UserMediaActivity::getOccurredOn)
+                .orElse(null);
         long listenCount = media.getType() == MediaType.ALBUM || media.getType() == MediaType.TRACK
                 ? userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(userId, mediaId, listenTypes)
                 : 0;
@@ -479,6 +492,8 @@ public class MediaQueryService {
                 libraryEntry == null ? null : libraryEntry.getStatus(),
                 rating == null ? null : rating.getValue().doubleValue(),
                 review == null ? null : review.getId(),
+                logCount,
+                lastLoggedOn,
                 mediaListItemRepository.findListIdsByMediaIdAndOwnerId(mediaId, userId),
                 artwork.customCover() ? artwork.coverUrl() : null,
                 artwork.customBackdrop() ? artwork.backdropUrl() : null,

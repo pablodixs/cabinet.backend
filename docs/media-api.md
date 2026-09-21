@@ -232,6 +232,12 @@ For imported albums and series, `GET /v1/media/{mediaId}/community` also returns
 `ratingDistribution` aggregate every public rating attached to the eligible child media. Series exclude episodes
 whose air date is in the future. Other media types return `childRatings: null`.
 
+`GET /v1/media/{mediaId}/community` includes ten public `ratingDistribution` buckets in ascending order from `0.5`
+through `5.0`, including zero-count buckets. `GET /v1/media/{mediaId}/me` is the authenticated viewer-state response;
+its `logCount` and `lastLoggedOn` include that viewer's `LOGGED`, `RELOGGED`, `WATCHED`, and `REWATCHED` diary
+entries for the media, regardless of entry visibility. The legacy `listenCount` and `lastListenedOn` remain limited
+to `LOGGED` and `RELOGGED` entries for albums and tracks.
+
 Works with a `releaseDate` after the current date can be added as `PLANNED`, but cannot use any consumption status
 (`IN_PROGRESS`, `PAUSED`, `DROPPED`, or `COMPLETED`) and cannot receive a rating or review. Those attempts return
 `400 Bad Request` with code `MEDIA_NOT_RELEASED`. A work is available on its release date; a missing release date
@@ -346,7 +352,10 @@ GET /v1/people/{personId}/works?page=0&size=24&language=pt-BR&type=MOVIE
 ```
 
 The details response contains the person's name, biography and image when available, external identity, distinct work
-count, and the credit roles found in Cabinet. The works endpoint combines imported media with TMDB and MusicBrainz
+count, Cabinet's public `averageRating`, and the credit roles found in Cabinet. The person average is the
+rating-weighted arithmetic mean of all public Cabinet ratings across the person's distinct imported works; a work
+with multiple credits contributes its ratings once, and no public ratings yields `null`. External provider scores are
+not used. The works endpoint combines imported media with TMDB and MusicBrainz
 catalogs for every external identity attached to the person. Imported media have priority when an external reference
 matches `(source, externalId)`, so each work is listed once. Local credits preserve every role and character; external
 previews expose the role returned by the provider. `language` overrides `Accept-Language`; if neither is present,

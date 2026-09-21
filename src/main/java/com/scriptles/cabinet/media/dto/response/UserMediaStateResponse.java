@@ -11,6 +11,8 @@ public record UserMediaStateResponse(
         UserMediaStatus status,
         Double rating,
         UUID reviewId,
+        long logCount,
+        LocalDate lastLoggedOn,
         List<UUID> listIds,
         String customCoverUrl,
         String customBackdropUrl,
@@ -27,6 +29,6 @@ public record UserMediaStateResponse(
             String customCoverUrl,
             String customBackdropUrl
     ) {
-        this(liked, status, rating, reviewId, listIds, customCoverUrl, customBackdropUrl, 0, null, false);
+        this(liked, status, rating, reviewId, 0, null, listIds, customCoverUrl, customBackdropUrl, 0, null, false);
     }
 }

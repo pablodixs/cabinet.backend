@@ -80,6 +80,7 @@ class ArtistServiceTest {
 
         assertThat(response.averageRating()).isEqualTo(4.25);
         assertThat(response.workCount()).isEqualTo(2);
+        // aggregate() uses the rating-weighted public-rating mean across distinct imported media IDs.
         verify(ratingSummaryService).aggregate(distinctMediaIds);
     }
 
@@ -96,6 +97,24 @@ class ArtistServiceTest {
         var response = artistService.findDetails(artist.getId());
 
         assertThat(response.averageRating()).isNull();
+    }
+
+    @Test
+    void returnsCabinetAverageForOneRatedImportedWork() {
+        Person artist = artist("Ava DuVernay");
+        UUID mediaId = UUID.randomUUID();
+        when(personRepository.findById(artist.getId())).thenReturn(Optional.of(artist));
+        when(mediaCreditRepository.findDistinctRolesByPersonId(artist.getId()))
+                .thenReturn(List.of(CreditRole.DIRECTOR));
+        when(mediaCreditRepository.findDistinctMediaIdsByPersonId(artist.getId())).thenReturn(List.of(mediaId));
+        when(mediaCreditRepository.countDistinctMediaByPersonId(artist.getId())).thenReturn(1L);
+        when(ratingSummaryService.aggregate(List.of(mediaId))).thenReturn(
+                new RatingSummaryService.AggregateStats(4.5, 1, List.of()));
+
+        var response = artistService.findDetails(artist.getId());
+
+        assertThat(response.averageRating()).isEqualTo(4.5);
+        verify(ratingSummaryService).aggregate(List.of(mediaId));
     }
 
     @Test
