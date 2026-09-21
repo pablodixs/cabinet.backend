@@ -9,13 +9,17 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ArtistService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
 import com.scriptles.cabinet.media.service.PersonWorksService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.LocalizedResponse;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,6 +35,7 @@ public class PeopleController {
     private final ArtistService artistService;
     private final AwardQueryService awardQueryService;
     private final ObjectProvider<PersonWorksService> personWorksService;
+    private final CatalogLocaleResolver localeResolver;
 
     @GetMapping("/{personId}")
     public ArtistResponse findDetails(@PathVariable UUID personId) {
@@ -38,14 +43,20 @@ public class PeopleController {
     }
 
     @GetMapping("/{personId}/works")
-    public PageResponse<PersonWorkResponse> findWorks(
+    public ResponseEntity<PageResponse<PersonWorkResponse>> findWorks(
             @PathVariable UUID personId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "24") @Min(1) @Max(40) int size,
-            @RequestParam(defaultValue = "pt-BR") String language,
-            @RequestParam(required = false) MediaType type
+            @RequestParam(required = false) @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
+            @RequestParam(required = false) MediaType type,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
-        return personWorksService.getObject().findWorks(personId, page, size, language, type);
+        String requestedLocale = localeResolver.resolve(language, acceptLanguage).tag();
+        return LocalizedResponse.ok(
+                personWorksService.getObject().findWorks(personId, page, size, requestedLocale, type),
+                requestedLocale,
+                language == null || language.isBlank()
+        );
     }
 
     @GetMapping("/{personId}/awards")

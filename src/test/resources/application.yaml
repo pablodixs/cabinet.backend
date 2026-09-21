@@ -6,3 +6,21 @@ spring:
       hibernate:
         type:
           prefer_native_enum_types: false
+catalog:
+  tmdb-changes:
+    cron: 0 30 3 * * *
+    zone: America/Sao_Paulo
+  collections:
+    tmdb-sync:
+      cron: 0 0 5 * * *
+      zone: America/Sao_Paulo
+  series-tracking:
+    cron: 0 0 4 * * *
+    zone: America/Sao_Paulo
+app:
+  notifications:
+    episode-cron: 0 0 8 * * *
+    episode-zone: America/Sao_Paulo
+    retention-cron: 0 20 3 * * *
+  letterboxd:
+    cleanup-cron: 0 17 * * * *

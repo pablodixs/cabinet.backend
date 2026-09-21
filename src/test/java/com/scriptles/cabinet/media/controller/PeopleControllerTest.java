@@ -11,6 +11,7 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ArtistService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
 import com.scriptles.cabinet.media.service.PersonWorksService;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(PeopleController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, CatalogLocaleResolver.class})
 class PeopleControllerTest {
     @Autowired
     private MockMvc mockMvc;
@@ -58,8 +59,11 @@ class PeopleControllerTest {
                         .param("page", "1")
                         .param("size", "12")
                         .param("language", "en-US")
+                        .header("Accept-Language", "pt-BR")
                         .param("type", "MOVIE"))
                 .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string("Content-Language", "en-US"))
                 .andExpect(jsonPath("$.items[0].externalId").value("550"))
                 .andExpect(jsonPath("$.items[0].credits[0].role").value("ACTOR"))
                 .andExpect(jsonPath("$.page").value(1))

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.user.importer;
 
 import com.scriptles.cabinet.notifications.service.NotificationService;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
 import com.scriptles.cabinet.user.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import static org.mockito.Mockito.when;
 class LetterboxdImportSchedulerTest {
     @Mock LetterboxdImportJobRepository jobRepository;
     @Mock LetterboxdImportItemRepository itemRepository;
+    @Mock BackgroundJobRunner jobRunner;
     @Mock LetterboxdImportMatcher matcher;
     @Mock LetterboxdImportApplier applier;
     @Mock LetterboxdImportService importService;
@@ -31,7 +33,7 @@ class LetterboxdImportSchedulerTest {
     @BeforeEach
     void setUp() {
         Executor directExecutor = Runnable::run;
-        scheduler = new LetterboxdImportScheduler(directExecutor, jobRepository, itemRepository,
+        scheduler = new LetterboxdImportScheduler(directExecutor, jobRepository, itemRepository, jobRunner,
                 matcher, applier, importService, notificationService);
     }
 

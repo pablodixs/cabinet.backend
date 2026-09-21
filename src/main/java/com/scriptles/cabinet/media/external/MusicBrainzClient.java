@@ -28,6 +28,9 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonWorksProvider {
     private static final Pattern WIKIDATA_QID = Pattern.compile("(?:^|/)(Q[1-9]\\d*)(?=$|[/?#])", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FEATURED_JOIN = Pattern.compile(
+            "(?i)(?:^|\\s)(?:feat\\.?|ft\\.?|featuring)(?:\\s|$)"
+    );
 
     private final RestClient.Builder restClientBuilder;
     private final ExternalApiProperties properties;
@@ -118,21 +121,122 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
             offset += pageSize;
         }
         List<Work> works = new ArrayList<>();
+        int loadedReleaseGroups = 0;
         for (JsonNode body : pages) {
             for (JsonNode item : body.path("release-groups")) {
+                loadedReleaseGroups++;
                 ExternalMedia album = toAlbum(item, List.of(), false);
                 if (album.externalId() != null) {
-                    works.add(new Work(album, CreditRole.ARTIST, null, 0));
+                    album.credits().stream()
+                            .filter(credit -> personExternalId.equals(credit.externalId()))
+                            .findFirst()
+                            .ifPresent(credit -> works.add(new Work(
+                                    album, credit.role(), null, 0)));
                 }
             }
         }
-        works.sort(java.util.Comparator
+        ReleaseCreditResults releaseCredits = browseReleaseCredits(personExternalId);
+        works.addAll(releaseCredits.works());
+
+        Map<MusicWorkCreditKey, Work> distinctCredits = new LinkedHashMap<>();
+        for (Work work : works) {
+            distinctCredits.putIfAbsent(new MusicWorkCreditKey(
+                    work.media().externalId(), work.role(), work.characterName()), work);
+        }
+        List<Work> distinctWorks = new ArrayList<>(distinctCredits.values());
+        distinctWorks.sort(java.util.Comparator
                 .comparing(
                         (Work work) -> work.media().releaseDate(),
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
                 .thenComparing(work -> work.media().title(), java.util.Comparator.nullsLast(String::compareToIgnoreCase))
                 .thenComparing(work -> work.media().externalId()));
-        return new PersonWorks(List.copyOf(works), !complete && total > works.size());
+        return new PersonWorks(
+                List.copyOf(distinctWorks),
+                (!complete && total > loadedReleaseGroups) || releaseCredits.incomplete()
+        );
+    }
+
+    private ReleaseCreditResults browseReleaseCredits(String artistId) {
+        List<Work> works = new ArrayList<>();
+        int offset = 0;
+        Integer total = null;
+        boolean complete = false;
+        while (!complete) {
+            JsonNode page = browseReleasesByArtist(artistId, offset, 100);
+            Integer reportedTotal = integer(page, "release-count");
+            if (reportedTotal != null) {
+                total = reportedTotal;
+            }
+            int pageSize = page.path("releases").size();
+            for (JsonNode release : page.path("releases")) {
+                JsonNode releaseGroup = release.path("release-group");
+                if (releaseGroup.isMissingNode() || text(releaseGroup, "id") == null) {
+                    continue;
+                }
+                ExternalMedia album = toAlbum(releaseGroup, List.of(), false);
+                if (album.externalId() == null) {
+                    continue;
+                }
+                for (JsonNode relation : release.path("relations")) {
+                    if (!artistId.equals(text(relation.path("artist"), "id"))) {
+                        continue;
+                    }
+                    CreditRole role = releaseRelationshipRole(text(relation, "type"));
+                    if (role != null) {
+                        works.add(new Work(album, role, null, 0));
+                    }
+                }
+            }
+            if (pageSize == 0) {
+                complete = total == null || offset >= total;
+                break;
+            }
+            offset += pageSize;
+            if (total != null) {
+                complete = offset >= total;
+            } else {
+                complete = pageSize < 100;
+            }
+        }
+        return new ReleaseCreditResults(List.copyOf(works), !complete);
+    }
+
+    private JsonNode browseReleasesByArtist(String artistId, int offset, int limit) {
+        waitForRateLimit();
+        try {
+            return restClientBuilder.clone().baseUrl(properties.musicbrainz().baseUrl()).build().get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/release")
+                            .queryParam("fmt", "json")
+                            .queryParam("artist", artistId)
+                            .queryParam("inc", "artist-rels+release-groups")
+                            .queryParam("offset", offset)
+                            .queryParam("limit", limit)
+                            .build())
+                    .header("User-Agent", properties.musicbrainz().userAgent())
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 503) {
+                throw new ExternalMediaRateLimitException("MusicBrainz rate limit exceeded", exception);
+            }
+            throw new ExternalMediaException(
+                    "MusicBrainz responded with HTTP " + exception.getStatusCode().value(), exception
+            );
+        } catch (RestClientException exception) {
+            throw new ExternalMediaException("Unable to communicate with MusicBrainz", exception);
+        }
+    }
+
+    private CreditRole releaseRelationshipRole(String relationshipType) {
+        if (relationshipType == null) {
+            return null;
+        }
+        return switch (relationshipType.trim().toLowerCase(Locale.ROOT)) {
+            case "producer" -> CreditRole.PRODUCER;
+            case "composer" -> CreditRole.COMPOSER;
+            default -> null;
+        };
     }
 
     private JsonNode browseReleaseGroups(String artistId) {
@@ -502,16 +606,19 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
     private List<ExternalMedia.ExternalCredit> artistCredits(JsonNode values) {
         List<ExternalMedia.ExternalCredit> credits = new ArrayList<>();
         int position = 0;
-        for (JsonNode credit : values) {
+        for (int index = 0; index < values.size(); index++) {
+            JsonNode credit = values.get(index);
             String name = text(credit, "name");
             if (name == null) {
                 name = text(credit.path("artist"), "name");
             }
             if (name != null) {
+                boolean featured = index > 0
+                        && isFeaturedJoin(text(values.get(index - 1), "joinphrase"));
                 credits.add(new ExternalMedia.ExternalCredit(
                         text(credit.path("artist"), "id"),
                         name,
-                        CreditRole.ARTIST,
+                        featured ? CreditRole.FEATURED_ARTIST : CreditRole.ARTIST,
                         null,
                         position++,
                         null,
@@ -520,6 +627,16 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
             }
         }
         return List.copyOf(credits);
+    }
+
+    private boolean isFeaturedJoin(String joinphrase) {
+        return joinphrase != null && FEATURED_JOIN.matcher(joinphrase).find();
+    }
+
+    private record MusicWorkCreditKey(String externalId, CreditRole role, String characterName) {
+    }
+
+    private record ReleaseCreditResults(List<Work> works, boolean incomplete) {
     }
 
     private String creditNames(List<ExternalMedia.ExternalCredit> credits) {

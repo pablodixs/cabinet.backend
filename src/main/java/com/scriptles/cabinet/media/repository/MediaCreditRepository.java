@@ -49,6 +49,9 @@ public interface MediaCreditRepository extends JpaRepository<MediaCredit, UUID> 
             + "where credit.person.id = :personId")
     long countDistinctMediaByPersonId(@Param("personId") UUID personId);
 
+    @Query("select distinct credit.media.id from MediaCredit credit where credit.person.id = :personId")
+    List<UUID> findDistinctMediaIdsByPersonId(@Param("personId") UUID personId);
+
     @Query("select distinct credit.role from MediaCredit credit where credit.person.id = :personId")
     List<CreditRole> findDistinctRolesByPersonId(@Param("personId") UUID personId);
 

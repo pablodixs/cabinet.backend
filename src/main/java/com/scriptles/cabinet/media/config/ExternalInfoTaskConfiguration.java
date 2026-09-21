@@ -27,4 +27,16 @@ public class ExternalInfoTaskConfiguration {
         executor.setAwaitTerminationSeconds(30);
         return executor;
     }
+
+    @Bean(name = "catalogJobTaskExecutor")
+    public ThreadPoolTaskExecutor catalogJobTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(0);
+        executor.setThreadNamePrefix("catalog-job-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        return executor;
+    }
 }

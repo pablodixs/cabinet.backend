@@ -73,6 +73,7 @@ public class SecurityConfig {
 
                         .requestMatchers(
                                 HttpMethod.GET,
+                                "/v1/status",
                                 "/v1/media/external/**",
                                 "/v1/media/search",
                                 "/v1/search/header",

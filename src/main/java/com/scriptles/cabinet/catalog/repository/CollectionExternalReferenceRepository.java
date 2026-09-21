@@ -6,6 +6,7 @@ import com.scriptles.cabinet.catalog.entity.CollectionExternalReference;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
@@ -24,14 +25,16 @@ public interface CollectionExternalReferenceRepository extends JpaRepository<Col
             where reference.provider = :provider
               and reference.collection.type = :type
               and reference.collection.sourceMode = :sourceMode
-              and (reference.lastSyncedAt is null or reference.lastSyncedAt <= :cutoff)
-            order by case when reference.lastSyncedAt is null then 0 else 1 end,
-                     reference.lastSyncedAt, reference.collection.id
+            and (reference.nextSyncAt is null or reference.nextSyncAt <= :cutoff)
+            order by case when reference.syncPriority = 'HOT' then 0
+                          when reference.syncPriority = 'WARM' then 1 else 2 end,
+                     reference.nextSyncAt, reference.collection.id
             """)
     List<UUID> findCollectionIdsDueForSync(
             @Param("provider") ExternalSource provider,
             @Param("type") CollectionType type,
             @Param("sourceMode") CollectionSourceMode sourceMode,
-            @Param("cutoff") Instant cutoff
+            @Param("cutoff") Instant cutoff,
+            Pageable pageable
     );
 }

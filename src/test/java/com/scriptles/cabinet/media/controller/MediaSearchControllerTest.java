@@ -20,6 +20,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(MediaSearchController.class)
@@ -42,6 +43,9 @@ class MediaSearchControllerTest {
 
         mockMvc.perform(get("/v1/media/search").param("query", "matrix"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("Content-Language", "pt-BR"))
+                .andExpect(result -> org.assertj.core.api.Assertions.assertThat(
+                        result.getResponse().getHeaders("Vary")).contains("Accept-Language"))
                 .andExpect(jsonPath("$.items").isArray())
                 .andExpect(jsonPath("$.nextCursor").doesNotExist());
 

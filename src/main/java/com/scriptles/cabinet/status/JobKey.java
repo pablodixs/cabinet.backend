@@ -1,0 +1,11 @@
+package com.scriptles.cabinet.status;
+
+public enum JobKey {
+    TMDB_CATALOG_SYNC,
+    COLLECTION_SYNC,
+    SERIES_TRACKING_SYNC,
+    SERIES_TRACKING_SCAN,
+    EPISODE_NOTIFICATIONS,
+    NOTIFICATION_RETENTION,
+    LETTERBOXD_CLEANUP
+}

@@ -43,6 +43,16 @@ public class CatalogResolver {
         }
     }
 
+    public Resolution resolveSeed(MediaTarget target, ExternalMedia seed) {
+        Optional<ExternalReference> stored = externalReferenceRepository.findBySourceAndExternalId(
+                target.source(), target.externalId());
+        if (stored.isPresent()) {
+            return new Resolution(stored.get().getMedia().getId(), null, target.normalizedLocale());
+        }
+        return new Resolution(null, new CatalogSnapshot(seed, target.normalizedLocale(), Instant.now()),
+                target.normalizedLocale());
+    }
+
     private Resolution resolveInternal(MediaTarget target) {
         if (target.mediaId() != null) {
             if (!mediaRepository.existsById(target.mediaId())) {

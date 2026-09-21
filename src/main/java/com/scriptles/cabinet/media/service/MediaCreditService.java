@@ -238,10 +238,11 @@ public class MediaCreditService {
             case DIRECTOR -> 1;
             case CREATOR -> 2;
             case ARTIST -> 3;
-            case AUTHOR -> 4;
-            case SCREENWRITER -> 5;
-            case PRODUCER -> 6;
-            case ACTOR -> 7;
+            case FEATURED_ARTIST -> 4;
+            case AUTHOR -> 5;
+            case SCREENWRITER -> 6;
+            case PRODUCER -> 7;
+            case ACTOR -> 8;
         };
     }
 

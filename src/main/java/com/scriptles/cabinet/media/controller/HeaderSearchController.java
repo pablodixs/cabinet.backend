@@ -5,11 +5,13 @@ import com.scriptles.cabinet.media.enums.HeaderSearchScope;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.HeaderSearchService;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.LocalizedResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -26,7 +28,7 @@ public class HeaderSearchController {
     private final CatalogLocaleResolver localeResolver;
 
     @GetMapping("/header")
-    public HeaderSearchResponse search(
+    public ResponseEntity<HeaderSearchResponse> search(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam @NotBlank @Size(min = 2, max = 100) String query,
             @RequestParam(defaultValue = "ALL") HeaderSearchScope scope,
@@ -35,8 +37,9 @@ public class HeaderSearchController {
             @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
         String requestedLocale = localeResolver.resolve(locale, acceptLanguage).tag();
-        return user == null
+        HeaderSearchResponse response = user == null
                 ? headerSearchService.search(query, scope, type, requestedLocale)
                 : headerSearchService.search(query, scope, type, requestedLocale, user.id());
+        return LocalizedResponse.ok(response, requestedLocale, locale == null || locale.isBlank());
     }
 }

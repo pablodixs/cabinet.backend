@@ -8,6 +8,8 @@ import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaLike;
 import com.scriptles.cabinet.media.entity.MovieDetails;
+import com.scriptles.cabinet.media.entity.Rating;
+import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -19,6 +21,7 @@ import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.media.repository.SeriesDetailsRepository;
 import com.scriptles.cabinet.media.repository.SeriesSeasonRepository;
@@ -27,9 +30,13 @@ import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.media.translation.CatalogTranslationLoader;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
+import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
+import com.scriptles.cabinet.user.repository.UserAlbumRotationRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
+import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import org.junit.jupiter.api.Test;
@@ -41,12 +48,15 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class MediaQueryServiceTest {
@@ -71,6 +81,8 @@ class MediaQueryServiceTest {
     @Mock
     private RatingRepository ratingRepository;
     @Mock
+    private ReviewRepository reviewRepository;
+    @Mock
     private SeriesEpisodeRepository seriesEpisodeRepository;
     @Mock
     private MediaLikeRepository mediaLikeRepository;
@@ -78,6 +90,12 @@ class MediaQueryServiceTest {
     private MediaListItemRepository mediaListItemRepository;
     @Mock
     private UserMediaRepository userMediaRepository;
+    @Mock
+    private UserMediaActivityRepository userMediaActivityRepository;
+    @Mock
+    private UserAlbumRotationRepository userAlbumRotationRepository;
+    @Mock
+    private UserArtworkResolver userArtworkResolver;
     @Mock
     private MediaCreditService mediaCreditService;
     @Mock
@@ -165,9 +183,235 @@ class MediaQueryServiceTest {
         var community = mediaQueryService.findCommunity(albumId);
 
         assertThat(community.averageRating()).isEqualTo(3.5);
+        assertThat(community.ratingDistribution()).hasSize(10)
+                .extracting(ExternalMediaDetailsResponse.RatingDistributionBucket::rating)
+                .containsExactly(0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0);
         assertThat(community.childRatings().itemType()).isEqualTo(MediaType.TRACK);
         assertThat(community.childRatings().averageRating()).isEqualTo(4.33);
         assertThat(community.childRatings().ratingCount()).isEqualTo(3);
+    }
+
+    @Test
+    void returnsEmptyViewerStateWithNoDiaryActivity() {
+        UUID mediaId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Media media = media(mediaId, MediaType.MOVIE);
+        stubUserStateBase(media, userId, Optional.empty(), Optional.empty(), Optional.empty(), false);
+        when(userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, mediaId, diaryTypes())).thenReturn(0L);
+        when(userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                userId, mediaId, diaryTypes())).thenReturn(Optional.empty());
+
+        var state = mediaQueryService.findUserState(mediaId, userId);
+
+        assertThat(state.logCount()).isZero();
+        assertThat(state.lastLoggedOn()).isNull();
+        assertThat(state.listenCount()).isZero();
+        assertThat(state.lastListenedOn()).isNull();
+        assertThat(state.rating()).isNull();
+        assertThat(state.reviewId()).isNull();
+        assertThat(state.liked()).isFalse();
+        assertThat(state.status()).isNull();
+    }
+
+    @Test
+    void countsWatchAndRewatchActivityForAnyMediaVisibility() {
+        UUID mediaId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Media media = media(mediaId, MediaType.MOVIE);
+        LocalDate lastLoggedOn = LocalDate.of(2026, 9, 18);
+        stubUserStateBase(media, userId, Optional.empty(), Optional.empty(), Optional.empty(), false);
+        when(userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, mediaId, diaryTypes())).thenReturn(2L);
+        when(userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                userId, mediaId, diaryTypes())).thenReturn(Optional.of(activityOn(lastLoggedOn)));
+
+        var state = mediaQueryService.findUserState(mediaId, userId);
+
+        assertThat(state.logCount()).isEqualTo(2);
+        assertThat(state.lastLoggedOn()).isEqualTo(lastLoggedOn);
+        verify(userMediaActivityRepository).countByUserIdAndMediaIdAndTypeIn(userId, mediaId, diaryTypes());
+        verify(userMediaActivityRepository)
+                .findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                        userId, mediaId, diaryTypes());
+    }
+
+    @Test
+    void countsOneDiaryLog() {
+        UUID mediaId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Media media = media(mediaId, MediaType.BOOK);
+        LocalDate loggedOn = LocalDate.of(2026, 9, 20);
+        stubUserStateBase(media, userId, Optional.empty(), Optional.empty(), Optional.empty(), false);
+        when(userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, mediaId, diaryTypes())).thenReturn(1L);
+        when(userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                userId, mediaId, diaryTypes())).thenReturn(Optional.of(activityOn(loggedOn)));
+
+        var state = mediaQueryService.findUserState(mediaId, userId);
+
+        assertThat(state.logCount()).isEqualTo(1);
+        assertThat(state.lastLoggedOn()).isEqualTo(loggedOn);
+    }
+
+    @Test
+    void keepsMusicListenCountWhileExposingGenericLogCount() {
+        UUID mediaId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        Media media = media(mediaId, MediaType.ALBUM);
+        LocalDate lastLoggedOn = LocalDate.of(2026, 9, 19);
+        LocalDate lastListenedOn = LocalDate.of(2026, 9, 17);
+        stubUserStateBase(media, userId, Optional.empty(), Optional.empty(), Optional.empty(), false);
+        when(userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, mediaId, diaryTypes())).thenReturn(3L);
+        when(userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                userId, mediaId, diaryTypes())).thenReturn(Optional.of(activityOn(lastLoggedOn)));
+        when(userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, mediaId, listenTypes())).thenReturn(2L);
+        when(userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                userId, mediaId, listenTypes())).thenReturn(Optional.of(activityOn(lastListenedOn)));
+
+        var state = mediaQueryService.findUserState(mediaId, userId);
+
+        assertThat(state.logCount()).isEqualTo(3);
+        assertThat(state.lastLoggedOn()).isEqualTo(lastLoggedOn);
+        assertThat(state.listenCount()).isEqualTo(2);
+        assertThat(state.lastListenedOn()).isEqualTo(lastListenedOn);
+    }
+
+    @Test
+    void returnsCombinedLikePlannedRatingAndReviewState() {
+        UUID mediaId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID reviewId = UUID.randomUUID();
+        Media media = media(mediaId, MediaType.BOOK);
+        UserMedia planned = new UserMedia();
+        planned.setStatus(UserMediaStatus.PLANNED);
+        Rating rating = new Rating();
+        rating.setValue(new BigDecimal("4.5"));
+        Review review = new Review();
+        review.setId(reviewId);
+        var state = viewerState(media, userId, Optional.of(planned), Optional.of(rating), Optional.of(review), true);
+
+        assertThat(state.liked()).isTrue();
+        assertThat(state.status()).isEqualTo(UserMediaStatus.PLANNED);
+        assertThat(state.rating()).isEqualTo(4.5);
+        assertThat(state.reviewId()).isEqualTo(reviewId);
+    }
+
+    @Test
+    void returnsRatingOnlyViewerState() {
+        Media media = media(UUID.randomUUID(), MediaType.MOVIE);
+        Rating rating = new Rating();
+        rating.setValue(new BigDecimal("3.5"));
+
+        var state = viewerState(media, UUID.randomUUID(), Optional.empty(), Optional.of(rating), Optional.empty(), false);
+
+        assertThat(state.rating()).isEqualTo(3.5);
+        assertThat(state.liked()).isFalse();
+        assertThat(state.status()).isNull();
+        assertThat(state.reviewId()).isNull();
+        assertThat(state.logCount()).isZero();
+    }
+
+    @Test
+    void returnsLikeOnlyViewerState() {
+        Media media = media(UUID.randomUUID(), MediaType.SERIES);
+
+        var state = viewerState(media, UUID.randomUUID(), Optional.empty(), Optional.empty(), Optional.empty(), true);
+
+        assertThat(state.liked()).isTrue();
+        assertThat(state.rating()).isNull();
+        assertThat(state.status()).isNull();
+        assertThat(state.reviewId()).isNull();
+    }
+
+    @Test
+    void returnsPlannedOnlyViewerState() {
+        Media media = media(UUID.randomUUID(), MediaType.BOOK);
+        UserMedia planned = new UserMedia();
+        planned.setStatus(UserMediaStatus.PLANNED);
+
+        var state = viewerState(media, UUID.randomUUID(), Optional.of(planned), Optional.empty(), Optional.empty(), false);
+
+        assertThat(state.status()).isEqualTo(UserMediaStatus.PLANNED);
+        assertThat(state.liked()).isFalse();
+        assertThat(state.rating()).isNull();
+        assertThat(state.reviewId()).isNull();
+    }
+
+    @Test
+    void returnsReviewOnlyViewerState() {
+        Media media = media(UUID.randomUUID(), MediaType.ALBUM);
+        Review review = new Review();
+        review.setId(UUID.randomUUID());
+
+        var state = viewerState(media, UUID.randomUUID(), Optional.empty(), Optional.empty(), Optional.of(review), false);
+
+        assertThat(state.reviewId()).isEqualTo(review.getId());
+        assertThat(state.rating()).isNull();
+        assertThat(state.liked()).isFalse();
+        assertThat(state.status()).isNull();
+    }
+
+    private void stubUserStateBase(
+            Media media,
+            UUID userId,
+            Optional<UserMedia> library,
+            Optional<Rating> rating,
+            Optional<Review> review,
+            boolean liked
+    ) {
+        when(mediaRepository.findById(media.getId())).thenReturn(Optional.of(media));
+        when(userMediaRepository.findByUserIdAndMediaId(userId, media.getId())).thenReturn(library);
+        when(ratingRepository.findByUserIdAndMediaId(userId, media.getId())).thenReturn(rating);
+        when(reviewRepository.findByUserIdAndMediaId(userId, media.getId())).thenReturn(review);
+        when(userArtworkResolver.resolve(userId, media)).thenReturn(
+                new UserArtworkResolver.ResolvedArtwork(null, null, false, false));
+        when(mediaLikeRepository.existsByUserIdAndMediaId(userId, media.getId())).thenReturn(liked);
+        when(mediaListItemRepository.findListIdsByMediaIdAndOwnerId(media.getId(), userId))
+                .thenReturn(List.of());
+        if (media.getType() == MediaType.ALBUM) {
+            when(userAlbumRotationRepository.existsByUserIdAndAlbumId(userId, media.getId())).thenReturn(false);
+        }
+    }
+
+    private com.scriptles.cabinet.media.dto.response.UserMediaStateResponse viewerState(
+            Media media,
+            UUID userId,
+            Optional<UserMedia> library,
+            Optional<Rating> rating,
+            Optional<Review> review,
+            boolean liked
+    ) {
+        stubUserStateBase(media, userId, library, rating, review, liked);
+        when(userMediaActivityRepository.countByUserIdAndMediaIdAndTypeIn(
+                userId, media.getId(), diaryTypes())).thenReturn(0L);
+        when(userMediaActivityRepository.findTopByUserIdAndMediaIdAndTypeInOrderByOccurredOnDescCreatedAtDesc(
+                userId, media.getId(), diaryTypes())).thenReturn(Optional.empty());
+        return mediaQueryService.findUserState(media.getId(), userId);
+    }
+
+    private Media media(UUID id, MediaType type) {
+        Media media = new Media();
+        media.setId(id);
+        media.setType(type);
+        return media;
+    }
+
+    private EnumSet<ProfileActivityType> diaryTypes() {
+        return EnumSet.of(ProfileActivityType.LOGGED, ProfileActivityType.RELOGGED,
+                ProfileActivityType.WATCHED, ProfileActivityType.REWATCHED);
+    }
+
+    private EnumSet<ProfileActivityType> listenTypes() {
+        return EnumSet.of(ProfileActivityType.LOGGED, ProfileActivityType.RELOGGED);
+    }
+
+    private com.scriptles.cabinet.user.entity.UserMediaActivity activityOn(LocalDate date) {
+        var activity = new com.scriptles.cabinet.user.entity.UserMediaActivity();
+        activity.setOccurredOn(date);
+        return activity;
     }
 
     @Test

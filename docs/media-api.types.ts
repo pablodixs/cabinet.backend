@@ -35,7 +35,45 @@ export interface Artist {
   source: ExternalSource;
   externalId: string | null;
   workCount: number;
+  /** Rating-weighted mean of public Cabinet ratings across distinct imported works; null when unrated. */
+  averageRating: number | null;
   roles: CreditRole[];
+}
+
+export interface RatingDistributionBucket {
+  rating: number;
+  count: number;
+}
+
+export interface MediaCommunity {
+  likeCount: number;
+  recentLikers: MediaCommunityUser[];
+  averageRating: number | null;
+  ratingDistribution: RatingDistributionBucket[];
+  childRatings: {
+    itemType: "TRACK" | "EPISODE";
+    averageRating: number | null;
+    ratingCount: number;
+    ratingDistribution: RatingDistributionBucket[];
+  } | null;
+  listCount: number;
+  completedCount: number;
+  recentCompleters: MediaCommunityUser[];
+}
+
+export interface UserMediaState {
+  liked: boolean;
+  status: "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "PAUSED" | "DROPPED" | null;
+  rating: number | null;
+  reviewId: string | null;
+  listIds: string[];
+  customCoverUrl: string | null;
+  customBackdropUrl: string | null;
+  logCount: number;
+  lastLoggedOn: string | null;
+  listenCount: number;
+  lastListenedOn: string | null;
+  inRotation: boolean;
 }
 
 export interface ArtistWorkCredit {
@@ -377,6 +415,7 @@ export interface MediaCommunityUser {
   id: string;
   username: string;
   avatarUrl: string | null;
+  pro: boolean;
 }
 
 interface MediaDetailsBase<T extends MediaType, D> {

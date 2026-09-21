@@ -18,6 +18,10 @@ import com.scriptles.cabinet.notifications.entity.Notification;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.notifications.event.NotificationChangedEvent;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
+import com.scriptles.cabinet.status.BackgroundJobRetention;
+import com.scriptles.cabinet.status.BackgroundJobRunner;
+import com.scriptles.cabinet.status.BackgroundJobTracker;
+import com.scriptles.cabinet.status.JobKey;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMedia;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
@@ -42,6 +46,8 @@ import java.util.*;
 @RequiredArgsConstructor
 public class NotificationService {
     private final NotificationRepository notificationRepository;
+    private final BackgroundJobRunner jobRunner;
+    private final BackgroundJobRetention backgroundJobRetention;
     private final MediaListLikeRepository mediaListLikeRepository;
     private final ReviewLikeRepository reviewLikeRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -190,32 +196,47 @@ public class NotificationService {
         notifyLetterboxdImport(job, NotificationType.LETTERBOXD_IMPORT_COMPLETED);
     }
 
-    @Scheduled(cron = "0 0 8 * * *", zone = "America/Sao_Paulo")
+    @Scheduled(cron = "${app.notifications.episode-cron}", zone = "${app.notifications.episode-zone}")
     @Transactional
     public void notifyEpisodeReleases() {
-        for (SeriesEpisode episode : seriesEpisodeRepository
-                .findAllByAirDateAndSeasonSeasonNumberGreaterThan(CabinetTime.today(), 0)) {
-            List<UserMedia> trackedEntries = userMediaRepository.findAllByMediaIdAndStatus(
-                    episode.getSeason().getSeries().getId(), UserMediaStatus.IN_PROGRESS);
-            for (UserMedia entry : trackedEntries) {
-                UUID recipientId = entry.getUser().getId();
-                if (episodeWatchRepository.existsByUserIdAndEpisodeId(recipientId, episode.getId())
-                        || notificationRepository.existsByRecipientIdAndSeriesEpisodeId(
-                                recipientId, episode.getId())) {
-                    continue;
+        jobRunner.execute(JobKey.EPISODE_NOTIFICATIONS, () -> {
+            int episodes = 0;
+            int notifications = 0;
+            for (SeriesEpisode episode : seriesEpisodeRepository
+                    .findAllByAirDateAndSeasonSeasonNumberGreaterThan(CabinetTime.today(), 0)) {
+                episodes++;
+                List<UserMedia> trackedEntries = userMediaRepository.findAllByMediaIdAndStatus(
+                        episode.getSeason().getSeries().getId(), UserMediaStatus.IN_PROGRESS);
+                for (UserMedia entry : trackedEntries) {
+                    UUID recipientId = entry.getUser().getId();
+                    if (episodeWatchRepository.existsByUserIdAndEpisodeId(recipientId, episode.getId())
+                            || notificationRepository.existsByRecipientIdAndSeriesEpisodeId(
+                                    recipientId, episode.getId())) {
+                        continue;
+                    }
+                    Notification notification = notification(entry.getUser(), NotificationType.EPISODE_RELEASED);
+                    notification.setSeriesEpisode(episode);
+                    notificationRepository.save(notification);
+                    changed(recipientId);
+                    notifications++;
                 }
-                Notification notification = notification(entry.getUser(), NotificationType.EPISODE_RELEASED);
-                notification.setSeriesEpisode(episode);
-                notificationRepository.save(notification);
-                changed(recipientId);
             }
-        }
+            return BackgroundJobTracker.JobRunResult.completed(episodes, notifications, episodes, 0,
+                    "Episode release notifications checked");
+        });
     }
 
-    @Scheduled(cron = "0 20 3 * * *")
+    @Scheduled(cron = "${app.notifications.retention-cron}")
     @Transactional
     public void deleteExpired() {
-        notificationRepository.deleteOlderThan(Instant.now().minus(90, ChronoUnit.DAYS));
+        jobRunner.execute(JobKey.NOTIFICATION_RETENTION, () -> {
+            int removedNotifications = notificationRepository.deleteOlderThan(
+                    Instant.now().minus(90, ChronoUnit.DAYS));
+            int removedJobRuns = backgroundJobRetention.deleteExpired();
+            int removed = removedNotifications + removedJobRuns;
+            return BackgroundJobTracker.JobRunResult.completed(removed, removed, removed, 0,
+                    "Expired Cabinet activity was cleaned up");
+        });
     }
 
     private Notification notification(User recipient, NotificationType type) {

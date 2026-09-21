@@ -6,6 +6,7 @@ public enum CreditRole {
     DIRECTOR,
     ACTOR,
     ARTIST,
+    FEATURED_ARTIST,
     COMPOSER,
     PRODUCER,
     SCREENWRITER

@@ -21,7 +21,12 @@ public record TmdbCollectionSnapshot(
             String title,
             String originalTitle,
             LocalDate releaseDate,
-            String posterUrl
+            String posterUrl,
+            String backdropUrl,
+            String originalLanguage
     ) {
+        public Movie(String externalId, String title, String originalTitle, LocalDate releaseDate, String posterUrl) {
+            this(externalId, title, originalTitle, releaseDate, posterUrl, null, null);
+        }
     }
 }

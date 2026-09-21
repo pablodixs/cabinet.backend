@@ -13,6 +13,8 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,6 +45,25 @@ class CatalogOutboxRepositoryTest {
                 .isEqualTo(CatalogOutboxStatus.PROCESSING);
     }
 
+    @Test
+    void aggregatesQueueStatesWithoutLoadingOutboxRows() {
+        repository.saveAllAndFlush(java.util.stream.Stream.of(
+                events(CatalogOutboxStatus.PENDING, 10),
+                events(CatalogOutboxStatus.PROCESSING, 3),
+                events(CatalogOutboxStatus.RETRY, 2),
+                events(CatalogOutboxStatus.PROCESSED, 20)
+        ).flatMap(java.util.Collection::stream).toList());
+
+        Map<CatalogOutboxStatus, Long> counts = repository.countByStatus().stream()
+                .collect(Collectors.toMap(CatalogOutboxRepository.OutboxStatusCount::getStatus,
+                        CatalogOutboxRepository.OutboxStatusCount::getCount));
+
+        assertThat(counts).containsEntry(CatalogOutboxStatus.PENDING, 10L)
+                .containsEntry(CatalogOutboxStatus.PROCESSING, 3L)
+                .containsEntry(CatalogOutboxStatus.RETRY, 2L)
+                .containsEntry(CatalogOutboxStatus.PROCESSED, 20L);
+    }
+
     private CatalogOutboxEvent processingEvent(Instant lockedAt) {
         CatalogOutboxEvent event = new CatalogOutboxEvent();
         event.setId(UUID.randomUUID());
@@ -55,5 +76,15 @@ class CatalogOutboxRepositoryTest {
         event.setLockedAt(lockedAt);
         event.setLockedBy("test-worker");
         return event;
+    }
+
+    private java.util.List<CatalogOutboxEvent> events(CatalogOutboxStatus status, int count) {
+        return java.util.stream.IntStream.range(0, count).mapToObj(index -> {
+            CatalogOutboxEvent event = processingEvent(Instant.now());
+            event.setStatus(status);
+            event.setLockedAt(null);
+            event.setLockedBy(null);
+            return event;
+        }).toList();
     }
 }

@@ -62,6 +62,9 @@ catalog:
       zone: ${CATALOG_COLLECTION_TMDB_SYNC_ZONE:America/Sao_Paulo}
       stale-after: ${CATALOG_COLLECTION_TMDB_SYNC_STALE_AFTER:24h}
       locale: ${CATALOG_COLLECTION_TMDB_SYNC_LOCALE:pt-BR}
+  series-tracking:
+    cron: ${CATALOG_SERIES_TRACKING_CRON:0 0 4 * * *}
+    zone: ${CATALOG_SERIES_TRACKING_ZONE:America/Sao_Paulo}
   staleness:
     movie:
       future: ${CATALOG_STALE_MOVIE_FUTURE:24h}
@@ -78,9 +81,14 @@ app:
     # Bootstrap only: these accounts can appoint the community team through the dashboard.
     admin-emails: ${ADMIN_EMAILS:}
   notifications:
+    episode-cron: ${EPISODE_NOTIFICATIONS_CRON:0 0 8 * * *}
+    episode-zone: ${EPISODE_NOTIFICATIONS_ZONE:America/Sao_Paulo}
+    retention-cron: ${NOTIFICATION_RETENTION_CRON:0 20 3 * * *}
     sse:
       max-per-user: ${SSE_MAX_CONNECTIONS_PER_USER:3}
       max-total: ${SSE_MAX_TOTAL_CONNECTIONS:1000}
+  letterboxd:
+    cleanup-cron: ${LETTERBOXD_CLEANUP_CRON:0 17 * * * *}
 
 external:
   omdb:

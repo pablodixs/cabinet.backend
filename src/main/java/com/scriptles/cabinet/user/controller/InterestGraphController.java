@@ -2,6 +2,8 @@ package com.scriptles.cabinet.user.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.LocalizedResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import com.scriptles.cabinet.user.dto.request.UpsertInterestPreferenceRequest;
 import com.scriptles.cabinet.user.dto.response.InterestOptionResponse;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,13 +38,21 @@ import java.util.List;
 public class InterestGraphController {
     private final InterestGraphService interestGraphService;
     private final RecommendationService recommendationService;
+    private final CatalogLocaleResolver localeResolver;
 
     @GetMapping("/recommendations")
-    public RecommendationResponse recommendations(
+    public ResponseEntity<RecommendationResponse> recommendations(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(required = false) MediaType type,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int limit) {
-        return recommendationService.recommendations(user.id(), type, limit);
+            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int limit,
+            @RequestParam(required = false) String locale,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage) {
+        String requestedLocale = localeResolver.resolve(locale, acceptLanguage).tag();
+        return LocalizedResponse.ok(
+                recommendationService.recommendations(user.id(), type, limit, requestedLocale),
+                requestedLocale,
+                locale == null || locale.isBlank()
+        );
     }
 
     @GetMapping("/interests")

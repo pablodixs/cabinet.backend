@@ -14,6 +14,11 @@ import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -193,7 +198,9 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                     firstNonBlank(text(part, "title"), text(part, "original_title"), movieId),
                     text(part, "original_title"),
                     date(text(part, "release_date")),
-                    imageUrl(text(part, "poster_path"), POSTER_SIZE)
+                    imageUrl(text(part, "poster_path"), POSTER_SIZE),
+                    imageUrl(text(part, "backdrop_path"), BACKDROP_SIZE),
+                    text(part, "original_language")
             ));
         }
 
@@ -223,7 +230,7 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
 
     @Override
     public PersonWorks findPersonWorks(String personExternalId, String language) {
-        JsonNode body = get("/person/" + personExternalId + "/movie_credits", null, language, false, null);
+        JsonNode body = get("/person/" + personExternalId + "/combined_credits", null, language, false, null);
         List<Work> works = new ArrayList<>();
         addPersonWorks(works, body.path("cast"), CreditRole.ACTOR, true);
         addPersonWorks(works, body.path("crew"), null, false);
@@ -233,41 +240,37 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                         work -> work.media().releaseDate(),
                         java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
                 .thenComparing(work -> work.media().externalId()));
-        java.util.LinkedHashMap<String, Work> distinct = new java.util.LinkedHashMap<>();
-        works.forEach(work -> distinct.putIfAbsent(work.media().externalId(), work));
-        return new PersonWorks(List.copyOf(distinct.values()), false);
+        java.util.LinkedHashMap<String, Work> distinctCredits = new java.util.LinkedHashMap<>();
+        works.forEach(work -> distinctCredits.putIfAbsent(
+                work.media().externalId() + "|" + work.media().type() + "|" + work.role()
+                        + "|" + work.characterName(),
+                work
+        ));
+        return new PersonWorks(List.copyOf(distinctCredits.values()), false);
     }
 
     private void addPersonWorks(
             List<Work> works,
             JsonNode credits,
             CreditRole fixedRole,
-            boolean cast
+        boolean cast
     ) {
         for (JsonNode credit : credits) {
-            CreditRole role = cast ? fixedRole : personWorkRole(text(credit, "job"));
+            CreditRole role = cast ? fixedRole : crewRole(text(credit, "job"));
+            MediaType type = mediaType(text(credit, "media_type"));
             if (role == null
+                    || type == null
                     || credit.path("adult").asBoolean(false)
                     || text(credit, "id") == null) {
                 continue;
             }
             works.add(new Work(
-                    toMedia(credit, MediaType.MOVIE, false),
+                    toMedia(credit, type, false),
                     role,
                     cast ? text(credit, "character") : null,
                     credit.path("popularity").asDouble(0)
             ));
         }
-    }
-
-    private CreditRole personWorkRole(String job) {
-        if (job == null) {
-            return null;
-        }
-        return switch (job.trim().toLowerCase(java.util.Locale.ROOT)) {
-            case "director" -> CreditRole.DIRECTOR;
-            default -> null;
-        };
     }
 
     public Optional<String> findImdbId(MediaType mediaType, String externalId) {
@@ -404,11 +407,29 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
                 throw new ExternalMediaNotFoundException("TMDB resource was not found", exception);
             }
             if (exception.getStatusCode().value() == 429) {
-                throw new ExternalMediaRateLimitException("TMDB rate limit exceeded", exception);
+                throw new ExternalMediaRateLimitException("TMDB rate limit exceeded", exception,
+                        retryAfter(exception));
             }
             throw new ExternalMediaException("TMDB responded with HTTP " + exception.getStatusCode().value(), exception);
         } catch (RestClientException exception) {
             throw new ExternalMediaException("Unable to query TMDB", exception);
+        }
+    }
+
+    private Duration retryAfter(RestClientResponseException exception) {
+        if (exception.getResponseHeaders() == null) return null;
+        String value = exception.getResponseHeaders().getFirst(org.springframework.http.HttpHeaders.RETRY_AFTER);
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Duration.ofSeconds(Math.max(0, Long.parseLong(value.trim())));
+        } catch (NumberFormatException ignored) {
+            try {
+                Instant retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+                return Duration.between(Instant.now(), retryAt).isNegative()
+                        ? Duration.ZERO : Duration.between(Instant.now(), retryAt);
+            } catch (DateTimeParseException invalid) {
+                return null;
+            }
         }
     }
 
@@ -430,7 +451,10 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
     }
 
     private MediaType mediaType(String value) {
-        return switch (value) {
+        if (value == null) {
+            return null;
+        }
+        return switch (value.toLowerCase(java.util.Locale.ROOT)) {
             case "movie" -> MediaType.MOVIE;
             case "tv" -> MediaType.SERIES;
             default -> null;
@@ -602,11 +626,11 @@ public class TmdbClient implements ExternalMediaProvider, ExternalPersonWorksPro
         if (job == null) {
             return null;
         }
-        return switch (job) {
-            case "Director" -> CreditRole.DIRECTOR;
-            case "Producer", "Executive Producer" -> CreditRole.PRODUCER;
-            case "Screenplay", "Writer", "Story", "Teleplay" -> CreditRole.SCREENWRITER;
-            case "Original Music Composer", "Composer", "Music" -> CreditRole.COMPOSER;
+        return switch (job.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "director" -> CreditRole.DIRECTOR;
+            case "producer", "executive producer" -> CreditRole.PRODUCER;
+            case "screenplay", "writer", "story", "teleplay" -> CreditRole.SCREENWRITER;
+            case "original music composer", "composer", "music" -> CreditRole.COMPOSER;
             default -> null;
         };
     }

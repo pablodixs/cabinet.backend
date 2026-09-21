@@ -19,7 +19,9 @@ GET /v1/media/{mediaId}
 Accept-Language: en-US,pt-BR;q=0.8
 ```
 
-The same locale rules apply to `/v1/media/search` and `/v1/search/header`. A stored title can be found in either
+The same locale rules apply to localized search, rankings, recommendations, external media, people works, episode,
+and “more by” endpoints. Use the endpoint's explicit `locale` or existing `language` query parameter when present;
+otherwise the backend reads `Accept-Language`, then falls back to `pt-BR`. A stored title can be found in either
 supported language, while the returned title uses the requested representation. Unsupported explicit locales
 return `400 Bad Request` with code `UNSUPPORTED_LOCALE`.
 
@@ -179,7 +181,7 @@ GET /v1/media/external/search?query=fight%20club&type=MOVIE&language=en-US&start
 GET /v1/media/external/search?query=speak%20to%20me&type=TRACK&language=en-US&startIndex=0&maxResults=20
 ```
 
-`type` is optional. Supported detail types are `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `BOOK`. Language defaults to `pt-BR`.
+`type` is optional. Supported detail types are `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `BOOK`. The optional `language` parameter overrides `Accept-Language`; when neither selects a supported locale, the response defaults to `pt-BR`.
 Search responses are summaries. `durationSeconds` is populated for MusicBrainz track searches, and `wikidataId` is populated whenever the primary provider includes the relationship.
 
 ```json
@@ -229,6 +231,12 @@ For imported albums and series, `GET /v1/media/{mediaId}/community` also returns
 `itemType` is `TRACK` for albums and `EPISODE` for series; `averageRating`, `ratingCount`, and
 `ratingDistribution` aggregate every public rating attached to the eligible child media. Series exclude episodes
 whose air date is in the future. Other media types return `childRatings: null`.
+
+`GET /v1/media/{mediaId}/community` includes ten public `ratingDistribution` buckets in ascending order from `0.5`
+through `5.0`, including zero-count buckets. `GET /v1/media/{mediaId}/me` is the authenticated viewer-state response;
+its `logCount` and `lastLoggedOn` include that viewer's `LOGGED`, `RELOGGED`, `WATCHED`, and `REWATCHED` diary
+entries for the media, regardless of entry visibility. The legacy `listenCount` and `lastListenedOn` remain limited
+to `LOGGED` and `RELOGGED` entries for albums and tracks.
 
 Works with a `releaseDate` after the current date can be added as `PLANNED`, but cannot use any consumption status
 (`IN_PROGRESS`, `PAUSED`, `DROPPED`, or `COMPLETED`) and cannot receive a rating or review. Those attempts return
@@ -344,11 +352,14 @@ GET /v1/people/{personId}/works?page=0&size=24&language=pt-BR&type=MOVIE
 ```
 
 The details response contains the person's name, biography and image when available, external identity, distinct work
-count, and the credit roles found in Cabinet. The works endpoint combines imported media with TMDB and MusicBrainz
+count, Cabinet's public `averageRating`, and the credit roles found in Cabinet. The person average is the
+rating-weighted arithmetic mean of all public Cabinet ratings across the person's distinct imported works; a work
+with multiple credits contributes its ratings once, and no public ratings yields `null`. External provider scores are
+not used. The works endpoint combines imported media with TMDB and MusicBrainz
 catalogs for every external identity attached to the person. Imported media have priority when an external reference
 matches `(source, externalId)`, so each work is listed once. Local credits preserve every role and character; external
-previews expose the role returned by the provider. `language` defaults to `pt-BR`, `type` is optional, and `size`
-accepts values from 1 to 40.
+previews expose the role returned by the provider. `language` overrides `Accept-Language`; if neither is present,
+the locale defaults to `pt-BR`. `type` is optional, and `size` accepts values from 1 to 40.
 
 Supported examples are:
 

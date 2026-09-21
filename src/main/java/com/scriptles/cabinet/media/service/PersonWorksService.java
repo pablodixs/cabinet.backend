@@ -30,11 +30,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -91,7 +89,7 @@ public class PersonWorksService {
             ));
         }
 
-        Set<ExternalKey> seenExternalKeys = new LinkedHashSet<>(importedByExternalKey.keySet());
+        Map<ExternalKey, WorkCandidate> externalCandidates = new LinkedHashMap<>();
         for (ExternalSource source : WORK_SOURCES) {
             if (!supports(source, type)) {
                 continue;
@@ -109,13 +107,20 @@ public class PersonWorksService {
                         continue;
                     }
                     ExternalKey key = new ExternalKey(work.media().source(), work.media().externalId());
-                    if (!seenExternalKeys.add(key)) {
+                    // A Cabinet import is authoritative for the whole work, including its credits.
+                    if (importedByExternalKey.containsKey(key)) {
                         continue;
                     }
-                    candidates.add(externalCandidate(work));
+                    WorkCandidate existing = externalCandidates.get(key);
+                    if (existing == null) {
+                        externalCandidates.put(key, externalCandidate(work));
+                    } else {
+                        mergeExternalCredit(existing, work);
+                    }
                 }
             });
         }
+        candidates.addAll(externalCandidates.values());
 
         candidates.sort(workOrder());
         long requestedFrom = (long) page * size;
@@ -258,6 +263,8 @@ public class PersonWorksService {
 
     private WorkCandidate externalCandidate(ExternalPersonWorksProvider.Work work) {
         ExternalMedia media = work.media();
+        List<PersonWorkResponse.CreditResponse> credits = new ArrayList<>();
+        addExternalCredit(credits, work);
         return new WorkCandidate(
                 null,
                 media.externalId(),
@@ -267,9 +274,27 @@ public class PersonWorksService {
                 media.coverUrl(),
                 media.releaseDate(),
                 false,
-                List.of(new PersonWorkResponse.CreditResponse(work.role(), work.characterName())),
+                credits,
                 media
         );
+    }
+
+    private void mergeExternalCredit(WorkCandidate candidate, ExternalPersonWorksProvider.Work work) {
+        addExternalCredit(candidate.credits(), work);
+    }
+
+    private void addExternalCredit(
+            List<PersonWorkResponse.CreditResponse> credits,
+            ExternalPersonWorksProvider.Work work
+    ) {
+        if (work.role() == null) {
+            return;
+        }
+        PersonWorkResponse.CreditResponse credit = new PersonWorkResponse.CreditResponse(
+                work.role(), work.characterName());
+        if (!credits.contains(credit)) {
+            credits.add(credit);
+        }
     }
 
     private Map<UUID, ResolvedMediaTranslation> translationsByMedia(

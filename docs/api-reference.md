@@ -43,6 +43,14 @@ Most application errors have this shape:
 
 Security failures use `AUTHENTICATION_REQUIRED` (`401`) or `ACCESS_DENIED` (`403`). External provider and invalid media requests may instead use RFC 9457-style `ProblemDetail`, with `400`, `429`, or `502`.
 
+## Cabinet status
+
+| Method and path | Access | Purpose |
+| --- | --- | --- |
+| `GET /v1/status` | Public | Product-oriented health summary, synchronization state, scheduled jobs, background queue/import counts, and recent activity. |
+
+The response includes an overall `status` (`OPERATIONAL`, `RUNNING`, `DELAYED`, `DEGRADED`, or `ATTENTION_REQUIRED`), `updatedAt`, system summaries, synchronization details, `backgroundProcessing` counts (`processing`, `waiting`, `retrying`, `failed`), Letterboxd `importProcessing` counts, scheduled jobs, and recent activity. Schedules are returned as readable frequency/time/time-zone values rather than cron expressions. Run metrics and timestamps can be `null` before the first recorded execution. The endpoint aggregates persisted state and does not contact external providers or return raw provider errors or individual outbox records. See [Background Processing](background-processing.md#operational-status) for the execution history and retention model.
+
 ## Authentication
 
 | Method and path | Access | Purpose |
@@ -60,16 +68,16 @@ Security failures use `AUTHENTICATION_REQUIRED` (`401`) or `ACCESS_DENIED` (`403
 
 | Method and path | Access | Query/body and behavior |
 | --- | --- | --- |
-| `GET /v1/search/header` | Public | Lightweight local search for the header. `query` (2–100), `scope=ALL\|MEDIA\|ARTIST`, optional media `type`; returns at most 5 relevance-ranked media/artists. |
-| `GET /v1/media/search` | Public | `query` (min 3), optional `type`, `sort=RELEVANCE\|RATING`, `cursor`, `limit=20` (1–40). App-facing merged search. |
-| `GET /v1/media/external/search` | Public | Optional `type`; required `query`; `language=pt-BR`, `startIndex=0`, `maxResults=20` (max 40). Searches provider catalogs. |
-| `GET /v1/media/external/{source}/{type}/{externalId}` | Public | `language=pt-BR`. Provider-backed detail preview. |
-| `GET /v1/media/external/{source}/{type}/{externalId}/relations` | Public | `language=pt-BR`, `maxResults=12` (max 40). Related/adapted works. |
-| `GET /v1/media/external/TMDB/SERIES/{externalId}/seasons/{seasonNumber}` | Public | `language=pt-BR`; direct external season preview. |
+| `GET /v1/search/header` | Public | Lightweight local search for the header. `query` (2–100), `scope=ALL\|MEDIA\|ARTIST`, optional media `type`; returns at most 5 relevance-ranked media/artists. Localized responses accept `locale` or `Accept-Language`. |
+| `GET /v1/media/search` | Public | `query` (min 3), optional `type`, `sort=RELEVANCE\|RATING`, `cursor`, `limit=20` (1–40). App-facing merged search; localized responses accept `locale` or `Accept-Language`. |
+| `GET /v1/media/external/search` | Public | Optional `type`; required `query`; optional `language`, `startIndex=0`, `maxResults=20` (max 40). Searches provider catalogs; `language` overrides `Accept-Language`. |
+| `GET /v1/media/external/{source}/{type}/{externalId}` | Public | Optional `language`; provider-backed detail preview. `language` overrides `Accept-Language`. |
+| `GET /v1/media/external/{source}/{type}/{externalId}/relations` | Public | Optional `language`, `maxResults=12` (max 40). Related/adapted works; `language` overrides `Accept-Language`. |
+| `GET /v1/media/external/TMDB/SERIES/{externalId}/seasons/{seasonNumber}` | Public | Optional `language`; direct external season preview. |
 | `POST /v1/media/external/import` | User | `{ source, externalId, mediaType }`; imports/upserts a work and returns `201`. |
-| `GET /v1/media/rankings/top-rated` | Public | Optional `type`; `page=0`, `limit=20` (max 40). |
-| `GET /v1/media/rankings/trending` | Public | Optional `type`; `days=7` (1–30), `limit=12` (max 40). |
-| `GET /v1/media/rankings/anticipated` | Public | `limit=6` (max 40). Future movies ranked by public `PLANNED` entries. |
+| `GET /v1/media/rankings/top-rated` | Public | Optional `type`, `locale`; `page=0`, `limit=20` (max 40). `locale` overrides `Accept-Language`. |
+| `GET /v1/media/rankings/trending` | Public | Optional `type`, `locale`; `days=7` (1–30), `limit=12` (max 40). |
+| `GET /v1/media/rankings/anticipated` | Public | Optional `locale`; `limit=6` (max 40). Future movies ranked by public `PLANNED` entries. |
 
 Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EPISODE`, although a provider or endpoint may support only a subset. Full media examples and provider behavior are in [Media API details](media-api.md).
 
@@ -77,12 +85,14 @@ Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EP
 
 | Method and path | Access | Query/body and behavior |
 | --- | --- | --- |
-| `GET /v1/media/{mediaId}` | Public | Stored detail response, optionally viewer-aware artwork/community state. |
+| `GET /v1/media/{mediaId}` | Public | Stored detail response, optionally viewer-aware artwork/community state. Accepts `locale` or `Accept-Language`. |
+| `GET /v1/media/{mediaId}/community` | Public | Public rating average and ten half-star buckets, plus community counts. |
+| `GET /v1/media/{mediaId}/me` | User | Current user's rating, likes, library state, review, and diary log count/date. |
 | `GET /v1/media/{mediaId}/credits` | Public | Required `role`; `page=0`, `limit=20` (max 40). |
-| `GET /v1/media/{mediaId}/more-by` | Public | `language=pt-BR`, `limit=12` (max 40). More work by the primary contributor. |
+| `GET /v1/media/{mediaId}/more-by` | Public | Optional `language`, `limit=12` (max 40). More work by the primary contributor; `language` overrides `Accept-Language`. |
 | `GET /v1/media/{mediaId}/external-info` | Public | `country=BR`; may return `202` plus `Retry-After: 2`. |
 | `GET /v1/media/{mediaId}/awards` | Public | Optional `result=WIN\|NOMINATION`; `page=0`, `size=20` (max 100); may return `202`. |
-| `GET /v1/media/{seriesId}/seasons/{seasonNumber}/episodes` | Public | `language=pt-BR`; syncs/stores a season when needed and includes viewer progress. |
+| `GET /v1/media/{seriesId}/seasons/{seasonNumber}/episodes` | Public | Optional `language`; syncs/stores a season when needed and includes viewer progress. |
 | `PUT /v1/media/{mediaId}/wikidata` | User | `{ wikidataId, language? }`; links a valid Wikidata QID and enriches metadata. |
 | `POST /v1/media/reports` | User | Create a catalog/relation report; returns `201`. |
 
@@ -115,7 +125,7 @@ Future/unreleased media reject consumption, rating, and review writes with code 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
 | `GET /v1/people/{personId}` | Public | Person details. |
-| `GET /v1/people/{personId}/works` | Public | Unified local/provider works; optional `language` and `type`; `page=0`, `size=24` (max 40). |
+| `GET /v1/people/{personId}/works` | Public | Unified local/provider works; optional `language` and `type`; `page=0`, `size=24` (max 40). `language` overrides `Accept-Language`. |
 | `GET /v1/people/{personId}/awards` | Public | Optional `result`; `page=0`, `size=20` (max 100); may return `202`. |
 
 The same three routes exist under `/v1/artists/{artistId}`. They return `Deprecation: true` and a `Link` header pointing to `/v1/people/**`.
@@ -188,7 +198,7 @@ The same three routes exist under `/v1/artists/{artistId}`. They return `Depreca
 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
-| `GET /v1/me/recommendations` | User | Optional `type`; `limit=20` (max 40). |
+| `GET /v1/me/recommendations` | User | Optional `type`, `locale`; `limit=20` (max 40). `locale` overrides `Accept-Language`. |
 | `GET /v1/me/interests` | User | Required `targetType`; `page=0`, `size=20` (max 50). |
 | `PUT /v1/me/interests` | User | Upsert `{ targetType, targetId, preference }`. |
 | `DELETE /v1/me/interests` | User | Required `targetType` and `targetId`; returns `204`. |

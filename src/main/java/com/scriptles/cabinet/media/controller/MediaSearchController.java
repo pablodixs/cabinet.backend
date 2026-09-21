@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.enums.MediaSearchSort;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.MediaSearchService;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
+import com.scriptles.cabinet.media.translation.LocalizedResponse;
 import com.scriptles.cabinet.security.AuthenticatedUser;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -12,6 +13,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -28,7 +30,7 @@ public class MediaSearchController {
     private final CatalogLocaleResolver localeResolver;
 
     @GetMapping("/search")
-    public MediaSearchPageResponse search(
+    public ResponseEntity<MediaSearchPageResponse> search(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam @NotBlank @Size(min = 3) String query,
             @RequestParam(required = false) MediaType type,
@@ -39,8 +41,9 @@ public class MediaSearchController {
             @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
         String requestedLocale = localeResolver.resolve(locale, acceptLanguage).tag();
-        return user == null
+        MediaSearchPageResponse response = user == null
                 ? mediaSearchService.search(query, type, sort, cursor, limit, requestedLocale)
                 : mediaSearchService.search(query, type, sort, cursor, limit, user.id(), requestedLocale);
+        return LocalizedResponse.ok(response, requestedLocale, locale == null || locale.isBlank());
     }
 }

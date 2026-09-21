@@ -47,6 +47,18 @@ public record ExternalMedia(
         List<ExternalSeason> seasons,
         List<ExternalCredit> credits
 ) {
+    public static ExternalMedia tmdbMovieSeed(TmdbCollectionSnapshot.Movie movie) {
+        return new ExternalMedia(
+                ExternalSource.TMDB, movie.externalId(), MediaType.MOVIE,
+                movie.title(), movie.originalTitle(), null, null, movie.posterUrl(),
+                "https://www.themoviedb.org/movie/" + movie.externalId(), null,
+                movie.releaseDate(), movie.originalLanguage(), null,
+                null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null,
+                movie.backdropUrl(), null, List.of(), List.of(), List.of(), List.of()
+        );
+    }
+
     public ExternalMedia withCreator(String value) {
         return new ExternalMedia(
                 source, externalId, type, title, originalTitle, description, tagline, coverUrl, externalUrl,

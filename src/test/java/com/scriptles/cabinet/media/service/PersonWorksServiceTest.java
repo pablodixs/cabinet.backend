@@ -140,6 +140,35 @@ class PersonWorksServiceTest {
         verify(catalogService).find(ExternalSource.MUSICBRAINZ, "artist-id", "pt-BR");
     }
 
+    @Test
+    void mergesDuplicateExternalWorksAndKeepsDistinctRoleAndCharacterCredits() {
+        UUID personId = UUID.randomUUID();
+        Person person = person(personId, ExternalSource.TMDB, "7467");
+        ExternalMedia movie = externalMedia(
+                ExternalSource.TMDB, MediaType.MOVIE, "550", "Fight Club", LocalDate.of(1999, 10, 15));
+        when(personRepository.findById(personId)).thenReturn(Optional.of(person));
+        when(mediaCreditRepository.findMediaByPersonId(personId, PageRequest.of(0, 200)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 200), 0));
+        when(identityResolver.findExternalId(personId, ExternalSource.TMDB)).thenReturn(Optional.of("7467"));
+        when(identityResolver.findExternalId(personId, ExternalSource.MUSICBRAINZ)).thenReturn(Optional.empty());
+        when(catalogService.find(ExternalSource.TMDB, "7467", "pt-BR"))
+                .thenReturn(new PersonWorksCatalogService.CatalogResult(List.of(
+                        new ExternalPersonWorksProvider.Work(movie, CreditRole.ACTOR, "Tyler Durden", 20),
+                        new ExternalPersonWorksProvider.Work(movie, CreditRole.ACTOR, "Tyler Durden", 20),
+                        new ExternalPersonWorksProvider.Work(movie, CreditRole.PRODUCER, null, 10)
+                ), false));
+
+        var response = service.findWorks(personId, 0, 24, "pt-BR", null);
+
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.items()).singleElement().satisfies(work -> {
+            assertThat(work.title()).isEqualTo("Fight Club");
+            assertThat(work.credits()).containsExactly(
+                    new PersonWorkResponse.CreditResponse(CreditRole.ACTOR, "Tyler Durden"),
+                    new PersonWorkResponse.CreditResponse(CreditRole.PRODUCER, null));
+        });
+    }
+
     private Person person(UUID id, ExternalSource source, String externalId) {
         Person person = new Person();
         person.setId(id);

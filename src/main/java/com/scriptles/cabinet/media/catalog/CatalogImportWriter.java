@@ -22,6 +22,21 @@ public class CatalogImportWriter {
         if (target.source() != null && !organizationDiscovery.hasLinks(media)) {
             organizationDiscovery.discover(media, target.source(), target.externalId());
         }
+        publishEnrichmentIfRequired(media, target, resolution);
+        return media;
+    }
+
+    @Transactional
+    public Media materializeSeed(MediaTarget target, CatalogResolver.Resolution resolution) {
+        Media media = materializationService.findOrCreateCore(target, resolution);
+        // Collection seeds already contain enough data for CORE_READY. Provider-specific secondary
+        // lookups belong to the committed CatalogOutbox pipeline, not this materialization step.
+        publishEnrichmentIfRequired(media, target, resolution);
+        return media;
+    }
+
+    private void publishEnrichmentIfRequired(Media media, MediaTarget target,
+                                             CatalogResolver.Resolution resolution) {
         if (target.source() != null && media.getCatalogStatus() != CatalogStatus.READY) {
             outboxPublisher.publishCoreReady(
                     media.getId(),
@@ -31,6 +46,5 @@ public class CatalogImportWriter {
                     resolution.locale()
             );
         }
-        return media;
     }
 }
