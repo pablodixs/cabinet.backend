@@ -88,6 +88,7 @@ Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EP
 | `GET /v1/media/{mediaId}` | Public | Stored detail response, optionally viewer-aware artwork/community state. Accepts `locale` or `Accept-Language`. |
 | `GET /v1/media/{mediaId}/community` | Public | Public rating average and ten half-star buckets, plus community counts. |
 | `GET /v1/media/{mediaId}/me` | User | Current user's rating, likes, library state, review, and diary log count/date. |
+| `GET /v1/media/{mediaId}/activity` | User | Page friends' visible activity on this media; `page=0`, `size=10` (max 50). |
 | `GET /v1/media/{mediaId}/credits` | Public | Required `role`; `page=0`, `limit=20` (max 40). |
 | `GET /v1/media/{mediaId}/more-by` | Public | Optional `language`, `limit=12` (max 40). More work by the primary contributor; `language` overrides `Accept-Language`. |
 | `GET /v1/media/{mediaId}/external-info` | Public | `country=BR`; may return `202` plus `Retry-After: 2`. |

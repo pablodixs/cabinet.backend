@@ -24,6 +24,7 @@ import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,7 @@ public class UserMediaService {
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final ApplicationEventPublisher eventPublisher;
     private final UserArtworkResolver userArtworkResolver;
+    private final UserFeedService userFeedService;
 
     @Transactional(readOnly = true)
     public PageResponse<LibraryMediaResponse> findLibrary(
@@ -172,6 +174,7 @@ public class UserMediaService {
     public void delete(UUID userId, UUID mediaId) {
         userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
                 .ifPresent(userMediaRepository::delete);
+        userFeedService.remove(userId, mediaId, FeedActionType.ADDED_TO_WATCHLIST);
     }
 
     @Transactional
@@ -242,6 +245,10 @@ public class UserMediaService {
         activity.setVisibility(Boolean.TRUE.equals(entry.getPrivateEntry()) ? Visibility.PRIVATE : Visibility.PUBLIC);
         activity.setSourceKey("cabinet:" + UUID.randomUUID());
         userMediaActivityRepository.save(activity);
+        if (status == UserMediaStatus.PLANNED) {
+            userFeedService.record(entry.getUser(), entry.getMedia(), FeedActionType.ADDED_TO_WATCHLIST,
+                    entry.getLastInteractionAt(), activity.getVisibility(), null, null, false);
+        }
     }
 
     private void validateStatus(MediaType mediaType, UserMediaStatus status) {

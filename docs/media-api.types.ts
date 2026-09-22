@@ -619,6 +619,27 @@ export interface ReviewResponse {
     avatarUrl: string | null;
   };
   activityId: string | null;
+  likedByAuthor: boolean;
+  reconsumedByAuthor: boolean;
+}
+
+export type FeedAction = "ADDED_TO_WATCHLIST" | "LIKED" | "RATED" | "REVIEWED";
+
+export interface FeedActivityResponse {
+  id: string;
+  action: FeedAction;
+  occurredAt: string;
+  actorId: string;
+  actorUsername: string;
+  actorDisplayName: string;
+  actorAvatarUrl: string | null;
+  mediaId: string;
+  mediaType: MediaType;
+  title: string;
+  coverUrl: string | null;
+  rating: number | null;
+  review: string | null;
+  containsSpoilers: boolean;
 }
 
 export type DiaryEntryType = "LOGGED" | "RELOGGED" | "WATCHED" | "REWATCHED";

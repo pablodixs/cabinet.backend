@@ -13,6 +13,7 @@ import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
@@ -24,6 +25,8 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
+import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -49,6 +52,7 @@ import java.time.Instant;
 public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final ReviewLikeRepository reviewLikeRepository;
+    private final MediaLikeRepository mediaLikeRepository;
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final RatingRepository ratingRepository;
@@ -58,6 +62,7 @@ public class ReviewService {
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final SocialAccessPolicy socialAccessPolicy;
     private final MediaCommunityCacheInvalidator communityCacheInvalidator;
+    private final UserFeedService userFeedService;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -259,6 +264,15 @@ public class ReviewService {
         if (review.getPublishedAt() == null) review.setPublishedAt(Instant.now());
 
         Review saved = reviewRepository.saveAndFlush(review);
+        Instant occurredAt = saved.getUpdatedAt() == null
+                ? saved.getPublishedAt() == null ? Instant.now() : saved.getPublishedAt()
+                : saved.getUpdatedAt();
+        userFeedService.record(user, media, FeedActionType.REVIEWED, occurredAt, saved.getVisibility(),
+                saved.getRating(), saved.getContent(), Boolean.TRUE.equals(saved.getContainsSpoilers()));
+        if (requestedRating != null) {
+            userFeedService.record(user, media, FeedActionType.RATED, Instant.now(), saved.getVisibility(),
+                    requestedRating, null, false);
+        }
         if (media.getType() != MediaType.TRACK && media.getType() != MediaType.EPISODE) {
             userMediaService.markCompleted(user, media);
         }
@@ -283,6 +297,7 @@ public class ReviewService {
                         userMediaActivityRepository.save(activity);
                     }
                     reviewLikeRepository.deleteByReviewId(review.getId());
+                    userFeedService.remove(userId, mediaId, FeedActionType.REVIEWED);
                     reviewRepository.delete(review);
                 });
     }
@@ -372,7 +387,9 @@ public class ReviewService {
                 userId != null && reviewLikeRepository.existsByUserIdAndReviewId(userId, reviewId),
                 reviewId == null
                         ? List.of()
-                        : recentLikers(List.of(reviewId), userId).getOrDefault(reviewId, List.of())
+                        : recentLikers(List.of(reviewId), userId).getOrDefault(reviewId, List.of()),
+                mediaLikeRepository.existsByUserIdAndMediaId(review.getUser().getId(), review.getMedia().getId()),
+                isReconsumed(review)
         );
     }
 
@@ -391,6 +408,12 @@ public class ReviewService {
         Set<UUID> likedReviewIds = userId == null
                 ? Set.of()
                 : Set.copyOf(reviewLikeRepository.findLikedReviewIds(userId, reviewIds));
+        List<UUID> authorIds = reviews.stream().map(review -> review.getUser().getId()).distinct().toList();
+        List<UUID> mediaIds = reviews.stream().map(review -> review.getMedia().getId()).distinct().toList();
+        Set<MediaLikeKey> likedMediaByAuthors = Set.copyOf(
+                mediaLikeRepository.findLikedPairs(authorIds, mediaIds).stream()
+                        .map(pair -> new MediaLikeKey(pair.getUserId(), pair.getMediaId()))
+                        .toList());
         Map<UUID, List<ReviewLikerResponse>> recentLikers = recentLikers(reviewIds, userId);
 
         return reviews.stream()
@@ -398,9 +421,20 @@ public class ReviewService {
                         review,
                         likeCounts.getOrDefault(review.getId(), 0L),
                         likedReviewIds.contains(review.getId()),
-                        recentLikers.getOrDefault(review.getId(), List.of())
+                        recentLikers.getOrDefault(review.getId(), List.of()),
+                        likedMediaByAuthors.contains(new MediaLikeKey(
+                                review.getUser().getId(), review.getMedia().getId())),
+                        isReconsumed(review)
                 ))
                 .toList();
+    }
+
+    private record MediaLikeKey(UUID userId, UUID mediaId) {}
+
+    private boolean isReconsumed(Review review) {
+        if (review.getActivity() == null) return false;
+        ProfileActivityType type = review.getActivity().getType();
+        return type == ProfileActivityType.RELOGGED || type == ProfileActivityType.REWATCHED;
     }
 
     private Map<UUID, List<ReviewLikerResponse>> recentLikers(

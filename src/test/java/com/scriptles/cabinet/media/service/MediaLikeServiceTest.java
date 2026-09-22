@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.UserFeedService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,6 +30,8 @@ class MediaLikeServiceTest {
     private UserRepository userRepository;
     @Mock
     private MediaRepository mediaRepository;
+    @Mock
+    private UserFeedService userFeedService;
 
     @InjectMocks
     private MediaLikeService mediaLikeService;

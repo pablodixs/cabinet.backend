@@ -6,6 +6,9 @@ import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.user.enums.FeedActionType;
+import com.scriptles.cabinet.user.enums.Visibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,6 +23,7 @@ public class MediaLikeService {
     private final MediaLikeRepository mediaLikeRepository;
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
+    private final UserFeedService userFeedService;
 
     @Transactional(readOnly = true)
     public MediaLikeResponse find(UUID userId, UUID mediaId) {
@@ -32,9 +36,17 @@ public class MediaLikeService {
         if (mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId)) {
             return new MediaLikeResponse(true);
         }
-        findUser(userId);
-        findMedia(mediaId);
+        var user = userRepository.findById(userId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Usuário não encontrado"));
+        var media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada"));
+        if (media.getType() == MediaType.EPISODE) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_MEDIA_CAPABILITY",
+                    "Episódios não podem ser curtidos diretamente");
+        }
         mediaLikeRepository.insertIfAbsent(UUID.randomUUID(), userId, mediaId);
+        userFeedService.record(user, media, FeedActionType.LIKED, java.time.Instant.now(), Visibility.PUBLIC,
+                null, null, false);
         return new MediaLikeResponse(true);
     }
 
@@ -42,6 +54,7 @@ public class MediaLikeService {
     @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void unlike(UUID userId, UUID mediaId) {
         mediaLikeRepository.deleteByUserIdAndMediaId(userId, mediaId);
+        userFeedService.remove(userId, mediaId, FeedActionType.LIKED);
     }
 
     private void findUser(UUID userId) {

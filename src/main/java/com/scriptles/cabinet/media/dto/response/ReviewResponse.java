@@ -22,7 +22,9 @@ public record ReviewResponse(
         boolean liked,
         List<ReviewLikerResponse> recentLikers,
         AuthorResponse author,
-        UUID activityId
+        UUID activityId,
+        boolean likedByAuthor,
+        boolean reconsumedByAuthor
 ) {
     public ReviewResponse(
             UUID id,
@@ -39,11 +41,11 @@ public record ReviewResponse(
             AuthorResponse author
     ) {
         this(id, mediaId, rating, content, containsSpoilers, visibility, createdAt, updatedAt,
-                likeCount, liked, recentLikers, author, null);
+                likeCount, liked, recentLikers, author, null, false, false);
     }
 
     public static ReviewResponse from(Review review) {
-        return from(review, 0, false, List.of());
+        return from(review, 0, false, List.of(), false, false);
     }
 
     public static ReviewResponse from(
@@ -51,6 +53,17 @@ public record ReviewResponse(
             long likeCount,
             boolean liked,
             List<ReviewLikerResponse> recentLikers
+    ) {
+        return from(review, likeCount, liked, recentLikers, false, false);
+    }
+
+    public static ReviewResponse from(
+            Review review,
+            long likeCount,
+            boolean liked,
+            List<ReviewLikerResponse> recentLikers,
+            boolean likedByAuthor,
+            boolean reconsumedByAuthor
     ) {
         return new ReviewResponse(
                 review.getId(),
@@ -71,7 +84,9 @@ public record ReviewResponse(
                         review.getUser().getAvatarUlr(),
                         review.getUser().getAccountTier() == AccountTier.PRO
                 ),
-                review.getActivity() == null ? null : review.getActivity().getId()
+                review.getActivity() == null ? null : review.getActivity().getId(),
+                likedByAuthor,
+                reconsumedByAuthor
         );
     }
 

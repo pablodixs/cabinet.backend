@@ -24,8 +24,10 @@ import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.service.UserFeedService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -53,6 +55,7 @@ public class LetterboxdImportApplier {
     private final MediaListRepository listRepository;
     private final MediaListItemRepository listItemRepository;
     private final ObjectMapper objectMapper;
+    private final UserFeedService userFeedService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LetterboxdImportItemState apply(UUID itemId) {
@@ -70,6 +73,7 @@ public class LetterboxdImportApplier {
 
         addLetterboxdReference(media, item.getLetterboxdUri());
         UserMedia existingEntry = userMediaRepository.findByUserIdAndMediaId(user.getId(), media.getId()).orElse(null);
+        boolean importedWatchlist = false;
         if (existingEntry == null && (payload.watched() || payload.watchlist())) {
             UserMedia entry = new UserMedia();
             entry.setUser(user);
@@ -78,11 +82,17 @@ public class LetterboxdImportApplier {
             entry.setPrivateEntry(false);
             applyStatus(entry, payload);
             userMediaRepository.save(entry);
+            importedWatchlist = payload.watchlist() && !payload.watched();
         } else if (existingEntry != null && item.isOverrideStatus() && (payload.watched() || payload.watchlist())) {
             applyStatus(existingEntry, payload);
             userMediaRepository.save(existingEntry);
+            importedWatchlist = payload.watchlist() && !payload.watched();
         } else if (existingEntry != null && (payload.watched() || payload.watchlist())) {
             preserved = true;
+        }
+        if (importedWatchlist) {
+            userFeedService.record(user, media, FeedActionType.ADDED_TO_WATCHLIST,
+                    toInstant(payload.watchlistAddedOn()), Visibility.PUBLIC, null, null, false);
         }
 
         for (LetterboxdItemPayload.Activity source : payload.activities()) {
@@ -123,6 +133,8 @@ public class LetterboxdImportApplier {
             rating.setValue(payload.rating());
             rating.setRatedAt(toInstant(payload.ratingOn()));
             rating = ratingRepository.save(rating);
+            userFeedService.record(user, media, FeedActionType.RATED, rating.getRatedAt(), rating.getVisibility(),
+                    rating.getValue(), null, false);
         } else if (rating != null && payload.rating() != null) {
             preserved = true;
         }
@@ -143,13 +155,18 @@ public class LetterboxdImportApplier {
                 review.setPublishedAt(toInstant(payload.reviewOn()));
             }
             reviewRepository.save(review);
+            userFeedService.record(user, media, FeedActionType.REVIEWED, review.getPublishedAt(),
+                    review.getVisibility(), review.getRating(), review.getContent(), false);
         } else if (review != null && payload.review() != null) {
             preserved = true;
         }
 
         if (payload.liked()) {
-            mediaLikeRepository.insertIfAbsentAt(UUID.randomUUID(), user.getId(), media.getId(),
-                    toInstant(payload.likedOn()));
+            Instant likedAt = toInstant(payload.likedOn());
+            if (mediaLikeRepository.insertIfAbsentAt(UUID.randomUUID(), user.getId(), media.getId(), likedAt) > 0) {
+                userFeedService.record(user, media, FeedActionType.LIKED, likedAt, Visibility.PUBLIC,
+                        null, null, false);
+            }
         }
         for (LetterboxdItemPayload.ListMembership membership : payload.lists()) {
             MediaList list = listRepository.findByOwnerIdAndOriginSourceAndOriginKey(

@@ -11,6 +11,7 @@ import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
@@ -19,7 +20,9 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
+import com.scriptles.cabinet.user.service.UserFeedService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +48,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class ReviewServiceTest {
@@ -52,6 +56,8 @@ class ReviewServiceTest {
     private ReviewRepository reviewRepository;
     @Mock
     private ReviewLikeRepository reviewLikeRepository;
+    @Mock
+    private MediaLikeRepository mediaLikeRepository;
     @Mock
     private UserRepository userRepository;
     @Mock
@@ -68,9 +74,16 @@ class ReviewServiceTest {
     private MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock
     private MediaCommunityCacheInvalidator communityCacheInvalidator;
+    @Mock
+    private UserFeedService userFeedService;
 
     @InjectMocks
     private ReviewService reviewService;
+
+    @BeforeEach
+    void defaultMediaLikesToEmpty() {
+        lenient().when(mediaLikeRepository.findLikedPairs(any(), any())).thenReturn(List.of());
+    }
 
     @ParameterizedTest
     @EnumSource(value = MediaType.class, names = {"TRACK", "EPISODE"})
