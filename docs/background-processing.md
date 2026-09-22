@@ -20,7 +20,7 @@ Rejected submissions are caught and logged for external-info/award/series schedu
 | --- | --- | --- |
 | Catalog outbox | Every second by default | Recovers stale claims, claims only free executor capacity, and dispatches enrichment concurrently. |
 | TMDB catalog changes | Daily at `03:30 America/Sao_Paulo` by default | Scans changed movies and series and queues stale catalog enrichment. Configurable with `CATALOG_TMDB_CHANGES_CRON` and `CATALOG_TMDB_CHANGES_ZONE`. |
-| Collection synchronization | Daily at `05:00 America/Sao_Paulo` by default | Queues referenced film collections whose TMDB data is stale. Configurable with `CATALOG_COLLECTION_TMDB_SYNC_CRON` and `CATALOG_COLLECTION_TMDB_SYNC_ZONE`. |
+| Collection synchronization | Daily at `16:30 America/Sao_Paulo` by default | Queues referenced film collections whose TMDB data is stale. Configurable with `CATALOG_COLLECTION_TMDB_SYNC_CRON` and `CATALOG_COLLECTION_TMDB_SYNC_ZONE`. |
 | Notification SSE heartbeat | Every 25 seconds | Sends `heartbeat: ping` to all process-local connections and removes broken emitters. |
 | Notification retention | Daily at `03:20` scheduler/JVM zone | Deletes notifications whose `activityAt` is older than 90 days. |
 | Tracked series refresh | Daily at `04:00 America/Sao_Paulo` | Schedules every series with at least one `IN_PROGRESS` library entry. |
