@@ -48,6 +48,12 @@ management:
         include: health,info,metrics,caches
 
 catalog:
+  tmdb:
+    backfill:
+      enabled: ${CATALOG_TMDB_BACKFILL_ENABLED:true}
+      poll-delay: ${CATALOG_TMDB_BACKFILL_POLL_DELAY:1m}
+      batch-size: ${CATALOG_TMDB_BACKFILL_BATCH_SIZE:10}
+      max-active-jobs: ${CATALOG_TMDB_BACKFILL_MAX_ACTIVE_JOBS:500}
   outbox:
     poll-delay: ${CATALOG_OUTBOX_POLL_DELAY:1000}
     lock-timeout: ${CATALOG_OUTBOX_LOCK_TIMEOUT:15m}
