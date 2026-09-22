@@ -29,7 +29,7 @@ public class TmdbCatalogIndexService {
             insert into external_catalog_entities
                 (id, provider, entity_type, external_id, source_metadata, first_seen_at,
                  last_seen_at, last_index_run_id, state, removed_at, created_at, updated_at)
-            values (gen_random_uuid(), 'TMDB', 'COLLECTION', ?, ?::jsonb, ?, ?, ?, 'ACTIVE', null, ?, ?)
+            values (gen_random_uuid(), 'TMDB', 'COLLECTION', ?, CAST(? AS jsonb), ?, ?, ?, 'ACTIVE', null, ?, ?)
             on conflict (provider, entity_type, external_id) do update set
                 source_metadata = excluded.source_metadata,
                 last_seen_at = excluded.last_seen_at,
