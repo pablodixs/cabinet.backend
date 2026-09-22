@@ -81,6 +81,11 @@ public class CatalogJobOrchestrationService {
         }
     }
 
+    public CatalogOperationAcceptedResponse backfillCollection(String externalId, String locale) {
+        return writer.createBackfillCollection(TmdbCollectionIdNormalizer.normalize(externalId),
+                normalizeLocale(locale));
+    }
+
     private String normalizeLocale(String locale) {
         try {
             return SupportedLocale.from(locale).tag();

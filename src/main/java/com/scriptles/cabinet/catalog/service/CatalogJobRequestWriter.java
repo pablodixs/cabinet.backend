@@ -41,6 +41,12 @@ public class CatalogJobRequestWriter {
     }
 
     @Transactional
+    public CatalogOperationAcceptedResponse createBackfillCollection(String externalId, String locale) {
+        return createCollectionOperation("COLLECTION_IMPORT", TMDB_COLLECTION_HYDRATE, externalId,
+                null, locale, "BACKFILL", PRIORITY_BACKFILL, null);
+    }
+
+    @Transactional
     public CatalogOperationAcceptedResponse createCollectionSync(UUID collectionId, String locale, String trigger,
                                                                    int priority, UUID requestedBy) {
         CollectionExternalReference reference = collectionReferenceRepository

@@ -32,4 +32,6 @@ The public `/v1/status` remains a compact health summary. Detailed operations, j
 4. Schedule the daily TMDB identity-index job after validating provider credentials and export access.
 5. Backfill existing TMDB collection references through durable sync operations.
 
-The identity index is intentionally not a full provider mirror: it records inexpensive existence metadata, while collection details are fetched only for explicit demand, discovery, or due synchronization.
+The identity index records inexpensive existence metadata. Backfill is enabled by default and materializes every indexed collection and its movies. The dispatcher polls every minute, queues at most 10 collections per tick at backfill priority, and pauses when 500 catalog jobs are active. Set `CATALOG_TMDB_BACKFILL_ENABLED=false` to pause it. The limits can be adjusted with `CATALOG_TMDB_BACKFILL_POLL_DELAY`, `CATALOG_TMDB_BACKFILL_BATCH_SIZE`, and `CATALOG_TMDB_BACKFILL_MAX_ACTIVE_JOBS`.
+
+The dispatcher skips collections with a TMDB source snapshot and any collection with a previous hydration job. This makes restarts safe and leaves exhausted jobs visible as `DEAD` for moderator retry rather than repeatedly requesting a failing TMDB ID. Inspect `/v1/moderation/catalog-jobs?status=DEAD` and retry after resolving failures. Each successful hydration queues movie materialization through the existing durable job pipeline. New IDs in later daily exports become eligible automatically.
