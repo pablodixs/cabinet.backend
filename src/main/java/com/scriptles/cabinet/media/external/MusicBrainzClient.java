@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
 @Component
 @RequiredArgsConstructor
 public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonWorksProvider {
+    private static final String COVER_ART_ARCHIVE_BASE_URL = "https://coverartarchive.org";
     private static final Pattern WIKIDATA_QID = Pattern.compile("(?:^|/)(Q[1-9]\\d*)(?=$|[/?#])", Pattern.CASE_INSENSITIVE);
     private static final Pattern FEATURED_JOIN = Pattern.compile(
             "(?i)(?:^|\\s)(?:feat\\.?|ft\\.?|featuring)(?:\\s|$)"
@@ -58,8 +59,8 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
         JsonNode body = get(track ? "/recording" : "/release-group", query, offset, limit);
         List<ExternalMedia> results = new ArrayList<>();
         for (JsonNode item : body.path(track ? "recordings" : "release-groups")) {
-            // Cover lookup can require two additional HTTP calls per album. Keep search bounded
-            // to the provider request and resolve the cover only on the details/import path.
+            // The search response includes cover-art availability, so use CAA's stable
+            // thumbnail endpoint without making an extra request for every result.
             results.add(track ? toTrack(item) : toAlbum(item, List.of(), false));
         }
         return results;
@@ -425,15 +426,26 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
     ) {
         String id = text(node, "id");
         List<ExternalMedia.ExternalCredit> credits = artistCredits(node.path("artist-credit"));
+        String coverUrl = includeCover
+                ? albumCoverService.findCoverUrl(id)
+                : searchCoverUrl(node, id);
         return new ExternalMedia(
                 ExternalSource.MUSICBRAINZ, id, MediaType.ALBUM, text(node, "title"), null,
-                text(node, "disambiguation"), null, includeCover ? albumCoverService.findCoverUrl(id) : null,
+                text(node, "disambiguation"), null, coverUrl,
                 "https://musicbrainz.org/release-group/" + id, wikidataId(node),
                 date(text(node, "first-release-date")), null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
                 albumType(node), tracks.isEmpty() ? null : tracks.size(), creditNames(credits),
                 null, null, genres(node), tracks, List.of(), credits
         );
+    }
+
+    private String searchCoverUrl(JsonNode node, String releaseGroupId) {
+        if (releaseGroupId == null
+                || !node.path("cover-art-archive").path("front").asBoolean(false)) {
+            return null;
+        }
+        return COVER_ART_ARCHIVE_BASE_URL + "/release-group/" + releaseGroupId + "/front-500";
     }
 
     private ExternalMedia toTrack(JsonNode node) {
