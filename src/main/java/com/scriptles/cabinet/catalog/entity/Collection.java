@@ -9,6 +9,7 @@ public class Collection {
  @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id;
  @Column(nullable=false, unique=true, length=180) private String slug;
  @Column(nullable=false, length=300) private String title;
+ @Column(nullable=false, length=10) private String defaultLocale="pt-BR";
  @Column(length=300) private String originalTitle;
  @Column(columnDefinition="TEXT") private String description;
  @Enumerated(EnumType.STRING) @Column(nullable=false, length=30) private CollectionType type;
