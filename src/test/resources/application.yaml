@@ -12,7 +12,7 @@ catalog:
     zone: America/Sao_Paulo
   collections:
     tmdb-sync:
-      cron: 0 0 5 * * *
+      cron: 0 30 16 * * *
       zone: America/Sao_Paulo
   series-tracking:
     cron: 0 0 4 * * *
