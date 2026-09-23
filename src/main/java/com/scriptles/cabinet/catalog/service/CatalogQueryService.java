@@ -7,6 +7,10 @@ import com.scriptles.cabinet.catalog.entity.*;
 import com.scriptles.cabinet.catalog.repository.*;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.user.enums.UserMediaStatus;
+import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
+import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
@@ -31,34 +35,43 @@ public class CatalogQueryService {
     private final FranchiseCollectionRepository franchiseCollections;
     private final FranchiseMediaRepository franchiseMedia;
     private final CollectionArtistRepository collectionArtists;
+    private final UserMediaRepository userMedia;
+    private final CollectionTranslationResolver collectionTranslations;
+    private final MediaTranslationResolver mediaTranslations;
 
-    public PageResponse<CollectionSummaryResponse> collections(CollectionType type, int page, int size) {
+    public PageResponse<CollectionSummaryResponse> collections(CollectionType type, int page, int size, String locale) {
         Page<Collection> result = collections.findByStatusAndTypeOrderByTitleAscIdAsc(
                 CatalogEntityStatus.ACTIVE, type, PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))));
+        Map<UUID, CollectionTranslationResolver.ResolvedCollection> localized =
+                collectionTranslations.resolveAll(result.getContent(), locale);
         return PageResponse.from(result.map(collection -> new CollectionSummaryResponse(
-                collection.getId(), collection.getSlug(), collection.getTitle(), collection.getType().name(), null, null)));
+                collection.getId(), collection.getSlug(), localized.get(collection.getId()).title(),
+                collection.getType().name(), null, null)));
     }
 
-    @Cacheable(cacheNames = "collectionDetails", key = "#id")
-    public CollectionResponse collection(UUID id, UUID viewerId) {
+    public CollectionResponse collection(UUID id, UUID viewerId, String locale) {
         Collection collection = collections.findById(id).orElseThrow(() -> notFound("COLLECTION_NOT_FOUND"));
-        return collectionResponse(collection);
+        return collectionResponse(collection, viewerId, locale);
     }
 
-    public CollectionResponse collectionBySlug(String slug, UUID viewerId) {
+    public CollectionResponse collectionBySlug(String slug, UUID viewerId, String locale) {
         Collection collection = collections.findBySlug(slug).orElseThrow(() -> notFound("COLLECTION_NOT_FOUND"));
-        return collection(collection.getId(), viewerId);
+        return collectionResponse(collection, viewerId, locale);
     }
 
-    private CollectionResponse collectionResponse(Collection collection) {
+    private CollectionResponse collectionResponse(Collection collection, UUID viewerId, String locale) {
         List<CollectionItem> materialized = items.findByCollectionIdOrderByPositionAsc(collection.getId());
+        Map<UUID, ResolvedMediaTranslation> localizedMedia = mediaTranslations.resolveAll(
+                materialized.stream().map(CollectionItem::getMedia).toList(), locale);
+        CollectionTranslationResolver.ResolvedCollection localized = collectionTranslations.resolve(collection, locale);
         List<CollectionResponse.SectionResponse> sectionResponses = sections
                 .findByCollectionIdOrderByPositionAsc(collection.getId()).stream()
                 .map(section -> new CollectionResponse.SectionResponse(section.getId(), section.getKey(),
                         section.getTitle(), section.getPosition())).toList();
         List<CollectionResponse.ItemResponse> itemResponses = materialized.stream()
                 .map(item -> new CollectionResponse.ItemResponse(item.getId(), item.getMedia().getId(),
-                        item.getMedia().getTitle(), item.getMedia().getTypeValue(), item.getMedia().getCoverUrl(),
+                        localizedMedia.get(item.getMedia().getId()).title(), item.getMedia().getTypeValue(),
+                        localizedMedia.get(item.getMedia().getId()).coverUrl(),
                         item.getPosition(), item.getSection() == null ? null : item.getSection().getId(),
                         item.getRelationType().name())).toList();
         List<CollectionResponse.SourceItemResponse> sourceResponses = sourceItems
@@ -69,10 +82,34 @@ public class CatalogQueryService {
         List<FranchiseSummaryResponse> franchiseResponses = franchiseCollections.findByCollectionId(collection.getId())
                 .stream().filter(item -> item.getFranchise().getStatus() == CatalogEntityStatus.ACTIVE)
                 .map(item -> summary(item.getFranchise())).toList();
-        return new CollectionResponse(collection.getId(), collection.getSlug(), collection.getTitle(),
-                collection.getOriginalTitle(), collection.getDescription(), collection.getType().name(),
-                collection.getSourceMode().name(), collection.getStatus().name(), collection.getPosterUrl(),
-                collection.getBackdropUrl(), franchiseResponses, sectionResponses, itemResponses, null, sourceResponses);
+        CollectionResponse.ViewerResponse viewer = viewerId == null
+                ? null
+                : viewerProgress(viewerId, materialized);
+        return new CollectionResponse(collection.getId(), collection.getSlug(), localized.title(),
+                collection.getOriginalTitle(), localized.description(), collection.getType().name(),
+                collection.getSourceMode().name(), collection.getStatus().name(), localized.posterUrl(),
+                localized.backdropUrl(), franchiseResponses, sectionResponses, itemResponses, viewer, sourceResponses,
+                localized.requestedLocale(), localized.resolvedLocale(), localized.fallback());
+    }
+
+    private CollectionResponse.ViewerResponse viewerProgress(UUID viewerId, List<CollectionItem> items) {
+        List<UUID> mediaIds = items.stream()
+                .map(item -> item.getMedia().getId())
+                .toList();
+        if (mediaIds.isEmpty()) {
+            return new CollectionResponse.ViewerResponse(0, 0, 0d, 0, null);
+        }
+
+        long completedCount = userMedia.findAllByUserIdAndMediaIdIn(viewerId, mediaIds).stream()
+                .filter(entry -> entry.getStatus() == UserMediaStatus.COMPLETED)
+                .count();
+        double completion = completedCount * 100d / mediaIds.size();
+        return new CollectionResponse.ViewerResponse(
+                (int) completedCount,
+                mediaIds.size(),
+                completion,
+                0,
+                null);
     }
 
     @Cacheable(cacheNames = "franchiseDetails", key = "#id")

@@ -22,9 +22,11 @@ import com.scriptles.cabinet.user.dto.response.DiaryEntryResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.ProfileActivityType;
+import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.UserFeedService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -63,6 +66,7 @@ public class DiaryService {
     private final SocialAccessPolicy socialAccessPolicy;
     private final UserArtworkResolver userArtworkResolver;
     private final UserTagService userTagService;
+    private final UserFeedService userFeedService;
 
     @Transactional
     public DiaryEntryResponse create(UUID userId, CreateDiaryEntryRequest request) {
@@ -72,7 +76,7 @@ public class DiaryService {
         mediaConsumptionPolicy.ensureReleased(media);
         validate(request);
 
-        Rating rating = upsertCanonicalRating(user, media, request.rating());
+        Rating rating = upsertCanonicalRating(user, media, request.rating(), request.visibility());
         String reviewContent = normalizeReview(request.review());
 
         UserMediaActivity activity = new UserMediaActivity();
@@ -181,7 +185,7 @@ public class DiaryService {
         User user = findUser(userId);
         Media media = activity.getMedia();
         mediaConsumptionPolicy.ensureReleased(media);
-        Rating rating = upsertCanonicalRating(user, media, request.rating());
+        Rating rating = upsertCanonicalRating(user, media, request.rating(), request.visibility());
         String reviewContent = normalizeReview(request.review());
 
         activity.setType(request.reconsumption()
@@ -205,6 +209,7 @@ public class DiaryService {
             review.setContent(null);
             review.setContainsSpoilers(false);
             reviewRepository.saveAndFlush(review);
+            userFeedService.remove(userId, media.getId(), FeedActionType.REVIEWED);
         }
         return DiaryEntryResponse.from(
                 activity,
@@ -254,7 +259,7 @@ public class DiaryService {
         ));
     }
 
-    private Rating upsertCanonicalRating(User user, Media media, java.math.BigDecimal value) {
+    private Rating upsertCanonicalRating(User user, Media media, java.math.BigDecimal value, Visibility visibility) {
         if (value == null) {
             return ratingRepository.findByUserIdAndMediaId(user.getId(), media.getId()).orElse(null);
         }
@@ -264,12 +269,16 @@ public class DiaryService {
                     Rating created = new Rating();
                     created.setUser(user);
                     created.setMedia(media);
-                    created.setVisibility(Visibility.PUBLIC);
+                    created.setVisibility(visibility);
                     return created;
                 });
         rating.setValue(normalized);
+        rating.setVisibility(visibility);
         rating.setRatedAt(Instant.now());
-        return ratingRepository.save(rating);
+        Rating saved = ratingRepository.save(rating);
+        userFeedService.record(user, media, FeedActionType.RATED, saved.getRatedAt(), visibility,
+                saved.getValue(), null, false);
+        return saved;
     }
 
     private void upsertCanonicalReview(
@@ -299,6 +308,10 @@ public class DiaryService {
         review.setContainsSpoilers(containsSpoilers);
         review.setVisibility(visibility);
         reviewRepository.save(review);
+        Instant occurredAt = activity.getOccurredOn()
+                .atStartOfDay(ZoneId.of("America/Sao_Paulo")).toInstant();
+        userFeedService.record(user, media, FeedActionType.REVIEWED, occurredAt, visibility,
+                review.getRating(), content, containsSpoilers);
     }
 
     private void validate(CreateDiaryEntryRequest request) {

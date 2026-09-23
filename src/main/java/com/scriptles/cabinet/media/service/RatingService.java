@@ -16,6 +16,8 @@ import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
+import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.user.enums.FeedActionType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,7 @@ public class RatingService {
     private final UserMediaService userMediaService;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final MediaCommunityCacheInvalidator communityCacheInvalidator;
+    private final UserFeedService userFeedService;
 
     @Transactional(readOnly = true)
     public Optional<RatingResponse> find(UUID userId, UUID mediaId) {
@@ -77,6 +80,8 @@ public class RatingService {
         rating.setValue(value);
         rating.setRatedAt(Instant.now());
         Rating saved = ratingRepository.saveAndFlush(rating);
+        userFeedService.record(user, media, FeedActionType.RATED, saved.getRatedAt(), saved.getVisibility(),
+                saved.getValue(), null, false);
         reviewRepository.findByUserIdAndMediaId(userId, mediaId).ifPresent(review -> {
             if (review.getRatingEntity() != saved) {
                 review.setRatingEntity(saved);
@@ -104,6 +109,7 @@ public class RatingService {
                 reviewRepository.saveAndFlush(review);
             }
             ratingRepository.delete(rating);
+            userFeedService.remove(userId, mediaId, FeedActionType.RATED);
             communityCacheInvalidator.evict(rating.getMedia());
         });
     }

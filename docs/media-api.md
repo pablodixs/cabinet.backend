@@ -787,7 +787,8 @@ GET /v1/media/{mediaId}/reviews/recent
 `popular` orders reviews by their number of likes, then by creation date and ID. `recent` orders reviews by creation
 date and ID (newest first). Responses include `likeCount`, `liked`, and `recentLikers`; `liked` is `false` for
 anonymous requests. `recentLikers` contains at most the five most recent accounts, each with `id`, `username`, and
-`avatarUrl`. Both endpoints return `404 MEDIA_NOT_FOUND` when the media does not exist.
+`avatarUrl`. Responses also include `likedByAuthor` and `reconsumedByAuthor` to indicate whether the review author
+liked or reconsumed the reviewed media. Both endpoints return `404 MEDIA_NOT_FOUND` when the media does not exist.
 
 Review likes require authentication, mutations require CSRF, and private reviews are not accessible through these
 endpoints:

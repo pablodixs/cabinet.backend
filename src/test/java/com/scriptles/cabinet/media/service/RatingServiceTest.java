@@ -10,6 +10,7 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.*;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.service.UserMediaService;
+import com.scriptles.cabinet.user.service.UserFeedService;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,6 +38,7 @@ class RatingServiceTest {
     @Mock UserMediaService userMediaService;
     @Mock MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock MediaCommunityCacheInvalidator communityCacheInvalidator;
+    @Mock UserFeedService userFeedService;
     @InjectMocks RatingService service;
 
     @Test

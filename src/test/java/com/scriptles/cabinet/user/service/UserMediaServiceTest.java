@@ -74,6 +74,8 @@ class UserMediaServiceTest {
     private MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private UserFeedService userFeedService;
 
     @InjectMocks
     private UserMediaService userMediaService;

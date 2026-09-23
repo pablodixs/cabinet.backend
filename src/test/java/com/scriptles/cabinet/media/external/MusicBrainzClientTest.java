@@ -87,7 +87,7 @@ class MusicBrainzClientTest {
     }
 
     @Test
-    void searchesAlbumsWithoutResolvingCovers() {
+    void searchesAlbumsUsingCoverArtAvailabilityWithoutResolvingCovers() {
         server.expect(requestTo(startsWith(BASE_URL + "/release-group")))
                 .andExpect(queryParam("fmt", "json"))
                 .andExpect(queryParam("query", "album"))
@@ -98,7 +98,8 @@ class MusicBrainzClientTest {
                           "release-groups": [{
                             "id": "album-id",
                             "title": "An Album",
-                            "artist-credit": [{"name": "An Artist"}]
+                            "artist-credit": [{"name": "An Artist"}],
+                            "cover-art-archive": {"front": true}
                           }]
                         }
                         """, org.springframework.http.MediaType.APPLICATION_JSON));
@@ -107,7 +108,8 @@ class MusicBrainzClientTest {
 
         assertThat(results).singleElement().satisfies(album -> {
             assertThat(album.type()).isEqualTo(MediaType.ALBUM);
-            assertThat(album.coverUrl()).isNull();
+            assertThat(album.coverUrl())
+                    .isEqualTo("https://coverartarchive.org/release-group/album-id/front-500");
         });
         server.verify();
     }

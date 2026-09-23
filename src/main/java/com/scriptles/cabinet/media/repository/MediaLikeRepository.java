@@ -54,6 +54,21 @@ public interface MediaLikeRepository extends JpaRepository<MediaLike, UUID> {
             @Param("mediaIds") Collection<UUID> mediaIds
     );
 
+    @Query("""
+            select mediaLike.user.id as userId, mediaLike.media.id as mediaId
+            from MediaLike mediaLike
+            where mediaLike.user.id in :userIds and mediaLike.media.id in :mediaIds
+            """)
+    List<UserMediaLikeProjection> findLikedPairs(
+            @Param("userIds") Collection<UUID> userIds,
+            @Param("mediaIds") Collection<UUID> mediaIds
+    );
+
+    interface UserMediaLikeProjection {
+        UUID getUserId();
+        UUID getMediaId();
+    }
+
     @EntityGraph(attributePaths = "media")
     List<MediaLike> findAllByUserId(UUID userId);
 
