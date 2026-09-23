@@ -19,6 +19,8 @@ class UserActivityFeedMigrationTest {
             assertThat(migration).contains("join media m on m.id = likes.media_id");
             assertThat(migration).contains("join media m on m.id = ratings.media_id");
             assertThat(migration).contains("join media m on m.id = review.media_id");
+            assertThat(migration).contains("coalesce(likes.liked_at, likes.created_at)");
+            assertThat(migration).contains("coalesce(ratings.rated_at, ratings.updated_at, ratings.created_at)");
         }
     }
 }
