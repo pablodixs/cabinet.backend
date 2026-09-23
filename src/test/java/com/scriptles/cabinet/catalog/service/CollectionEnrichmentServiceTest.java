@@ -62,7 +62,7 @@ class CollectionEnrichmentServiceTest {
         assertThat(targets.getAllValues()).extracting(MediaTarget::mediaType).containsOnly(MediaType.MOVIE);
         assertThat(targets.getAllValues()).extracting(MediaTarget::externalId).containsExactly("1", "2");
         assertThat(targets.getAllValues()).extracting(MediaTarget::locale).containsOnly("en-US");
-        verify(writer).reconcile(eq(collectionId), eq("collection-10"), eq(snapshot), anyList(), any());
+        verify(writer).reconcile(eq(collectionId), eq("collection-10"), eq(snapshot), anyList(), eq("en-US"), any());
     }
 
     @Test
@@ -84,7 +84,7 @@ class CollectionEnrichmentServiceTest {
                 .sync(collectionId, null)).isInstanceOf(ExternalMediaException.class);
 
         verify(imports, never()).materialize(any());
-        verify(writer, never()).reconcile(any(), any(), any(), anyList(), any());
+        verify(writer, never()).reconcile(any(), any(), any(), anyList(), any(), any());
         assertThat(collection.getLastSyncedAt()).isNull();
         assertThat(reference.getLastSyncedAt()).isNull();
     }
@@ -108,7 +108,7 @@ class CollectionEnrichmentServiceTest {
                 .sync(collectionId, null)).isInstanceOf(ExternalMediaException.class);
 
         verify(imports, never()).materialize(any());
-        verify(writer, never()).reconcile(any(), any(), any(), anyList(), any());
+        verify(writer, never()).reconcile(any(), any(), any(), anyList(), any(), any());
     }
 
     private Collection collection(UUID id) {

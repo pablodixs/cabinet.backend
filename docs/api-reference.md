@@ -78,6 +78,9 @@ The response includes an overall `status` (`OPERATIONAL`, `RUNNING`, `DELAYED`, 
 | `GET /v1/media/rankings/top-rated` | Public | Optional `type`, `locale`; `page=0`, `limit=20` (max 40). `locale` overrides `Accept-Language`. |
 | `GET /v1/media/rankings/trending` | Public | Optional `type`, `locale`; `days=7` (1–30), `limit=12` (max 40). |
 | `GET /v1/media/rankings/anticipated` | Public | Optional `locale`; `limit=6` (max 40). Future movies ranked by public `PLANNED` entries. |
+| `GET /v1/collections` | Public | Required `type`; `page=0`, `size=50` (max 100). Collection titles accept `locale` or `Accept-Language`. |
+| `GET /v1/collections/{id}` | Public | Localized collection metadata and localized materialized items. Accepts `locale` or `Accept-Language`. |
+| `GET /v1/collections/slug/{slug}` | Public | Slug lookup with the same localization and fallback behavior as collection details. |
 
 Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EPISODE`, although a provider or endpoint may support only a subset. Full media examples and provider behavior are in [Media API details](media-api.md).
 

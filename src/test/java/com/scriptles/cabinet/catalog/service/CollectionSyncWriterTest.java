@@ -9,6 +9,7 @@ import com.scriptles.cabinet.catalog.franchise.FranchiseMediaRelationType;
 import com.scriptles.cabinet.catalog.repository.CollectionExternalReferenceRepository;
 import com.scriptles.cabinet.catalog.repository.CollectionItemRepository;
 import com.scriptles.cabinet.catalog.repository.CollectionRepository;
+import com.scriptles.cabinet.catalog.repository.CollectionTranslationRepository;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
@@ -49,7 +50,7 @@ class CollectionSyncWriterTest {
 
         fixture.writer().reconcile(fixture.collection.getId(), "collection-10", snapshot,
                 List.of(new CollectionSyncWriter.MaterializedMovie("1", firstId),
-                        new CollectionSyncWriter.MaterializedMovie("2", secondId)), Instant.parse("2025-01-01T00:00:00Z"));
+                        new CollectionSyncWriter.MaterializedMovie("2", secondId)), "pt-BR", Instant.parse("2025-01-01T00:00:00Z"));
 
         ArgumentCaptor<Iterable<CollectionItem>> savedItems = ArgumentCaptor.forClass(Iterable.class);
         verify(fixture.items).saveAll(savedItems.capture());
@@ -82,7 +83,7 @@ class CollectionSyncWriterTest {
 
         fixture.writer().reconcile(fixture.collection.getId(), "collection-10", snapshot(List.of(
                         new TmdbCollectionSnapshot.Movie("1", "Added", null, null, null))),
-                List.of(new CollectionSyncWriter.MaterializedMovie("1", addedId)), Instant.parse("2025-01-01T00:00:00Z"));
+                List.of(new CollectionSyncWriter.MaterializedMovie("1", addedId)), "pt-BR", Instant.parse("2025-01-01T00:00:00Z"));
 
         verify(fixture.items).deleteAll(List.of(tmdbItem));
         verify(fixture.items).saveAll(org.mockito.ArgumentMatchers.<Iterable<CollectionItem>>argThat(items ->
@@ -101,7 +102,7 @@ class CollectionSyncWriterTest {
 
         fixture.writer().reconcile(fixture.collection.getId(), "collection-10", snapshot(List.of(
                         new TmdbCollectionSnapshot.Movie("1", "First", null, LocalDate.of(2020, 1, 1), null))),
-                List.of(new CollectionSyncWriter.MaterializedMovie("1", existingMedia.getId())), Instant.now());
+                List.of(new CollectionSyncWriter.MaterializedMovie("1", existingMedia.getId())), "pt-BR", Instant.now());
 
         verify(fixture.items, never()).saveAll(org.mockito.ArgumentMatchers.<Iterable<CollectionItem>>any());
         verify(fixture.items, never()).deleteAll(anyCollection());
@@ -140,14 +141,14 @@ class CollectionSyncWriterTest {
                         new TmdbCollectionSnapshot.Movie("1", "First", null, null, null),
                         new TmdbCollectionSnapshot.Movie("2", "Second", null, null, null),
                         new TmdbCollectionSnapshot.Movie("3", "Third", null, null, null))),
-                firstSync, Instant.parse("2025-01-01T00:00:00Z"));
+                firstSync, "pt-BR", Instant.parse("2025-01-01T00:00:00Z"));
         writer.reconcile(fixture.collection.getId(), "collection-10", snapshot(List.of(
                         new TmdbCollectionSnapshot.Movie("1", "First", null, null, null),
                         new TmdbCollectionSnapshot.Movie("2", "Second", null, null, null),
                         new TmdbCollectionSnapshot.Movie("3", "Third", null, null, null),
                         new TmdbCollectionSnapshot.Movie("4", "New sequel", null, null, null))),
                 List.of(firstSync.get(0), firstSync.get(1), firstSync.get(2),
-                        new CollectionSyncWriter.MaterializedMovie("4", sequelId)),
+                        new CollectionSyncWriter.MaterializedMovie("4", sequelId)), "pt-BR",
                 Instant.parse("2025-01-02T00:00:00Z"));
 
         ArgumentCaptor<Iterable<CollectionItem>> savedItems = ArgumentCaptor.forClass(Iterable.class);
@@ -168,7 +169,7 @@ class CollectionSyncWriterTest {
         when(fixture.mediaRepository.getReferenceById(mediaId)).thenReturn(media(mediaId));
 
         fixture.writer().reconcile(fixture.collection.getId(), "collection-10", snapshot(List.of()),
-                List.of(new CollectionSyncWriter.MaterializedMovie("1", mediaId)), Instant.now());
+                List.of(new CollectionSyncWriter.MaterializedMovie("1", mediaId)), "pt-BR", Instant.now());
 
         assertThat(fixture.collection.getTitle()).isEqualTo("Cabinet title");
         assertThat(fixture.collection.getDescription()).isEqualTo("Cabinet description");
@@ -211,6 +212,7 @@ class CollectionSyncWriterTest {
         private final CollectionItemRepository items = mock(CollectionItemRepository.class);
         private final ExternalReferenceRepository mediaReferences = mock(ExternalReferenceRepository.class);
         private final MediaRepository mediaRepository = mock(MediaRepository.class);
+        private final CollectionTranslationRepository translations = mock(CollectionTranslationRepository.class);
         private final Collection collection = new Collection();
         private final CollectionExternalReference reference = new CollectionExternalReference();
 
@@ -228,7 +230,7 @@ class CollectionSyncWriterTest {
         }
 
         private CollectionSyncWriter writer() {
-            return new CollectionSyncWriter(collections, collectionReferences, items, mediaReferences, mediaRepository);
+            return new CollectionSyncWriter(collections, collectionReferences, items, mediaReferences, mediaRepository, translations);
         }
     }
 }

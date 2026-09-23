@@ -44,6 +44,7 @@ public class CollectionManifestWriter {
     private static final List<String> ACTIVE = List.of(PENDING, PROCESSING, RETRY);
 
     private final CollectionRepository collections;
+    private final CollectionTranslationRepository translations;
     private final CollectionExternalReferenceRepository references;
     private final CollectionSourceSnapshotRepository snapshots;
     private final CollectionSourceItemRepository sourceItems;
@@ -80,6 +81,7 @@ public class CollectionManifestWriter {
             reference.setExternalUrl("https://www.themoviedb.org/collection/" + snapshot.externalId());
             references.save(reference);
         }
+        upsertTranslation(collection, locale, snapshot);
 
         List<com.scriptles.cabinet.media.external.TmdbCollectionSnapshot.Movie> movies = distinctMovies(snapshot.movies());
         String hash = sha256(snapshot);
@@ -288,6 +290,22 @@ public class CollectionManifestWriter {
         collection.setBackdropUrl(snapshot.backdropUrl());
         collection.setLastSyncedAt(now);
         return collections.save(collection);
+    }
+
+    private void upsertTranslation(Collection collection, String locale,
+            com.scriptles.cabinet.media.external.TmdbCollectionSnapshot snapshot) {
+        CollectionTranslation translation = translations.findByCollectionIdAndLocale(collection.getId(), locale)
+                .orElseGet(() -> {
+                    CollectionTranslation created = new CollectionTranslation();
+                    created.setCollection(collection);
+                    created.setLocale(locale);
+                    return created;
+                });
+        translation.setTitle(snapshot.name());
+        translation.setDescription(snapshot.overview());
+        translation.setPosterUrl(snapshot.posterUrl());
+        translation.setBackdropUrl(snapshot.backdropUrl());
+        translations.save(translation);
     }
 
     private void upsertSnapshot(Collection collection,

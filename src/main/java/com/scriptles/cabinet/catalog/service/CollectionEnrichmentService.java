@@ -75,7 +75,7 @@ public class CollectionEnrichmentService {
         }
 
         syncWriter.reconcile(collectionId, reference.getExternalId(), snapshot,
-                materializedMovies, Instant.now());
+                materializedMovies, normalizedLocale, Instant.now());
         return materializedMovies.size();
     }
 }

@@ -9,6 +9,8 @@ import com.scriptles.cabinet.catalog.franchise.FranchiseMediaRelationType;
 import com.scriptles.cabinet.catalog.repository.CollectionExternalReferenceRepository;
 import com.scriptles.cabinet.catalog.repository.CollectionItemRepository;
 import com.scriptles.cabinet.catalog.repository.CollectionRepository;
+import com.scriptles.cabinet.catalog.repository.CollectionTranslationRepository;
+import com.scriptles.cabinet.catalog.entity.CollectionTranslation;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.enums.ExternalSource;
@@ -37,6 +39,7 @@ public class CollectionSyncWriter {
     private final CollectionItemRepository collectionItemRepository;
     private final ExternalReferenceRepository mediaExternalReferenceRepository;
     private final MediaRepository mediaRepository;
+    private final CollectionTranslationRepository collectionTranslationRepository;
 
     @Transactional
     public void reconcile(
@@ -44,6 +47,7 @@ public class CollectionSyncWriter {
             String expectedTmdbCollectionId,
             TmdbCollectionSnapshot snapshot,
             List<MaterializedMovie> movies,
+            String locale,
             Instant syncedAt
     ) {
         Collection collection = collectionRepository.findByIdForUpdate(collectionId)
@@ -136,6 +140,18 @@ public class CollectionSyncWriter {
             collection.setStartDate(earliestReleaseDate(snapshot));
             collection.setEndDate(latestReleaseDate(snapshot));
         }
+        CollectionTranslation translation = collectionTranslationRepository
+                .findByCollectionIdAndLocale(collectionId, locale).orElseGet(() -> {
+                    CollectionTranslation created = new CollectionTranslation();
+                    created.setCollection(collection);
+                    created.setLocale(locale);
+                    return created;
+                });
+        translation.setTitle(snapshot.name());
+        translation.setDescription(snapshot.overview());
+        translation.setPosterUrl(snapshot.posterUrl());
+        translation.setBackdropUrl(snapshot.backdropUrl());
+        collectionTranslationRepository.save(translation);
         collection.setLastSyncedAt(syncedAt);
         collectionReference.setLastSyncedAt(syncedAt);
         collectionRepository.save(collection);

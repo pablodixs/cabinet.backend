@@ -6,6 +6,7 @@ import com.scriptles.cabinet.catalog.domain.CatalogEntityStatus;
 import com.scriptles.cabinet.catalog.entity.Collection;
 import com.scriptles.cabinet.catalog.entity.Franchise;
 import com.scriptles.cabinet.catalog.repository.CollectionRepository;
+import com.scriptles.cabinet.catalog.service.CollectionTranslationResolver;
 import com.scriptles.cabinet.catalog.repository.FranchiseRepository;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Person;
@@ -44,9 +45,12 @@ public class HeaderSearchService {
     private final UserArtworkResolver userArtworkResolver;
     private CollectionRepository collectionRepository;
     private FranchiseRepository franchiseRepository;
+    private CollectionTranslationResolver collectionTranslationResolver;
 
     @org.springframework.beans.factory.annotation.Autowired
     void setCatalogRepositories(CollectionRepository collections, FranchiseRepository franchises) { this.collectionRepository = collections; this.franchiseRepository = franchises; }
+    @org.springframework.beans.factory.annotation.Autowired
+    void setCollectionTranslationResolver(CollectionTranslationResolver resolver) { this.collectionTranslationResolver = resolver; }
 
     public HeaderSearchResponse search(String query, HeaderSearchScope scope, MediaType type) {
         return search(query, scope, type, CatalogLocaleResolver.DEFAULT_LOCALE);
@@ -78,7 +82,7 @@ public class HeaderSearchService {
         if (scope != HeaderSearchScope.MEDIA && scope != HeaderSearchScope.COLLECTION && scope != HeaderSearchScope.FRANCHISE) {
             addArtists(rankedItems, trimmedQuery, type);
         }
-        if (collectionRepository != null && (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.COLLECTION)) addCollections(rankedItems, trimmedQuery);
+        if (collectionRepository != null && (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.COLLECTION)) addCollections(rankedItems, trimmedQuery, requestedLocale);
         if (franchiseRepository != null && (scope == HeaderSearchScope.ALL || scope == HeaderSearchScope.FRANCHISE)) addFranchises(rankedItems, trimmedQuery);
 
         List<HeaderSearchItemResponse> items = rankedItems.stream()
@@ -92,10 +96,13 @@ public class HeaderSearchService {
         return new HeaderSearchResponse(items);
     }
 
-    private void addCollections(List<RankedItem> target, String query) {
+    private void addCollections(List<RankedItem> target, String query, String locale) {
         for (Collection collection : collectionRepository.search(query, CatalogEntityStatus.ACTIVE, PageRequest.of(0, RESULT_LIMIT))) {
-            HeaderSearchItemResponse response = new HeaderSearchItemResponse(collection.getId(), HeaderSearchEntityType.COLLECTION, collection.getTitle(), null, collection.getPosterUrl(), collection.getStartDate() == null ? null : collection.getStartDate().getYear());
-            target.add(new RankedItem(response, relevance(query, collection.getTitle()), normalize(collection.getTitle())));
+            var localized = collectionTranslationResolver == null ? null : collectionTranslationResolver.resolve(collection, locale);
+            String title = localized == null ? collection.getTitle() : localized.title();
+            String poster = localized == null ? collection.getPosterUrl() : localized.posterUrl();
+            HeaderSearchItemResponse response = new HeaderSearchItemResponse(collection.getId(), HeaderSearchEntityType.COLLECTION, title, null, poster, collection.getStartDate() == null ? null : collection.getStartDate().getYear());
+            target.add(new RankedItem(response, relevance(query, title), normalize(title)));
         }
     }
 
