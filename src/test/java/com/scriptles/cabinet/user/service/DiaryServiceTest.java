@@ -6,9 +6,11 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
 import com.scriptles.cabinet.user.dto.request.CreateDiaryEntryRequest;
+import com.scriptles.cabinet.user.dto.request.UpdateDiaryEntryRequest;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.ProfileActivityType;
@@ -17,6 +19,8 @@ import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -41,6 +45,7 @@ class DiaryServiceTest {
     @Mock MediaRepository mediaRepository;
     @Mock RatingRepository ratingRepository;
     @Mock ReviewRepository reviewRepository;
+    @Mock ReviewLikeRepository reviewLikeRepository;
     @Mock ExternalReferenceRepository externalReferenceRepository;
     @Mock MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock UserMediaService userMediaService;
@@ -124,6 +129,63 @@ class DiaryServiceTest {
         assertThat(response.rating()).isEqualByComparingTo("4.5");
         verify(ratingRepository).save(any());
         verify(userMediaService).markCompleted(user, book, false);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MediaType.class, names = {"TRACK", "EPISODE"})
+    void createsDiaryReviewForChildMedia(MediaType type) {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media child = media(mediaId, type);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(child));
+        when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        when(activityRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            UserMediaActivity entry = invocation.getArgument(0);
+            entry.setId(UUID.randomUUID());
+            return entry;
+        });
+
+        var response = service.create(userId, new CreateDiaryEntryRequest(
+                mediaId, LocalDate.of(2026, 7, 19), false, null,
+                "Review da faixa ou episódio", false, Visibility.PUBLIC, Set.of()));
+
+        assertThat(response.review()).isEqualTo("Review da faixa ou episódio");
+        verify(reviewRepository).save(any(Review.class));
+    }
+
+    @Test
+    void removingTextFromLinkedDiaryEntryDeletesItsReview() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        User user = user(userId);
+        Media media = media(mediaId, MediaType.MOVIE);
+        UserMediaActivity activity = new UserMediaActivity();
+        activity.setId(entryId);
+        activity.setType(ProfileActivityType.LOGGED);
+        activity.setMedia(media);
+        activity.setReviewContent("Antes");
+        Review review = new Review();
+        review.setId(UUID.randomUUID());
+        review.setActivity(activity);
+        when(activityRepository.findByIdAndUserId(entryId, userId)).thenReturn(Optional.of(activity));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        when(activityRepository.saveAndFlush(activity)).thenReturn(activity);
+        when(reviewRepository.findByActivityId(entryId)).thenReturn(Optional.of(review));
+
+        var response = service.update(userId, entryId, new UpdateDiaryEntryRequest(
+                LocalDate.of(2026, 7, 19), false, null, "  ", false,
+                Visibility.PUBLIC, Set.of()));
+
+        assertThat(response.review()).isNull();
+        verify(reviewLikeRepository).deleteByReviewId(review.getId());
+        verify(reviewLikeRepository).flush();
+        verify(reviewRepository).delete(review);
+        verify(reviewRepository).flush();
     }
 
     @Test

@@ -10,7 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 
 class ArtworkCatalogProviderTest {
     @Test
@@ -62,6 +64,25 @@ class ArtworkCatalogProviderTest {
                 null, null);
         CoverArtArchiveArtworkCatalogProvider provider =
                 new CoverArtArchiveArtworkCatalogProvider(builder, properties);
+        server.expect(requestTo(startsWith("https://musicbrainz.test/release-group/release-group-id?")))
+                .andExpect(header("User-Agent", "cabinet-test"))
+                .andRespond(withSuccess("""
+                        {"releases":[
+                          {"id":"release-one","title":"Album (Deluxe)","date":"2020-01-02","country":"US"},
+                          {"id":"release-two","title":"Album","date":"2018","country":"GB"}
+                        ]}
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://coverartarchive.org/release/release-one"))
+                .andRespond(withSuccess("""
+                        {"images":[
+                          {"id":"front-id","front":true,"image":"https://images/front.jpg",
+                           "thumbnails":{"500":"https://images/front-500.jpg"}},
+                          {"id":"edition-id","front":true,"image":"https://images/edition.jpg",
+                           "thumbnails":{"500":"https://images/edition-500.jpg"}}
+                        ]}
+                        """, org.springframework.http.MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://coverartarchive.org/release/release-two"))
+                .andRespond(withServerError());
         server.expect(requestTo("https://coverartarchive.org/release-group/release-group-id"))
                 .andRespond(withSuccess("""
                         {
@@ -76,9 +97,15 @@ class ArtworkCatalogProviderTest {
 
         ArtworkCatalog catalog = provider.find(MediaType.ALBUM, "release-group-id", "pt-BR");
 
-        assertThat(catalog.covers()).singleElement().satisfies(asset -> {
-            assertThat(asset.key()).isEqualTo("front-id");
+        assertThat(catalog.covers()).hasSize(2);
+        assertThat(catalog.covers()).anySatisfy(asset -> {
+            assertThat(asset.key()).isEqualTo("release:release-one:front-id");
             assertThat(asset.previewUrl()).isEqualTo("https://images/front-500.jpg");
+            assertThat(asset.label()).isEqualTo("Album (Deluxe) · 2020 · US");
+        });
+        assertThat(catalog.covers()).anySatisfy(asset -> {
+            assertThat(asset.key()).isEqualTo("release:release-one:edition-id");
+            assertThat(asset.label()).isEqualTo("Album (Deluxe) · 2020 · US");
         });
         assertThat(catalog.backdrops()).isEmpty();
         server.verify();

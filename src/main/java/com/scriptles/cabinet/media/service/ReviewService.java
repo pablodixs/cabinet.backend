@@ -162,6 +162,7 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public Optional<ReviewResponse> findMine(UUID userId, UUID mediaId) {
         return reviewRepository.findByUserIdAndMediaId(userId, mediaId)
+                .filter(this::hasContent)
                 .map(review -> response(review, userId));
     }
 
@@ -203,6 +204,7 @@ public class ReviewService {
                 ));
 
         return reviewRepository.findByUserIdAndMediaId(owner.getId(), mediaId)
+                .filter(this::hasContent)
                 .filter(review -> socialAccessPolicy == null
                         ? viewerId != null && viewerId.equals(owner.getId())
                             || review.getVisibility() == Visibility.PUBLIC
@@ -214,6 +216,7 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public ReviewResponse findPublicById(UUID userId, UUID reviewId) {
         Review review = reviewRepository.findById(reviewId)
+                .filter(this::hasContent)
                 .filter(candidate -> userId == null
                         ? candidate.getVisibility() == Visibility.PUBLIC
                         : socialAccessPolicy == null
@@ -252,8 +255,17 @@ public class ReviewService {
         review.setContent(content);
         review.setContainsSpoilers(Boolean.TRUE.equals(request.containsSpoilers()));
         review.setVisibility(request.visibility());
-        if (request.activityId() != null) {
-            UserMediaActivity activity = findOwnedDiaryActivity(userId, mediaId, request.activityId());
+        UserMediaActivity previousActivity = review.getActivity();
+        UserMediaActivity activity = request.activityId() == null
+                ? previousActivity
+                : findOwnedDiaryActivity(userId, mediaId, request.activityId());
+        if (previousActivity != null
+                && !Objects.equals(previousActivity.getId(), activity.getId())) {
+            previousActivity.setReviewContent(null);
+            previousActivity.setContainsSpoilers(false);
+            userMediaActivityRepository.save(previousActivity);
+        }
+        if (activity != null) {
             review.setActivity(activity);
             activity.setRating(review.getRating());
             activity.setReviewContent(content);
@@ -337,6 +349,10 @@ public class ReviewService {
                     "A resenha precisa ter conteúdo");
         }
         return content.trim();
+    }
+
+    private boolean hasContent(Review review) {
+        return review.getContent() != null && !review.getContent().isBlank();
     }
 
     private UserMediaActivity findOwnedDiaryActivity(UUID userId, UUID mediaId, UUID activityId) {

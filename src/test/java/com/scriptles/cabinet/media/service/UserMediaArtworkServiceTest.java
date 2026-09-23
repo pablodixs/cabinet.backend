@@ -110,6 +110,25 @@ class UserMediaArtworkServiceTest {
     }
 
     @Test
+    void resolvesPreviouslySavedAlbumCoverKeysToMatchingEditionArtwork() {
+        media.setType(MediaType.ALBUM);
+        String coverUrl = "https://images/album-cover.jpg";
+        ArtworkAsset editionCover = new ArtworkAsset(
+                "release:release-id:front-id", coverUrl, coverUrl, null, null, null,
+                "Album · 2020 · US");
+        stubCatalog(ExternalSource.MUSICBRAINZ,
+                new ArtworkCatalog(ArtworkProvider.COVER_ART_ARCHIVE, List.of(editionCover), List.of()));
+        UserMediaArtworkPreference preference = new UserMediaArtworkPreference();
+        preference.setCoverKey("front-id");
+        preference.setCoverUrl(coverUrl);
+        when(preferenceRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(preference));
+
+        var response = service.findOptions(userId, mediaId);
+
+        assertThat(response.selectedCoverKey()).isEqualTo(editionCover.key());
+    }
+
+    @Test
     void rejectsBackdropForAlbums() {
         media.setType(MediaType.ALBUM);
         stubCatalog(ExternalSource.MUSICBRAINZ,

@@ -304,6 +304,7 @@ class MediaListServiceTest {
                                 "https://images.example/clean-preview.jpg",
                                 1280,
                                 720,
+                                null,
                                 null
                         ),
                         new ArtworkOptionResponse(
@@ -312,7 +313,8 @@ class MediaListServiceTest {
                                 "https://images.example/pt-preview.jpg",
                                 1280,
                                 720,
-                                "pt"
+                                "pt",
+                                null
                         )
                 )));
         when(mediaListRepository.saveAndFlush(any(MediaList.class)))
@@ -401,7 +403,8 @@ class MediaListServiceTest {
                                 "https://images.example/pt-preview.jpg",
                                 1280,
                                 720,
-                                "pt"
+                                "pt",
+                                null
                         )
                 )));
 

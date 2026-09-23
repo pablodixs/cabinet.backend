@@ -135,13 +135,26 @@ public class UserMediaArtworkService {
                 context.catalog().provider(),
                 context.media().getCoverUrl(),
                 context.media().getBackdropUrl(),
-                preference == null ? null : preference.getCoverKey(),
-                preference == null ? null : preference.getBackdropKey(),
+                preference == null ? null : selectedKey(
+                        context.catalog().covers(), preference.getCoverKey(), preference.getCoverUrl()),
+                preference == null ? null : selectedKey(
+                        context.catalog().backdrops(), preference.getBackdropKey(), preference.getBackdropUrl()),
                 preference == null ? null : preference.getCoverUrl(),
                 preference == null ? null : preference.getBackdropUrl(),
                 context.catalog().covers().stream().map(ArtworkOptionResponse::from).toList(),
                 context.catalog().backdrops().stream().map(ArtworkOptionResponse::from).toList()
         );
+    }
+
+    private String selectedKey(List<ArtworkAsset> options, String savedKey, String savedUrl) {
+        if (savedKey == null) return null;
+        if (options.stream().anyMatch(option -> option.key().equals(savedKey))) return savedKey;
+        if (savedUrl == null) return savedKey;
+        return options.stream()
+                .filter(option -> option.url().equals(savedUrl))
+                .map(ArtworkAsset::key)
+                .findFirst()
+                .orElse(savedKey);
     }
 
     private User requirePro(UUID userId) {

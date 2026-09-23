@@ -164,6 +164,7 @@ public class CommentService {
         return (socialAccessPolicy == null
                 ? reviewRepository.findByIdAndVisibility(reviewId, Visibility.PUBLIC)
                 : reviewRepository.findById(reviewId)
+                    .filter(review -> review.getContent() != null && !review.getContent().isBlank())
                     .filter(review -> socialAccessPolicy.canViewContent(
                             review.getUser().getId(), viewerId, review.getVisibility())))
                 .orElseThrow(() -> notFound("REVIEW_NOT_FOUND", "Review não encontrada"));

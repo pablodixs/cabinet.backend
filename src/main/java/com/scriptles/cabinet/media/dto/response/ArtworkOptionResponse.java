@@ -8,11 +8,12 @@ public record ArtworkOptionResponse(
         String previewUrl,
         Integer width,
         Integer height,
-        String language
+        String language,
+        String label
 ) {
     public static ArtworkOptionResponse from(ArtworkAsset asset) {
         return new ArtworkOptionResponse(
-                asset.key(), asset.url(), asset.previewUrl(), asset.width(), asset.height(), asset.language()
+                asset.key(), asset.url(), asset.previewUrl(), asset.width(), asset.height(), asset.language(), asset.label()
         );
     }
 }

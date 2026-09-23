@@ -16,6 +16,8 @@ import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.entity.User;
+import com.scriptles.cabinet.user.entity.UserMediaActivity;
+import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
@@ -197,6 +199,74 @@ class ReviewServiceTest {
         assertThat(response.visibility()).isEqualTo(Visibility.PRIVATE);
         verify(reviewRepository).saveAndFlush(existing);
         verify(userMediaService).markCompleted(user, media);
+    }
+
+    @Test
+    void editingLinkedReviewWithoutActivityIdUpdatesItsDiaryEntry() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media media = media(mediaId);
+        UserMediaActivity activity = new UserMediaActivity();
+        activity.setId(UUID.randomUUID());
+        activity.setType(ProfileActivityType.LOGGED);
+        activity.setMedia(media);
+        activity.setReviewContent("Antes");
+        Review review = new Review();
+        review.setId(UUID.randomUUID());
+        review.setUser(user);
+        review.setMedia(media);
+        review.setActivity(activity);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(review));
+        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
+
+        reviewService.upsert(userId, mediaId,
+                new UpsertReviewRequest(null, "Depois", true, Visibility.PRIVATE));
+
+        assertThat(activity.getReviewContent()).isEqualTo("Depois");
+        assertThat(activity.getContainsSpoilers()).isTrue();
+        assertThat(activity.getVisibility()).isEqualTo(Visibility.PRIVATE);
+        verify(userMediaActivityRepository).save(activity);
+    }
+
+    @Test
+    void movingReviewToAnotherDiaryEntryClearsThePreviousEntry() {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media media = media(mediaId);
+        UserMediaActivity previous = new UserMediaActivity();
+        previous.setId(UUID.randomUUID());
+        previous.setType(ProfileActivityType.LOGGED);
+        previous.setReviewContent("Antes");
+        previous.setContainsSpoilers(true);
+        UserMediaActivity next = new UserMediaActivity();
+        next.setId(UUID.randomUUID());
+        next.setType(ProfileActivityType.RELOGGED);
+        next.setMedia(media);
+        Review review = new Review();
+        review.setId(UUID.randomUUID());
+        review.setUser(user);
+        review.setMedia(media);
+        review.setActivity(previous);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(review));
+        when(userMediaActivityRepository.findByIdAndUserId(next.getId(), userId))
+                .thenReturn(Optional.of(next));
+        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
+
+        reviewService.upsert(userId, mediaId,
+                new UpsertReviewRequest(null, "Nova review", false, Visibility.PUBLIC, next.getId()));
+
+        assertThat(previous.getReviewContent()).isNull();
+        assertThat(previous.getContainsSpoilers()).isFalse();
+        assertThat(next.getReviewContent()).isEqualTo("Nova review");
+        assertThat(review.getActivity()).isSameAs(next);
+        verify(userMediaActivityRepository).save(previous);
+        verify(userMediaActivityRepository).save(next);
     }
 
     @Test
@@ -427,6 +497,8 @@ class ReviewServiceTest {
         User owner = user(ownerId);
         Review review = review(mediaId, "4.5");
         review.setUser(owner);
+        review.setContent("Review pública");
+        review.setVisibility(Visibility.PUBLIC);
         when(userRepository.findByUsernameIgnoreCase("maria"))
                 .thenReturn(Optional.of(owner));
         when(reviewRepository.findByUserIdAndMediaId(ownerId, mediaId))

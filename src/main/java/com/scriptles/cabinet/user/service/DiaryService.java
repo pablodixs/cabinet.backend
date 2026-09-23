@@ -12,6 +12,7 @@ import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
@@ -40,6 +41,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -59,6 +61,7 @@ public class DiaryService {
     private final MediaRepository mediaRepository;
     private final RatingRepository ratingRepository;
     private final ReviewRepository reviewRepository;
+    private final ReviewLikeRepository reviewLikeRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final UserMediaService userMediaService;
@@ -205,10 +208,10 @@ public class DiaryService {
             upsertCanonicalReview(user, media, rating, activity, reviewContent,
                     activity.getContainsSpoilers(), request.visibility());
         } else if (review != null) {
-            review.setActivity(null);
-            review.setContent(null);
-            review.setContainsSpoilers(false);
-            reviewRepository.saveAndFlush(review);
+            reviewLikeRepository.deleteByReviewId(review.getId());
+            reviewLikeRepository.flush();
+            reviewRepository.delete(review);
+            reviewRepository.flush();
             userFeedService.remove(userId, media.getId(), FeedActionType.REVIEWED);
         }
         return DiaryEntryResponse.from(
@@ -290,10 +293,6 @@ public class DiaryService {
             boolean containsSpoilers,
             Visibility visibility
     ) {
-        if (media.getType() == MediaType.TRACK || media.getType() == MediaType.EPISODE) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "REVIEW_NOT_SUPPORTED",
-                    "Faixas e episódios aceitam somente nota");
-        }
         Review review = reviewRepository.findByUserIdAndMediaId(user.getId(), media.getId())
                 .orElseGet(() -> {
                     Review created = new Review();
@@ -302,6 +301,13 @@ public class DiaryService {
                     created.setPublishedAt(Instant.now());
                     return created;
                 });
+        UserMediaActivity previousActivity = review.getActivity();
+        if (previousActivity != null
+                && !Objects.equals(previousActivity.getId(), activity.getId())) {
+            previousActivity.setReviewContent(null);
+            previousActivity.setContainsSpoilers(false);
+            activityRepository.save(previousActivity);
+        }
         review.setRatingEntity(rating);
         review.setActivity(activity);
         review.setContent(content);

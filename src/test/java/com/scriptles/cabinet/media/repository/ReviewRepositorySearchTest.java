@@ -123,6 +123,20 @@ class ReviewRepositorySearchTest {
     }
 
     @Test
+    void hidesLegacyReviewsWithoutText() {
+        Media media = media("Legacy review");
+        Review legacy = review(media, user("legacy"), "4.0", Visibility.PUBLIC);
+        legacy.setContent(null);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(reviewRepository.findByIdAndVisibility(legacy.getId(), Visibility.PUBLIC))
+                .isEmpty();
+        assertThat(reviewRepository.findRecent(media.getId(), Visibility.PUBLIC, PageRequest.of(0, 3)))
+                .isEmpty();
+    }
+
+    @Test
     void returnsOnlyTheFiveMostRecentLikersWithTheirProfiles() {
         Media media = media("Arrival");
         Review review = review(media, user("reviewer"), "4.5", Visibility.PUBLIC);
@@ -195,6 +209,7 @@ class ReviewRepositorySearchTest {
         review.setMedia(media);
         review.setUser(user);
         review.setRatingEntity(ratingEntity);
+        review.setContent("Review de " + user.getUsername());
         review.setVisibility(visibility);
         return entityManager.persist(review);
     }

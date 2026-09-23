@@ -27,6 +27,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             from Review review
             where review.user.id = :userId
               and review.media.id in :mediaIds
+              and review.content is not null and trim(review.content) <> ''
             """)
     List<UUID> findReviewedMediaIds(
             @Param("userId") UUID userId,
@@ -39,6 +40,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             where review.user.id = :userId
               and review.media.id in :mediaIds
               and review.visibility in :visibilities
+              and review.content is not null and trim(review.content) <> ''
             """)
     List<UUID> findVisibleReviewedMediaIds(
             @Param("userId") UUID userId,
@@ -60,12 +62,14 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     Page<Review> findMine(@Param("userId") UUID userId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
-    @Query("select r from Review r where r.id = :reviewId and r.visibility = :visibility")
+    @Query("select r from Review r where r.id = :reviewId and r.visibility = :visibility "
+            + "and r.content is not null and trim(r.content) <> ''")
     Optional<Review> findByIdAndVisibility(@Param("reviewId") UUID reviewId,
                                            @Param("visibility") Visibility visibility);
 
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
-    @Query("select r from Review r where r.media.id = :mediaId and r.visibility = :visibility")
+    @Query("select r from Review r where r.media.id = :mediaId and r.visibility = :visibility "
+            + "and r.content is not null and trim(r.content) <> ''")
     Page<Review> findByMediaIdAndVisibility(@Param("mediaId") UUID mediaId,
                                             @Param("visibility") Visibility visibility,
                                             Pageable pageable);
@@ -74,6 +78,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     @Query(value = """
             select review from Review review
             where review.media.id = :mediaId
+              and review.content is not null and trim(review.content) <> ''
               and (review.user.id = :viewerId
                 or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
                 or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
@@ -87,6 +92,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             """, countQuery = """
             select count(review) from Review review
             where review.media.id = :mediaId
+              and review.content is not null and trim(review.content) <> ''
               and (review.user.id = :viewerId
                 or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
                 or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
@@ -109,6 +115,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             left join ReviewLike reviewLike on reviewLike.review = review
             where review.media.id = :mediaId
               and review.visibility = :visibility
+              and review.content is not null and trim(review.content) <> ''
             group by review.id, review.publishedAt, review.createdAt
             order by count(reviewLike.id) desc,
                      coalesce(review.publishedAt, review.createdAt) desc,
@@ -124,6 +131,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
             select review.id from Review review
             left join ReviewLike reviewLike on reviewLike.review = review
             where review.media.id = :mediaId
+              and review.content is not null and trim(review.content) <> ''
               and (review.user.id = :viewerId
                 or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
                 or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
@@ -187,6 +195,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     @Query("""
             select review from Review review
             where review.media.id = :mediaId and review.visibility = :visibility
+              and review.content is not null and trim(review.content) <> ''
             order by coalesce(review.publishedAt, review.createdAt) desc, review.id desc
             """)
     List<Review> findRecent(
@@ -199,6 +208,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     @Query("""
             select review from Review review
             where review.media.id = :mediaId
+              and review.content is not null and trim(review.content) <> ''
               and (review.user.id = :viewerId
                 or review.visibility = com.scriptles.cabinet.user.enums.Visibility.PUBLIC
                 or (review.visibility = com.scriptles.cabinet.user.enums.Visibility.FOLLOWERS
