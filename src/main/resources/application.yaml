@@ -117,3 +117,8 @@ external:
     sparql-url: https://query.wikidata.org/sparql
     user-agent: ${WIKIDATA_USER_AGENT:cabinet/1.0 (https://github.com/scriptles/cabinet)}
     read-timeout: ${WIKIDATA_READ_TIMEOUT:30s}
+
+supabase:
+  url: ${SUPABASE_URL:}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+  avatars-bucket: ${SUPABASE_AVATARS_BUCKET:avatars}

@@ -84,6 +84,28 @@ public class UserMediaArtworkService {
         return response(context, saved);
     }
 
+    @Transactional(readOnly = true)
+    public ArtworkOptionResponse selectReviewBackdrop(UUID userId, UUID mediaId, String backdropKey) {
+        requirePro(userId);
+        String key = trimToNull(backdropKey);
+        if (key == null) {
+            Media media = mediaRepository.findById(mediaId).orElseThrow(this::mediaNotFound);
+            requireBackdropSupport(media.getType());
+            return null;
+        }
+
+        SelectionContext context = context(mediaId);
+        requireBackdropSupport(context.media().getType());
+        ArtworkAsset backdrop = selected(context.catalog().backdrops(), key, "backdrop", null, null);
+        return ArtworkOptionResponse.from(backdrop);
+    }
+
+    private void requireBackdropSupport(MediaType mediaType) {
+        if (mediaType != MediaType.MOVIE && mediaType != MediaType.SERIES) {
+            throw unsupported("Este tipo de mídia não oferece backdrop personalizável");
+        }
+    }
+
     @Transactional
     public void delete(UUID userId, UUID mediaId) {
         requirePro(userId);

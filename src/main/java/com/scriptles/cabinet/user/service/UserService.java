@@ -73,6 +73,14 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    @Transactional
+    public User updateAvatar(UUID userId, String avatarUrl) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Usuário não encontrado"));
+        user.setAvatarUlr(avatarUrl);
+        return userRepository.save(user);
+    }
+
     private String normalizeOptional(String value) {
         if (value == null) return null;
         String normalized = value.trim();

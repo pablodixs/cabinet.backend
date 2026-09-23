@@ -769,6 +769,20 @@ but a review no longer requires a rating. Deleting `/v1/me/ratings/{mediaId}` ke
 `/v1/me/reviews/{mediaId}` keeps the rating. An optional `activityId` in the review request links the current review
 to a diary entry owned by the same member for the same media item.
 
+Pro review authors may choose a backdrop independently for each review. The selected provider key is stored on that
+review and does not change the viewer-specific artwork preference for the media:
+
+```http
+PUT /v1/me/reviews/{reviewId}/backdrop
+Content-Type: application/json
+
+{"backdropKey":"/provider-backdrop-key.jpg"}
+```
+
+Send `{"backdropKey":null}` to restore the canonical media backdrop. The selected key must be present in the
+media's artwork-options response. Review responses include `backdropKey` and a resolved `backdropUrl`; when no review
+backdrop is selected, `backdropUrl` is the canonical media backdrop.
+
 The global popular-review endpoint is intended for discovery and homepage sections. It returns public reviews with
 non-empty text, ordered by like count and recency. Each item includes both the regular review object and a media
 summary, avoiding an additional media lookup per card:

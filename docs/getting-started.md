@@ -50,6 +50,11 @@ The default server port is `8080`. The Docker entrypoint also accepts `PORT` and
 | `THEAUDIODB_API_KEY` | `123` | TheAudioDB key; currently part of configuration even though no dedicated client exists in the source tree. |
 | `WIKIDATA_USER_AGENT` | Cabinet GitHub identifier | Identifies SPARQL requests. |
 | `WIKIDATA_READ_TIMEOUT` | `30s` | Wikidata-specific read timeout. |
+| `SUPABASE_URL` | empty | Project URL used by profile photo uploads. |
+| `SUPABASE_SERVICE_ROLE_KEY` | empty | Server-only Storage key; never configure this in a web or mobile app. |
+| `SUPABASE_AVATARS_BUCKET` | `avatars` | Existing public Storage bucket for profile photos. |
+
+To enable profile photos, create a public Storage bucket named `avatars` in Supabase and set its file size limit to 5 MB with allowed MIME types `image/jpeg` and `image/png`. The backend uploads each image to a user-scoped path and saves its public URL to the user's profile. Public bucket access is required so profile photos can load in both apps. Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
 
 Provider base URLs can also be overridden through Spring properties (`external.*.base-url` and `external.wikidata.sparql-url`), which is useful for integration tests or proxies.
 

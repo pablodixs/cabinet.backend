@@ -1,6 +1,8 @@
 package com.scriptles.cabinet.media.controller;
 
+import com.scriptles.cabinet.media.dto.request.UpsertReviewBackdropRequest;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
+import com.scriptles.cabinet.media.dto.response.ReviewBackdropSelectionResponse;
 import com.scriptles.cabinet.media.dto.response.PopularReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewWithMediaResponse;
@@ -105,6 +107,15 @@ public class ReviewController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size
     ) {
         return reviewService.findMine(user.id(), page, size);
+    }
+
+    @PutMapping("/v1/me/reviews/{reviewId}/backdrop")
+    public ReviewBackdropSelectionResponse updateBackdrop(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID reviewId,
+            @RequestBody @Valid UpsertReviewBackdropRequest request
+    ) {
+        return reviewService.updateBackdrop(user.id(), reviewId, request.backdropKey());
     }
 
     @PutMapping("/v1/me/reviews/{mediaId}")

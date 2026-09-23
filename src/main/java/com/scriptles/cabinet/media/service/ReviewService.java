@@ -3,6 +3,8 @@ package com.scriptles.cabinet.media.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
+import com.scriptles.cabinet.media.dto.response.ArtworkOptionResponse;
+import com.scriptles.cabinet.media.dto.response.ReviewBackdropSelectionResponse;
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.PopularReviewResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewLikerResponse;
@@ -63,6 +65,7 @@ public class ReviewService {
     private final SocialAccessPolicy socialAccessPolicy;
     private final MediaCommunityCacheInvalidator communityCacheInvalidator;
     private final UserFeedService userFeedService;
+    private final UserMediaArtworkService userMediaArtworkService;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -211,6 +214,27 @@ public class ReviewService {
                         : socialAccessPolicy.canViewContent(
                                 owner.getId(), viewerId, review.getVisibility()))
                 .map(review -> response(review, viewerId));
+    }
+
+    @Transactional
+    public ReviewBackdropSelectionResponse updateBackdrop(UUID userId, UUID reviewId, String backdropKey) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "Review não encontrada"));
+        if (!review.getUser().getId().equals(userId)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "Review não encontrada");
+        }
+
+        ArtworkOptionResponse selected = userMediaArtworkService.selectReviewBackdrop(
+                userId, review.getMedia().getId(), backdropKey);
+        review.setBackdropKey(selected == null ? null : selected.key());
+        review.setBackdropUrl(selected == null ? null : selected.url());
+        Review saved = reviewRepository.saveAndFlush(review);
+        return new ReviewBackdropSelectionResponse(
+                saved.getBackdropKey(),
+                saved.getBackdropUrl() != null
+                        ? saved.getBackdropUrl() : saved.getMedia().getBackdropUrl()
+        );
     }
 
     @Transactional(readOnly = true)

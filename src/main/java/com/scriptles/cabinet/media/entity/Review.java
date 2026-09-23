@@ -58,6 +58,12 @@ public class Review {
     @Column(columnDefinition = "TEXT")
     private String content;
 
+    @Column(name = "backdrop_key", length = 500)
+    private String backdropKey;
+
+    @Column(name = "backdrop_url", columnDefinition = "TEXT")
+    private String backdropUrl;
+
     @Column(nullable = false)
     private Boolean containsSpoilers = false;
 

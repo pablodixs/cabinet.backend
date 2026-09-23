@@ -15,7 +15,8 @@ public record AuthUserResponse(
         boolean moderator,
         boolean admin,
         AccountTier accountTier,
-        boolean pro
+        boolean pro,
+        String avatarUrl
 ) {
     public static AuthUserResponse from(AuthenticatedUser user) {
         return new AuthUserResponse(
@@ -27,7 +28,8 @@ public record AuthUserResponse(
                 user.moderator(),
                 user.admin(),
                 user.accountTier(),
-                user.pro()
+                user.pro(),
+                user.avatarUrl()
         );
     }
 }

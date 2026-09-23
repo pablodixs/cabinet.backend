@@ -24,7 +24,9 @@ public record ReviewResponse(
         AuthorResponse author,
         UUID activityId,
         boolean likedByAuthor,
-        boolean reconsumedByAuthor
+        boolean reconsumedByAuthor,
+        String backdropKey,
+        String backdropUrl
 ) {
     public ReviewResponse(
             UUID id,
@@ -41,7 +43,29 @@ public record ReviewResponse(
             AuthorResponse author
     ) {
         this(id, mediaId, rating, content, containsSpoilers, visibility, createdAt, updatedAt,
-                likeCount, liked, recentLikers, author, null, false, false);
+                likeCount, liked, recentLikers, author, null, false, false, null, null);
+    }
+
+    public ReviewResponse(
+            UUID id,
+            UUID mediaId,
+            BigDecimal rating,
+            String content,
+            boolean containsSpoilers,
+            Visibility visibility,
+            Instant createdAt,
+            Instant updatedAt,
+            long likeCount,
+            boolean liked,
+            List<ReviewLikerResponse> recentLikers,
+            AuthorResponse author,
+            UUID activityId,
+            boolean likedByAuthor,
+            boolean reconsumedByAuthor
+    ) {
+        this(id, mediaId, rating, content, containsSpoilers, visibility, createdAt, updatedAt,
+                likeCount, liked, recentLikers, author, activityId, likedByAuthor,
+                reconsumedByAuthor, null, null);
     }
 
     public static ReviewResponse from(Review review) {
@@ -86,7 +110,10 @@ public record ReviewResponse(
                 ),
                 review.getActivity() == null ? null : review.getActivity().getId(),
                 likedByAuthor,
-                reconsumedByAuthor
+                reconsumedByAuthor,
+                review.getBackdropKey(),
+                review.getBackdropUrl() != null
+                        ? review.getBackdropUrl() : review.getMedia().getBackdropUrl()
         );
     }
 

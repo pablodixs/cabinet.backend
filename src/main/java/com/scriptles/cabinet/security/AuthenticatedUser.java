@@ -20,8 +20,23 @@ public record AuthenticatedUser(
         Collection<? extends GrantedAuthority> authorities,
         boolean active,
         UserRole role,
-        AccountTier accountTier
+        AccountTier accountTier,
+        String avatarUrl
 ) implements UserDetails {
+
+    public AuthenticatedUser(
+            UUID id,
+            String email,
+            String username,
+            String displayName,
+            String passwordHash,
+            Collection<? extends GrantedAuthority> authorities,
+            boolean active,
+            UserRole role,
+            AccountTier accountTier
+    ) {
+        this(id, email, username, displayName, passwordHash, authorities, active, role, accountTier, null);
+    }
 
     public AuthenticatedUser(
             UUID id,
@@ -62,7 +77,8 @@ public record AuthenticatedUser(
                 authorities(role),
                 Boolean.TRUE.equals(user.getActive()),
                 role,
-                user.getAccountTier() == null ? AccountTier.FREE : user.getAccountTier()
+                user.getAccountTier() == null ? AccountTier.FREE : user.getAccountTier(),
+                user.getAvatarUlr()
         );
     }
 

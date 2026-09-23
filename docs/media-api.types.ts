@@ -621,6 +621,8 @@ export interface ReviewResponse {
   activityId: string | null;
   likedByAuthor: boolean;
   reconsumedByAuthor: boolean;
+  backdropKey: string | null;
+  backdropUrl: string | null;
 }
 
 export type FeedAction = "ADDED_TO_WATCHLIST" | "LIKED" | "RATED" | "REVIEWED";
