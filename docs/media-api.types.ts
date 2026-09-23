@@ -640,6 +640,8 @@ export interface FeedActivityResponse {
   rating: number | null;
   review: string | null;
   containsSpoilers: boolean;
+  liked: boolean;
+  reviewed: boolean;
 }
 
 export type DiaryEntryType = "LOGGED" | "RELOGGED" | "WATCHED" | "REWATCHED";

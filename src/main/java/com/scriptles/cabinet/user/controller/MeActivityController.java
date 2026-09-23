@@ -27,6 +27,7 @@ public class MeActivityController {
     public PageResponse<FeedActivityResponse> find(
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam(defaultValue = "FRIENDS") String feed,
+            @RequestParam(defaultValue = "false") boolean interactionsOnly,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {
         boolean friendsOnly = switch (feed.toUpperCase()) {
@@ -35,6 +36,6 @@ public class MeActivityController {
             default -> throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ACTIVITY_FEED",
                     "Feed must be FRIENDS or YOU");
         };
-        return userFeedService.find(user.id(), friendsOnly, page, size);
+        return userFeedService.find(user.id(), friendsOnly, interactionsOnly, page, size);
     }
 }

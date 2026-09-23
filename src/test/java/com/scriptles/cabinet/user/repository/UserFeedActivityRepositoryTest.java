@@ -48,7 +48,7 @@ class UserFeedActivityRepositoryTest {
         persistAction(blockedFriend, media, FeedActionType.LIKED, Visibility.PUBLIC);
         entityManager.flush();
 
-        var result = repository.findFeed(viewer.getId(), true, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
+        var result = repository.findFeed(viewer.getId(), true, false, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
                 PageRequest.of(0, 10, Sort.unsorted()));
 
         assertThat(result.getContent()).extracting(UserFeedActivity::getId)
@@ -67,11 +67,30 @@ class UserFeedActivityRepositoryTest {
         persistAction(other, media, FeedActionType.LIKED, Visibility.PUBLIC);
         entityManager.flush();
 
-        var result = repository.findFeed(viewer.getId(), false, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
+        var result = repository.findFeed(viewer.getId(), false, false, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
                 PageRequest.of(0, 1, Sort.unsorted()));
 
         assertThat(result.getContent()).extracting(UserFeedActivity::getId).containsExactly(newer.getId());
         assertThat(result.getTotalElements()).isEqualTo(2);
+    }
+
+    @Test
+    void interactionsOnlyExcludesWatchlistBeforePagination() {
+        User viewer = persistUser("filterViewer");
+        User friend = persistUser("filterFriend");
+        Media media = persistMedia();
+        follow(viewer, friend, FollowStatus.ACCEPTED);
+        UserFeedActivity rating = persistAction(friend, media, FeedActionType.RATED, Visibility.PUBLIC);
+        rating.setOccurredAt(Instant.parse("2026-01-01T00:00:00Z"));
+        UserFeedActivity watchlist = persistAction(friend, media, FeedActionType.ADDED_TO_WATCHLIST, Visibility.PUBLIC);
+        watchlist.setOccurredAt(Instant.parse("2026-02-01T00:00:00Z"));
+        entityManager.flush();
+
+        var result = repository.findFeed(viewer.getId(), true, true,
+                List.of(Visibility.PUBLIC, Visibility.FOLLOWERS), PageRequest.of(0, 1));
+
+        assertThat(result.getContent()).extracting(UserFeedActivity::getId).containsExactly(rating.getId());
+        assertThat(result.getTotalElements()).isEqualTo(1);
     }
 
     private User persistUser(String suffix) {

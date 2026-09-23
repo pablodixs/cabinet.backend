@@ -17,11 +17,26 @@ public interface UserFeedActivityRepository extends JpaRepository<UserFeedActivi
     Optional<UserFeedActivity> findByUserIdAndMediaIdAndActionType(UUID userId, UUID mediaId, FeedActionType actionType);
     void deleteByUserIdAndMediaIdAndActionType(UUID userId, UUID mediaId, FeedActionType actionType);
 
+    @Query("""
+            select activity from UserFeedActivity activity
+            where activity.user.id in :userIds and activity.media.id in :mediaIds
+              and activity.actionType in :actions
+              and activity.visibility in :visibilities
+            """)
+    java.util.List<UserFeedActivity> findCardDetails(
+            @Param("userIds") Collection<UUID> userIds,
+            @Param("mediaIds") Collection<UUID> mediaIds,
+            @Param("actions") Collection<FeedActionType> actions,
+            @Param("visibilities") Collection<Visibility> visibilities);
+
     @Query(value = """
             select activity from UserFeedActivity activity
             join fetch activity.user actor
             join fetch activity.media media
             where actor.active = true
+              and (:interactionsOnly = false or activity.actionType in (com.scriptles.cabinet.user.enums.FeedActionType.LIKED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.RATED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.REVIEWED))
               and ((:friendsOnly = false and actor.id = :viewerId)
                 or (:friendsOnly = true and activity.visibility in :friendVisibilities
                     and exists (select follow.id from UserFollow follow
@@ -34,6 +49,9 @@ public interface UserFeedActivityRepository extends JpaRepository<UserFeedActivi
             """, countQuery = """
             select count(activity) from UserFeedActivity activity
             where activity.user.active = true
+              and (:interactionsOnly = false or activity.actionType in (com.scriptles.cabinet.user.enums.FeedActionType.LIKED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.RATED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.REVIEWED))
               and ((:friendsOnly = false and activity.user.id = :viewerId)
                 or (:friendsOnly = true and activity.visibility in :friendVisibilities
                     and exists (select follow.id from UserFollow follow
@@ -46,6 +64,7 @@ public interface UserFeedActivityRepository extends JpaRepository<UserFeedActivi
     Page<UserFeedActivity> findFeed(
             @Param("viewerId") UUID viewerId,
             @Param("friendsOnly") boolean friendsOnly,
+            @Param("interactionsOnly") boolean interactionsOnly,
             @Param("friendVisibilities") Collection<Visibility> friendVisibilities,
             Pageable pageable);
 
@@ -54,6 +73,9 @@ public interface UserFeedActivityRepository extends JpaRepository<UserFeedActivi
             join fetch activity.user actor
             join fetch activity.media media
             where media.id = :mediaId and actor.active = true
+              and activity.actionType in (com.scriptles.cabinet.user.enums.FeedActionType.LIKED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.RATED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.REVIEWED)
               and activity.visibility in :friendVisibilities
               and exists (select follow.id from UserFollow follow
                     where follow.follower.id = :viewerId and follow.followed.id = actor.id
@@ -65,6 +87,9 @@ public interface UserFeedActivityRepository extends JpaRepository<UserFeedActivi
             """, countQuery = """
             select count(activity) from UserFeedActivity activity
             where activity.media.id = :mediaId and activity.user.active = true
+              and activity.actionType in (com.scriptles.cabinet.user.enums.FeedActionType.LIKED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.RATED,
+                  com.scriptles.cabinet.user.enums.FeedActionType.REVIEWED)
               and activity.visibility in :friendVisibilities
               and exists (select follow.id from UserFollow follow
                     where follow.follower.id = :viewerId and follow.followed.id = activity.user.id

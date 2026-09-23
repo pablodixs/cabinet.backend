@@ -21,14 +21,17 @@ public record FeedActivityResponse(
         String coverUrl,
         BigDecimal rating,
         String review,
-        boolean containsSpoilers
+        boolean containsSpoilers,
+        boolean liked,
+        boolean reviewed
 ) {
-    public static FeedActivityResponse from(UserFeedActivity activity) {
+    public static FeedActivityResponse from(UserFeedActivity activity, BigDecimal rating, String review,
+                                            boolean containsSpoilers, boolean liked, boolean reviewed) {
         var actor = activity.getUser();
         var media = activity.getMedia();
         return new FeedActivityResponse(activity.getId(), activity.getActionType(), activity.getOccurredAt(),
                 actor.getId(), actor.getUsername(), actor.getDisplayName(), actor.getAvatarUlr(),
                 media.getId(), media.getType(), media.getTitle(), media.getCoverUrl(),
-                activity.getRating(), activity.getReview(), activity.isContainsSpoilers());
+                rating, review, containsSpoilers, liked, reviewed);
     }
 }

@@ -17,6 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 @Service
@@ -46,11 +50,12 @@ public class UserFeedService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<FeedActivityResponse> find(UUID viewerId, boolean friendsOnly, int page, int size) {
-        var result = repository.findFeed(viewerId, friendsOnly,
+    public PageResponse<FeedActivityResponse> find(UUID viewerId, boolean friendsOnly, boolean interactionsOnly, int page, int size) {
+        var result = repository.findFeed(viewerId, friendsOnly, interactionsOnly,
                 List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
                 PageRequest.of(page, size, Sort.unsorted()));
-        return PageResponse.from(result.map(FeedActivityResponse::from));
+        return enrich(result, friendsOnly ? List.of(Visibility.PUBLIC, Visibility.FOLLOWERS)
+                : List.of(Visibility.PUBLIC, Visibility.FOLLOWERS, Visibility.PRIVATE));
     }
 
     @Transactional(readOnly = true)
@@ -58,6 +63,46 @@ public class UserFeedService {
         var result = repository.findFriendsActivityForMedia(viewerId, mediaId,
                 List.of(Visibility.PUBLIC, Visibility.FOLLOWERS),
                 PageRequest.of(page, size, Sort.unsorted()));
-        return PageResponse.from(result.map(FeedActivityResponse::from));
+        return enrich(result, List.of(Visibility.PUBLIC, Visibility.FOLLOWERS));
+    }
+    private PageResponse<FeedActivityResponse> enrich(org.springframework.data.domain.Page<UserFeedActivity> page,
+                                                       List<Visibility> visibilities) {
+        if (page.isEmpty()) return PageResponse.from(page.map(activity ->
+                FeedActivityResponse.from(activity, null, null, false, false, false)));
+        Set<UUID> userIds = page.getContent().stream().map(a -> a.getUser().getId()).collect(Collectors.toSet());
+        Set<UUID> mediaIds = page.getContent().stream().map(a -> a.getMedia().getId()).collect(Collectors.toSet());
+        Map<String, CardDetails> details = new HashMap<>();
+        for (UserFeedActivity activity : repository.findCardDetails(userIds, mediaIds,
+                List.of(FeedActionType.LIKED, FeedActionType.RATED, FeedActionType.REVIEWED), visibilities)) {
+            CardDetails card = details.computeIfAbsent(key(activity), ignored -> new CardDetails());
+            switch (activity.getActionType()) {
+                case LIKED -> card.liked = true;
+                case RATED -> card.rating = activity.getRating();
+                case REVIEWED -> {
+                    card.reviewed = true;
+                    card.review = activity.getReview();
+                    card.containsSpoilers = activity.isContainsSpoilers();
+                    if (card.rating == null) card.rating = activity.getRating();
+                }
+                default -> { }
+            }
+        }
+        return PageResponse.from(page.map(activity -> {
+            CardDetails card = details.getOrDefault(key(activity), new CardDetails());
+            return FeedActivityResponse.from(activity, card.rating, card.review,
+                    card.containsSpoilers, card.liked, card.reviewed);
+        }));
+    }
+
+    private static String key(UserFeedActivity activity) {
+        return activity.getUser().getId() + ":" + activity.getMedia().getId();
+    }
+
+    private static class CardDetails {
+        BigDecimal rating;
+        String review;
+        boolean containsSpoilers;
+        boolean liked;
+        boolean reviewed;
     }
 }
