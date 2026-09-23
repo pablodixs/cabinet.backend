@@ -39,9 +39,12 @@ public class CatalogQueryService {
     private final CollectionTranslationResolver collectionTranslations;
     private final MediaTranslationResolver mediaTranslations;
 
-    public PageResponse<CollectionSummaryResponse> collections(CollectionType type, int page, int size, String locale) {
-        Page<Collection> result = collections.findByStatusAndTypeOrderByTitleAscIdAsc(
-                CatalogEntityStatus.ACTIVE, type, PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))));
+    public PageResponse<CollectionSummaryResponse> collections(CollectionType type, int page, int size, String sort, String locale) {
+        PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+        Page<Collection> result = "TITLE".equalsIgnoreCase(sort)
+                ? collections.findByStatusAndTypeOrderByTitleAscIdAsc(CatalogEntityStatus.ACTIVE, type, pageable)
+                : collections.findByStatusAndTypeOrderByPopularityDesc(
+                        CatalogEntityStatus.ACTIVE.name(), type.name(), pageable);
         Map<UUID, CollectionTranslationResolver.ResolvedCollection> localized =
                 collectionTranslations.resolveAll(result.getContent(), locale);
         return PageResponse.from(result.map(collection -> new CollectionSummaryResponse(
