@@ -26,12 +26,12 @@ where activity.type = 'ADDED_TO_LIBRARY'
 order by activity.user_id, activity.media_id, activity.occurred_on asc, activity.created_at asc;
 
 insert into user_feed_activities (user_id, media_id, action_type, occurred_at, visibility)
-select user_id, media_id, 'LIKED', coalesce(liked_at, created_at), 'PUBLIC'
+select likes.user_id, likes.media_id, 'LIKED', coalesce(likes.liked_at, likes.created_at), 'PUBLIC'
 from media_likes likes
 join media m on m.id = likes.media_id;
 
 insert into user_feed_activities (user_id, media_id, action_type, occurred_at, visibility, rating)
-select user_id, media_id, 'RATED', coalesce(rated_at, updated_at, created_at), visibility, rating
+select ratings.user_id, ratings.media_id, 'RATED', coalesce(ratings.rated_at, ratings.updated_at, ratings.created_at), ratings.visibility, ratings.rating
 from ratings
 join media m on m.id = ratings.media_id;
 
