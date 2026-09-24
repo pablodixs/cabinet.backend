@@ -266,7 +266,8 @@ class MediaListServiceTest {
     void deletesOwnedListAndItsItemsAndLikes() {
         UUID userId = UUID.randomUUID();
         MediaList list = mediaList("Descartáveis");
-        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+        list.getOwner().setId(userId);
+        when(mediaListRepository.findWithOwnerById(list.getId()))
                 .thenReturn(Optional.of(list));
 
         mediaListService.delete(userId, list.getId());
@@ -291,7 +292,7 @@ class MediaListServiceTest {
         media.setType(MediaType.MOVIE);
         media.setTitle("Paris, Texas");
 
-        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+        when(mediaListRepository.findWithOwnerById(list.getId()))
                 .thenReturn(Optional.of(list));
         when(mediaListItemRepository.existsByListIdAndMediaId(list.getId(), mediaId))
                 .thenReturn(true);
@@ -352,7 +353,7 @@ class MediaListServiceTest {
         owner.setAccountTier(AccountTier.FREE);
         MediaList list = mediaList("Cinema");
         list.setOwner(owner);
-        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+        when(mediaListRepository.findWithOwnerById(list.getId()))
                 .thenReturn(Optional.of(list));
 
         assertThatThrownBy(() -> mediaListService.update(
@@ -390,7 +391,7 @@ class MediaListServiceTest {
         media.setId(mediaId);
         media.setType(MediaType.MOVIE);
 
-        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+        when(mediaListRepository.findWithOwnerById(list.getId()))
                 .thenReturn(Optional.of(list));
         when(mediaListItemRepository.existsByListIdAndMediaId(list.getId(), mediaId))
                 .thenReturn(true);
@@ -766,12 +767,13 @@ class MediaListServiceTest {
         UUID userId = UUID.randomUUID();
         UUID mediaId = UUID.randomUUID();
         MediaList list = mediaList("Favoritos");
+        list.getOwner().setId(userId);
         Media media = new Media();
         media.setId(mediaId);
         media.setType(MediaType.MOVIE);
         media.setTitle("Paris, Texas");
 
-        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+        when(mediaListRepository.findWithOwnerById(list.getId()))
                 .thenReturn(Optional.of(list));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(mediaListItemRepository.existsByListIdAndMediaId(list.getId(), mediaId))
@@ -808,10 +810,11 @@ class MediaListServiceTest {
         UUID userId = UUID.randomUUID();
         UUID mediaId = UUID.randomUUID();
         MediaList list = mediaList("Favoritos");
+        list.getOwner().setId(userId);
         Media media = new Media();
         media.setId(mediaId);
 
-        when(mediaListRepository.findByIdAndOwnerId(list.getId(), userId))
+        when(mediaListRepository.findWithOwnerById(list.getId()))
                 .thenReturn(Optional.of(list));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(mediaListItemRepository.existsByListIdAndMediaId(list.getId(), mediaId))

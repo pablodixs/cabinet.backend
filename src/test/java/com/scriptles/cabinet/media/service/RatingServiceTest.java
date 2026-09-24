@@ -9,8 +9,9 @@ import com.scriptles.cabinet.media.entity.SeriesEpisode;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.*;
 import com.scriptles.cabinet.user.entity.User;
-import com.scriptles.cabinet.user.service.UserMediaService;
+import com.scriptles.cabinet.user.service.InterestProfileCache;
 import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.user.service.UserMediaService;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,7 @@ class RatingServiceTest {
     @Mock MediaConsumptionPolicy mediaConsumptionPolicy;
     @Mock MediaCommunityCacheInvalidator communityCacheInvalidator;
     @Mock UserFeedService userFeedService;
+    @Mock InterestProfileCache interestProfileCache;
     @InjectMocks RatingService service;
 
     @Test

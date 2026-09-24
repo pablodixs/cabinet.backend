@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.repository.UserRepository;
+import com.scriptles.cabinet.user.service.InterestProfileCache;
 import com.scriptles.cabinet.user.service.UserFeedService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +33,8 @@ class MediaLikeServiceTest {
     private MediaRepository mediaRepository;
     @Mock
     private UserFeedService userFeedService;
+    @Mock
+    private InterestProfileCache interestProfileCache;
 
     @InjectMocks
     private MediaLikeService mediaLikeService;

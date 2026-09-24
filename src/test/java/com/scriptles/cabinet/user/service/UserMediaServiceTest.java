@@ -76,6 +76,8 @@ class UserMediaServiceTest {
     private ApplicationEventPublisher eventPublisher;
     @Mock
     private UserFeedService userFeedService;
+    @Mock
+    private InterestProfileCache interestProfileCache;
 
     @InjectMocks
     private UserMediaService userMediaService;
