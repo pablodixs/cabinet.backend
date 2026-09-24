@@ -179,7 +179,8 @@ The same three routes exist under `/v1/artists/{artistId}`. They return `Depreca
 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
-| `GET /v1/me/library` | User | Optional `status`, optional `type`, `page=0`, `size=20` (max 50). Each item includes the current user's `liked`, `rating`, `hasReview`, and the media's primary `creator`. |
+| `GET /v1/users/{username}/library` | Public | Optional `status`, `type`, `query`, `genre` (canonical genre UUID), `rating`, `sort`; `page=0`, `size=20` (max 50). Private entries are visible only to the owner. |
+| `GET /v1/users/{username}/library/filters` | Public | Returns `{ genres: [{ id, name }] }`; optional `locale` or `Accept-Language` selects translated genre labels. |
 | `GET /v1/me/library/{mediaId}` | User | One entry or `204`. |
 | `PUT /v1/me/library/{mediaId}` | User | Upsert `{ status }`. |
 | `GET /v1/me/consumption-report` | Pro | Monthly or yearly private consumption report. Requires `period`, `year`, and `month` for `MONTH`; optional `mediaType` is `MOVIE`, `SERIES`, `ALBUM`, or `BOOK`. Returns Top 5 rankings, metadata coverage, and available periods. |
@@ -218,12 +219,12 @@ The same three routes exist under `/v1/artists/{artistId}`. They return `Depreca
 | Method and path | Access | Purpose |
 | --- | --- | --- |
 | `GET /v1/me/recommendations` | User | Optional `type`, `locale`; `limit=20` (max 40). `locale` overrides `Accept-Language`. |
-| `GET /v1/me/interests` | User | Required `targetType`; `page=0`, `size=20` (max 50). |
+| `GET /v1/me/interests` | User | Required `targetType`; optional `locale` or `Accept-Language`; `page=0`, `size=20` (max 50). |
 | `PUT /v1/me/interests` | User | Upsert `{ targetType, targetId, preference }`. |
 | `DELETE /v1/me/interests` | User | Required `targetType` and `targetId`; returns `204`. |
-| `GET /v1/me/interests/options` | User | Required `targetType`; optional `query`, `mediaType`; `limit=20` (max 40). |
+| `GET /v1/me/interests/options` | User | Required `targetType`; optional `query`, `mediaType`, `locale`; `limit=20` (max 40). Genre options return canonical UUIDs and translated labels. |
 
-Targets are `GENRE`, `PERSON`, or `MEDIA`; explicit preferences are `POSITIVE` or `NEGATIVE`.
+Targets are `GENRE`, `PERSON`, or `MEDIA`; explicit preferences are `POSITIVE` or `NEGATIVE`. Genre preference `targetId` is the canonical genre UUID. Old genre names remain accepted only when they resolve unambiguously. Imported media details expose the Cabinet genre UUID in `genres[].id`; provider previews retain provider IDs and source.
 
 ## Letterboxd imports
 

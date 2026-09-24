@@ -59,7 +59,7 @@ Public API follow state uses `NONE`, `PENDING`, or `FOLLOWING`.
 
 ### `Media`
 
-Common fields are type, title, original title, description, tagline, cover/backdrop/logo URLs, Wikidata QID, genres, release date, original language, country code, timestamps, and optimistic `version`.
+Common fields are type, title, original title, description, tagline, cover/backdrop/logo URLs, Wikidata QID, genre associations, release date, original language, country code, timestamps, and optimistic `version`. Genre identity uses a shared UUID; localized names and provider IDs are stored separately.
 
 `MediaType` values:
 
@@ -180,7 +180,7 @@ Results are `WIN` and `NOMINATION`; origins are `WIKIDATA` and `MANUAL`; date pr
 
 `UserInterestPreference` is unique for one user and one logical target. A target is exactly one of:
 
-- normalized `genreKey` plus label,
+- canonical `genreId` plus a localized display label,
 - `Person`, or
 - `Media`.
 
