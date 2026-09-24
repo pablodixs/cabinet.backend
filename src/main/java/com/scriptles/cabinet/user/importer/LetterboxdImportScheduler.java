@@ -93,17 +93,19 @@ public class LetterboxdImportScheduler {
             }
             job = jobRepository.findById(jobId).orElseThrow();
             if (job.getState() == LetterboxdImportJobState.CANCELLED) return;
-            job.setState(LetterboxdImportJobState.READY);
-            service.refreshCounts(job);
-            jobRepository.save(job);
-            notifyReady(job);
+            if (jobRepository.transitionState(jobId, LetterboxdImportJobState.MATCHING,
+                    LetterboxdImportJobState.READY, null, null, null) > 0) {
+                job = jobRepository.findById(jobId).orElseThrow();
+                service.refreshCounts(job);
+                notifyReady(job);
+            }
             double automaticRate = job.getTotalItems() == 0
                     ? 0
                     : (double) job.getMatchedItems() / job.getTotalItems();
             log.info("Letterboxd import matching metrics: job={}, durationMs={}, automaticMatchRate={}, unresolvedItems={}, externalFailures={}",
                     jobId, elapsedMillis(startedAt), automaticRate, job.getReviewItems(), externalFailures);
         } catch (RuntimeException exception) {
-            failJob(jobId, exception);
+            failJob(jobId, LetterboxdImportJobState.MATCHING, exception);
         }
     }
 
@@ -148,37 +150,36 @@ public class LetterboxdImportScheduler {
                 try {
                     applier.apply(item.getId());
                 } catch (RuntimeException exception) {
-                    LetterboxdImportItem failed = itemRepository.findById(item.getId()).orElse(item);
-                    failed.setState(LetterboxdImportItemState.FAILED);
-                    failed.setErrorMessage(safeMessage(exception));
-                    itemRepository.save(failed);
+                    itemRepository.markApplyFailedIfRetryable(item.getId(), safeMessage(exception));
                     log.warn("Letterboxd apply failed for job {} item {}", jobId, item.getId(), exception);
                 }
             }
             job = jobRepository.findById(jobId).orElseThrow();
-            service.refreshCounts(job);
-            job.setState(job.getFailedItems() == 0
+            LetterboxdImportJobState targetState = itemRepository.countByJobIdAndState(
+                    jobId, LetterboxdImportItemState.FAILED) == 0
                     ? LetterboxdImportJobState.COMPLETED
-                    : LetterboxdImportJobState.COMPLETED_WITH_ERRORS);
-            job.setCompletedAt(Instant.now());
-            job.setExpiresAt(Instant.now().plus(java.time.Duration.ofDays(7)));
-            jobRepository.save(job);
-            notifyCompleted(job);
+                    : LetterboxdImportJobState.COMPLETED_WITH_ERRORS;
+            Instant completedAt = Instant.now();
+            if (jobRepository.transitionState(jobId, LetterboxdImportJobState.IMPORTING, targetState,
+                    completedAt, completedAt.plus(java.time.Duration.ofDays(7)), null) > 0) {
+                job = jobRepository.findById(jobId).orElseThrow();
+                service.refreshCounts(job);
+                job.setState(targetState);
+                job.setCompletedAt(completedAt);
+                job.setExpiresAt(completedAt.plus(java.time.Duration.ofDays(7)));
+                notifyCompleted(job);
+            }
             log.info("Letterboxd import application metrics: job={}, durationMs={}, importedItems={}, preservedItems={}, failedItems={}",
                     jobId, elapsedMillis(startedAt), job.getImportedItems(), job.getPreservedItems(), job.getFailedItems());
         } catch (RuntimeException exception) {
-            failJob(jobId, exception);
+            failJob(jobId, LetterboxdImportJobState.IMPORTING, exception);
         }
     }
 
-    private void failJob(UUID jobId, RuntimeException exception) {
-        jobRepository.findById(jobId).ifPresent(job -> {
-            job.setState(LetterboxdImportJobState.FAILED);
-            job.setErrorMessage(safeMessage(exception));
-            job.setCompletedAt(Instant.now());
-            job.setExpiresAt(Instant.now().plus(java.time.Duration.ofDays(7)));
-            jobRepository.save(job);
-        });
+    private void failJob(UUID jobId, LetterboxdImportJobState expectedState, RuntimeException exception) {
+        Instant now = Instant.now();
+        jobRepository.transitionState(jobId, expectedState, LetterboxdImportJobState.FAILED,
+                now, now.plus(java.time.Duration.ofDays(7)), safeMessage(exception));
         log.error("Letterboxd import job {} failed", jobId, exception);
     }
 

@@ -64,7 +64,9 @@ public class LetterboxdImportApplier {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LetterboxdImportItemState apply(UUID itemId) {
-        LetterboxdImportItem item = itemRepository.findById(itemId).orElseThrow();
+        // Serialize duplicate recovery attempts on the durable item row. After waiting,
+        // another replica observes the first attempt's committed terminal state.
+        LetterboxdImportItem item = itemRepository.findByIdForUpdate(itemId).orElseThrow();
         if (item.getState() == LetterboxdImportItemState.IMPORTED
                 || item.getState() == LetterboxdImportItemState.PRESERVED
                 || item.getState() == LetterboxdImportItemState.SKIPPED) {
