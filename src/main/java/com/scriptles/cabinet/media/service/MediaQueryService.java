@@ -27,9 +27,11 @@ import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
+import com.scriptles.cabinet.media.repository.AlbumReleaseVersionRepository;
 import com.scriptles.cabinet.media.repository.BookDetailsRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
+import com.scriptles.cabinet.media.repository.MediaCommunityStatsRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
@@ -44,7 +46,6 @@ import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.entity.User;
-import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserAlbumRotationRepository;
@@ -56,6 +57,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -76,10 +78,12 @@ public class MediaQueryService {
     private final MovieDetailsRepository movieDetailsRepository;
     private final SeriesDetailsRepository seriesDetailsRepository;
     private final AlbumTrackRepository albumTrackRepository;
+    private final AlbumReleaseVersionRepository albumReleaseVersionRepository;
     private final SeriesSeasonRepository seriesSeasonRepository;
     private final SeriesEpisodeRepository seriesEpisodeRepository;
     private final TrackDetailsRepository trackDetailsRepository;
     private final RatingRepository ratingRepository;
+    private final MediaCommunityStatsRepository mediaCommunityStatsRepository;
     private final ReviewRepository reviewRepository;
     private final MediaLikeRepository mediaLikeRepository;
     private final MediaListItemRepository mediaListItemRepository;
@@ -97,6 +101,7 @@ public class MediaQueryService {
     private final CatalogLocaleResolver catalogLocaleResolver;
     private final CatalogTranslationLoader catalogTranslationLoader;
     private final MediaTranslationResolver mediaTranslationResolver;
+    private final MediaPublicVersionService mediaPublicVersionService;
     private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -108,13 +113,18 @@ public class MediaQueryService {
         return findDetails(mediaId, "pt-BR");
     }
 
+    public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
+        String publicVersion = mediaPublicVersionService.currentVersion(mediaId, locale).orElse("missing");
+        return findDetails(mediaId, locale, publicVersion);
+    }
+
     @Cacheable(
             cacheNames = "mediaDetails",
-            key = "#mediaId + ':' + #locale",
+            key = "#mediaId + ':' + #locale + ':' + #publicVersion",
             unless = "#result.translationFallback() || "
                     + "#result.catalogStatus() != T(com.scriptles.cabinet.media.enums.CatalogStatus).READY"
     )
-    public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale) {
+    public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale, String publicVersion) {
         if (metadataRefreshScheduler != null) {
             metadataRefreshScheduler.scheduleIfStale(mediaId);
         }
@@ -188,6 +198,10 @@ public class MediaQueryService {
                         .map(link -> new FranchiseSummaryResponse(link.getFranchise().getId(), link.getFranchise().getSlug(), link.getFranchise().getName(), link.getFranchise().getType().name()))
                         .distinct().toList()
         );
+    }
+
+    public String currentPublicVersion(UUID mediaId, String locale) {
+        return mediaPublicVersionService.currentVersion(mediaId, locale).orElse(null);
     }
 
     public ExternalMediaDetailsResponse findLegacyDetails(UUID mediaId) {
@@ -298,9 +312,10 @@ public class MediaQueryService {
                                 details.getNumberOfTracks(), details.getAnimatedCoverUrl(), tracks.stream()
                                 .map(track -> toTrackResponse(
                                         track, RatingSummaryService.ItemStats.empty(), false))
-                                .toList());
+                                .toList(), releaseVersions(media.getId()));
                     })
-                    .orElseGet(() -> new ExternalMediaDetailsResponse.AlbumDetails(null, null, null, List.of()));
+                    .orElseGet(() -> new ExternalMediaDetailsResponse.AlbumDetails(
+                            null, null, null, List.of(), releaseVersions(media.getId())));
             case SERIES -> seriesDetailsRepository.findById(media.getId())
                     .map(details -> new ExternalMediaDetailsResponse.SeriesDetails(
                             details.getStatus() == null ? null : details.getStatus().name(),
@@ -323,6 +338,25 @@ public class MediaQueryService {
                             episode.getRuntimeMinutes() == null ? null : episode.getRuntimeMinutes() * 60, false))
                     .orElseGet(() -> new ExternalMediaDetailsResponse.TrackDetails(null, false));
         };
+    }
+
+    private List<ExternalMediaDetailsResponse.ReleaseVersionResponse> releaseVersions(UUID albumMediaId) {
+        return albumReleaseVersionRepository.findAllForAlbum(albumMediaId).stream()
+                .map(version -> new ExternalMediaDetailsResponse.ReleaseVersionResponse(
+                        version.getId(),
+                        version.getMusicBrainzReleaseId().toString(),
+                        version.getTitle(),
+                        version.getCountryCode(),
+                        version.getReleaseDate(),
+                        version.getFormat(),
+                        version.getStatus(),
+                        version.getBarcode(),
+                        version.getCatalogNumber(),
+                        version.getLabelName(),
+                        version.getCoverUrl(),
+                        version.getTrackCount(),
+                        version.isPrimary()))
+                .toList();
     }
 
     private ExternalMediaDetailsResponse.TrackResponse toTrackResponse(
@@ -388,26 +422,11 @@ public class MediaQueryService {
     public MediaCommunityResponse findCommunity(UUID mediaId) {
         Media media = mediaRepository.findById(mediaId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada"));
-        Double averageRating = ratingRepository.summarizeRatings(List.of(mediaId), Visibility.PUBLIC)
-                .stream()
-                .findFirst()
-                .map(RatingRepository.MediaRatingProjection::getAverageRating)
-                .orElse(null);
-        Map<BigDecimal, Long> ratingCounts = ratingRepository
-                .ratingDistribution(mediaId, Visibility.PUBLIC)
-                .stream()
-                .collect(Collectors.toMap(
-                        projection -> projection.getRating().stripTrailingZeros(),
-                        RatingRepository.RatingDistributionProjection::getRatingCount
-                ));
-        List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution = new ArrayList<>(10);
-        for (int step = 1; step <= 10; step++) {
-            BigDecimal rating = BigDecimal.valueOf(step).divide(BigDecimal.valueOf(2));
-            ratingDistribution.add(new ExternalMediaDetailsResponse.RatingDistributionBucket(
-                    rating.doubleValue(),
-                    ratingCounts.getOrDefault(rating.stripTrailingZeros(), 0L)
-            ));
-        }
+        var communityStats = mediaCommunityStatsRepository.findByMediaId(mediaId)
+                .orElseGet(() -> new MediaCommunityStatsRepository.CommunityStats(
+                        0, BigDecimal.ZERO, null, 0, 0, 0));
+        List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingDistribution = ratingBuckets(
+                mediaCommunityStatsRepository.findDistribution(mediaId));
 
         var recentLikes = mediaLikeRepository.findTop3ByMediaIdOrderByLikedAtDescIdDesc(mediaId);
         var recentCompletions = userMediaRepository
@@ -415,22 +434,35 @@ public class MediaQueryService {
                         mediaId, UserMediaStatus.COMPLETED);
 
         return new MediaCommunityResponse(
-                mediaLikeRepository.countByMediaId(mediaId),
+                communityStats.likeCount(),
                 recentLikes.stream()
                         .map(like -> toCommunityUser(like.getUser()))
                         .toList(),
-                averageRating,
+                communityStats.averageRating() == null ? null : communityStats.averageRating().doubleValue(),
                 List.copyOf(ratingDistribution),
                 childRatings(media),
-                mediaListItemRepository.countByMediaIdAndListVisibility(mediaId, Visibility.PUBLIC),
-                userMediaRepository.countByMediaIdAndStatusAndPrivateEntryFalse(
-                        mediaId,
-                        UserMediaStatus.COMPLETED
-                ),
+                communityStats.listCount(),
+                communityStats.completedCount(),
                 recentCompletions.stream()
                         .map(entry -> toCommunityUser(entry.getUser()))
                         .toList()
         );
+    }
+
+    private List<ExternalMediaDetailsResponse.RatingDistributionBucket> ratingBuckets(
+            List<MediaCommunityStatsRepository.RatingBucket> counts
+    ) {
+        Map<BigDecimal, Long> byRating = counts.stream().collect(Collectors.toMap(
+                bucket -> bucket.rating().stripTrailingZeros(),
+                MediaCommunityStatsRepository.RatingBucket::ratingCount
+        ));
+        List<ExternalMediaDetailsResponse.RatingDistributionBucket> buckets = new ArrayList<>(10);
+        for (int step = 1; step <= 10; step++) {
+            BigDecimal rating = BigDecimal.valueOf(step).divide(BigDecimal.valueOf(2));
+            buckets.add(new ExternalMediaDetailsResponse.RatingDistributionBucket(
+                    rating.doubleValue(), byRating.getOrDefault(rating.stripTrailingZeros(), 0L)));
+        }
+        return List.copyOf(buckets);
     }
 
     private MediaCommunityResponse.ChildRatingsResponse childRatings(Media media) {
@@ -447,12 +479,18 @@ public class MediaQueryService {
             return null;
         }
 
-        RatingSummaryService.AggregateStats stats = ratingSummaryService.aggregate(childIds);
+        MediaCommunityStatsRepository.CommunityAggregate aggregate =
+                mediaCommunityStatsRepository.aggregateByMediaIds(childIds);
+        Double averageRating = aggregate.ratingCount() == 0 ? null : BigDecimal.ZERO
+                .add(aggregate.ratingSum())
+                .divide(BigDecimal.valueOf(aggregate.ratingCount()), 8, RoundingMode.HALF_UP)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue();
         return new MediaCommunityResponse.ChildRatingsResponse(
                 itemType,
-                stats.averageRating(),
-                stats.ratingCount(),
-                stats.ratingDistribution()
+                averageRating,
+                aggregate.ratingCount(),
+                ratingBuckets(mediaCommunityStatsRepository.aggregateDistributionByMediaIds(childIds))
         );
     }
 

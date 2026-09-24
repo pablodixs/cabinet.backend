@@ -46,6 +46,26 @@ public class CatalogOutboxPublisher {
         repository.save(event);
     }
 
+    public void publishAlbumReleaseVersionsSync(
+            UUID mediaId,
+            String releaseGroupId,
+            String locale
+    ) {
+        if (repository.existsByAggregateIdAndEventTypeAndStatusIn(
+                mediaId, CatalogEventType.ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED, ACTIVE)) {
+            return;
+        }
+        CatalogOutboxEvent event = new CatalogOutboxEvent();
+        event.setId(UUID.randomUUID());
+        event.setAggregateId(mediaId);
+        event.setEventType(CatalogEventType.ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED);
+        event.setPayload(new CatalogEventPayload(
+                ExternalSource.MUSICBRAINZ, releaseGroupId, MediaType.ALBUM, locale));
+        event.setStatus(CatalogOutboxStatus.PENDING);
+        event.setAvailableAt(Instant.now());
+        repository.save(event);
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void publishRefresh(
             UUID mediaId,

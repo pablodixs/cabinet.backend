@@ -90,6 +90,8 @@ The entity stores its type through a string-backed property and converts it to `
 
 `AlbumTrack` connects an album `Media` to a track `Media`, while retaining MusicBrainz external ID, display title, disc/track positions, duration, and explicit flag. Album ordering is indexed by album, disc, and track number.
 
+For MusicBrainz albums, the canonical `Media(ALBUM)` identity remains the Release Group (the musical work). `AlbumReleaseVersion` stores edition-level MusicBrainz Release metadata such as country, release date, format, barcode, catalog number, label, cover, and track count. Release IDs are unique and barcode lookup is indexed. A version points to its canonical album; editions do not create duplicate album or track media. The existing `AlbumTrack` list remains the canonical album tracklist and is not version-specific.
+
 ### External identity
 
 `ExternalReference` maps media to an `ExternalSource`, external ID/URL, primary flag, and last synchronization time. A unique constraint prevents the same `(source, externalId)` from pointing to multiple media rows, and a second constraint allows at most one reference per `(media, source)`.

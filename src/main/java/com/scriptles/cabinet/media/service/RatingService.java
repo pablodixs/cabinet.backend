@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.request.UpsertRatingRequest;
 import com.scriptles.cabinet.media.dto.response.RatingResponse;
@@ -43,6 +45,7 @@ public class RatingService {
     private final MediaCommunityCacheInvalidator communityCacheInvalidator;
     private final UserFeedService userFeedService;
     private final InterestProfileCache interestProfileCache;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional(readOnly = true)
     public Optional<RatingResponse> find(UUID userId, UUID mediaId) {
@@ -73,7 +76,8 @@ public class RatingService {
         if (media.getType() == MediaType.EPISODE) validateEpisodeDate(mediaId);
         mediaConsumptionPolicy.ensureReleased(media);
 
-        Rating rating = ratingRepository.findByUserIdAndMediaId(userId, mediaId).orElseGet(() -> {
+        Optional<Rating> existingRating = ratingRepository.findByUserIdAndMediaId(userId, mediaId);
+        Rating rating = existingRating.orElseGet(() -> {
             Rating created = new Rating();
             created.setUser(user);
             created.setMedia(media);
@@ -83,6 +87,10 @@ public class RatingService {
         rating.setValue(value);
         rating.setRatedAt(Instant.now());
         Rating saved = ratingRepository.saveAndFlush(rating);
+        domainOutboxPublisher.publishMediaEvent(
+                existingRating.isPresent() ? DomainEventType.RATING_UPDATED : DomainEventType.RATING_CREATED,
+                mediaId,
+                java.util.Map.of("userId", userId.toString(), "ratingId", saved.getId().toString()));
         userFeedService.record(user, media, FeedActionType.RATED, saved.getRatedAt(), saved.getVisibility(),
                 saved.getValue(), null, false);
         reviewRepository.findByUserIdAndMediaId(userId, mediaId).ifPresent(review -> {
@@ -113,6 +121,8 @@ public class RatingService {
                 reviewRepository.saveAndFlush(review);
             }
             ratingRepository.delete(rating);
+            domainOutboxPublisher.publishMediaEvent(DomainEventType.RATING_REMOVED, mediaId,
+                    java.util.Map.of("userId", userId.toString(), "ratingId", rating.getId().toString()));
             userFeedService.remove(userId, mediaId, FeedActionType.RATED);
             communityCacheInvalidator.evict(rating.getMedia());
         });

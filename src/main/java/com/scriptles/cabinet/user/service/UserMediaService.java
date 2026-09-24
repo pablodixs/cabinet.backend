@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.user.service;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.entity.ExternalReference;
@@ -63,6 +65,7 @@ public class UserMediaService {
     private final UserArtworkResolver userArtworkResolver;
     private final UserFeedService userFeedService;
     private final InterestProfileCache interestProfileCache;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<LibraryMediaResponse> findLibrary(
@@ -157,6 +160,7 @@ public class UserMediaService {
         Media media = findMedia(mediaId);
         UserMedia entry = userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
                 .orElseGet(() -> newEntry(user, media));
+        UserMediaStatus previousStatus = entry.getStatus();
         boolean recordActivity = entry.getId() == null || entry.getStatus() != status;
 
         if (status != UserMediaStatus.PLANNED) {
@@ -164,6 +168,7 @@ public class UserMediaService {
         }
         applyStatus(entry, status, Instant.now());
         UserMedia saved = userMediaRepository.saveAndFlush(entry);
+        publishCompletionTransition(userId, mediaId, previousStatus, status);
         if (recordActivity) recordActivity(saved, status);
         if (media.getType() == MediaType.SERIES && status == UserMediaStatus.IN_PROGRESS) {
             eventPublisher.publishEvent(new SeriesTrackingRequestedEvent(mediaId));
@@ -176,7 +181,13 @@ public class UserMediaService {
     public void delete(UUID userId, UUID mediaId) {
         interestProfileCache.invalidate(userId);
         userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
-                .ifPresent(userMediaRepository::delete);
+                .ifPresent(entry -> {
+                    if (entry.getStatus() == UserMediaStatus.COMPLETED) {
+                        publishCompletionTransition(userId, mediaId,
+                                UserMediaStatus.COMPLETED, UserMediaStatus.PLANNED);
+                    }
+                    userMediaRepository.delete(entry);
+                });
         userFeedService.remove(userId, mediaId, FeedActionType.ADDED_TO_WATCHLIST);
     }
 
@@ -191,11 +202,28 @@ public class UserMediaService {
         mediaConsumptionPolicy.ensureReleased(media);
         UserMedia entry = userMediaRepository.findByUserIdAndMediaId(user.getId(), media.getId())
                 .orElseGet(() -> newEntry(user, media));
+        UserMediaStatus previousStatus = entry.getStatus();
         boolean recordActivity = entry.getId() == null || entry.getStatus() != UserMediaStatus.COMPLETED;
         applyStatus(entry, UserMediaStatus.COMPLETED, Instant.now());
         UserMedia saved = userMediaRepository.save(entry);
+        publishCompletionTransition(user.getId(), media.getId(), previousStatus, UserMediaStatus.COMPLETED);
         if (recordCompletionActivity && recordActivity) recordActivity(saved, UserMediaStatus.COMPLETED);
         return saved;
+    }
+
+    private void publishCompletionTransition(
+            UUID userId,
+            UUID mediaId,
+            UserMediaStatus previousStatus,
+            UserMediaStatus newStatus
+    ) {
+        if (previousStatus == UserMediaStatus.COMPLETED && newStatus != UserMediaStatus.COMPLETED) {
+            domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_UNCOMPLETED, mediaId,
+                    Map.of("userId", userId.toString()));
+        } else if (newStatus == UserMediaStatus.COMPLETED && previousStatus != UserMediaStatus.COMPLETED) {
+            domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_COMPLETED, mediaId,
+                    Map.of("userId", userId.toString()));
+        }
     }
 
     private UserMedia newEntry(User user, Media media) {

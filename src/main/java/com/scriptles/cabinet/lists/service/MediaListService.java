@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.lists.service;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.common.api.PageResponse;
@@ -69,6 +71,7 @@ public class MediaListService {
     private final UserMediaArtworkService userMediaArtworkService;
     private final SocialAccessPolicy socialAccessPolicy;
     private final UserTagService userTagService;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional(readOnly = true)
     public List<MediaListResponse> findMine(UUID userId) {
@@ -484,7 +487,6 @@ public class MediaListService {
                 })
                 .toList();
         mediaListItemRepository.saveAllAndFlush(copiedItems);
-
         return MediaListResponse.from(savedList, copiedItems.size());
     }
 
@@ -492,6 +494,11 @@ public class MediaListService {
     public void delete(UUID userId, UUID listId) {
         MediaList list = findOwnedList(userId, listId);
         mediaListLikeRepository.deleteByListId(listId);
+        List<MediaListItem> items = mediaListItemRepository.findAllWithMediaByListId(listId);
+        if (list.getVisibility() == Visibility.PUBLIC) {
+            items.forEach(item -> publishListItemEvent(
+                    DomainEventType.LIST_ITEM_REMOVED, item.getMedia().getId(), listId, item.getId()));
+        }
         mediaListItemRepository.deleteByListId(listId);
         mediaListRepository.delete(list);
     }
@@ -512,6 +519,8 @@ public class MediaListService {
             UpdateMediaListRequest request
     ) {
         MediaList list = findOwnedList(userId, listId);
+        boolean publicMembershipChanged = (list.getVisibility() == Visibility.PUBLIC)
+                != (request.visibility() == Visibility.PUBLIC);
         list.setName(request.name().trim());
         list.setDescription(normalizeOptional(request.description()));
         if (request.richDescription() != null) {
@@ -535,11 +544,19 @@ public class MediaListService {
                 normalizeOptional(request.backdropKey())
         );
 
-        return MediaListResponse.from(
+        MediaListResponse response = MediaListResponse.from(
                 mediaListRepository.saveAndFlush(list),
                 mediaListItemRepository.countByListId(listId),
                 previewItems(List.of(list)).getOrDefault(listId, List.of())
         );
+        if (publicMembershipChanged) {
+            DomainEventType type = list.getVisibility() == Visibility.PUBLIC
+                    ? DomainEventType.LIST_ITEM_ADDED
+                    : DomainEventType.LIST_ITEM_REMOVED;
+            mediaListItemRepository.findAllWithMediaByListId(listId).forEach(item ->
+                    publishListItemEvent(type, item.getMedia().getId(), listId, item.getId()));
+        }
+        return response;
     }
 
     @Transactional
@@ -565,6 +582,9 @@ public class MediaListService {
         item.setPosition(mediaListItemRepository.findMaxPositionByListId(listId) + 1);
         item.setNotes(normalizeOptional(request.notes()));
         MediaListItem saved = mediaListItemRepository.saveAndFlush(item);
+        if (list.getVisibility() == Visibility.PUBLIC) {
+            publishListItemEvent(DomainEventType.LIST_ITEM_ADDED, media.getId(), listId, saved.getId());
+        }
         touch(list);
 
         ExternalReference reference = externalReferenceRepository
@@ -593,6 +613,10 @@ public class MediaListService {
         if (list.getBackdropMedia() != null
                 && list.getBackdropMedia().getId().equals(item.getMedia().getId())) {
             clearBackdrop(list);
+        }
+        if (list.getVisibility() == Visibility.PUBLIC) {
+            publishListItemEvent(DomainEventType.LIST_ITEM_REMOVED,
+                    item.getMedia().getId(), listId, item.getId());
         }
         mediaListItemRepository.delete(item);
         mediaListItemRepository.decrementPositionsAfter(listId, removedPosition);
@@ -825,6 +849,11 @@ public class MediaListService {
     private void touch(MediaList list) {
         list.setUpdatedAt(java.time.Instant.now());
         mediaListRepository.save(list);
+    }
+
+    private void publishListItemEvent(DomainEventType eventType, UUID mediaId, UUID listId, UUID itemId) {
+        domainOutboxPublisher.publishMediaEvent(eventType, mediaId,
+                Map.of("listId", listId.toString(), "listItemId", itemId.toString()));
     }
 
     private void applyCover(User owner, MediaList list, String requestedCoverUrl) {

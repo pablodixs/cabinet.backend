@@ -6,6 +6,9 @@ import com.scriptles.cabinet.catalog.repository.CatalogJobRepository;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJob;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJobRepository;
 import com.scriptles.cabinet.user.importer.LetterboxdImportJobState;
+import com.scriptles.cabinet.media.service.SearchOperationalState;
+import com.scriptles.cabinet.common.outbox.DomainOutboxRepository;
+import com.scriptles.cabinet.common.outbox.DomainOutboxStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -37,6 +40,8 @@ public class StatusService {
     private final CatalogOutboxRepository outboxRepository;
     private final CatalogJobRepository catalogJobs;
     private final LetterboxdImportJobRepository importRepository;
+    private final SearchOperationalState searchOperationalState;
+    private final DomainOutboxRepository domainOutboxRepository;
 
     @Value("${catalog.tmdb-changes.cron}")
     private String tmdbCron;
@@ -56,6 +61,59 @@ public class StatusService {
     private String notificationRetentionCron;
     @Value("${app.letterboxd.cleanup-cron}")
     private String letterboxdCleanupCron;
+
+    public StatusService(BackgroundJobRunRepository runRepository, CatalogOutboxRepository outboxRepository,
+                         CatalogJobRepository catalogJobs, LetterboxdImportJobRepository importRepository) {
+        this(runRepository, outboxRepository, catalogJobs, importRepository,
+                new SearchOperationalState(), null);
+    }
+
+    @Transactional(readOnly = true)
+    public PublicStatusResponse getPublicStatus() {
+        StatusResponse operational = getStatus();
+        Map<String, HealthStatus> byKey = new java.util.HashMap<>();
+        operational.systems().forEach(system -> byKey.put(system.key(), system.status()));
+        List<PublicStatusResponse.ComponentStatus> components = List.of(
+                new PublicStatusResponse.ComponentStatus(PublicStatusResponse.ComponentKey.CATALOG,
+                        publicHealth(byKey.getOrDefault("CATALOG", HealthStatus.OPERATIONAL))),
+                new PublicStatusResponse.ComponentStatus(PublicStatusResponse.ComponentKey.SEARCH,
+                        searchOperationalState.degraded()
+                                ? PublicStatusResponse.ProductHealth.DEGRADED
+                                : PublicStatusResponse.ProductHealth.OPERATIONAL),
+                new PublicStatusResponse.ComponentStatus(PublicStatusResponse.ComponentKey.IMPORTS,
+                        publicHealth(byKey.getOrDefault("IMPORTS", HealthStatus.OPERATIONAL))),
+                new PublicStatusResponse.ComponentStatus(PublicStatusResponse.ComponentKey.METADATA_SYNC,
+                        publicHealth(byKey.getOrDefault("SYNCHRONIZATIONS", HealthStatus.OPERATIONAL))),
+                new PublicStatusResponse.ComponentStatus(PublicStatusResponse.ComponentKey.EXTERNAL_PROVIDERS,
+                        publicHealth(byKey.getOrDefault("EXTERNAL_SERVICES", HealthStatus.OPERATIONAL)))
+        );
+        PublicStatusResponse.ProductHealth overall = components.stream().map(PublicStatusResponse.ComponentStatus::status)
+                .reduce(PublicStatusResponse.ProductHealth.OPERATIONAL, StatusService::moreSeverePublic);
+        return new PublicStatusResponse(overall, Instant.now(), components);
+    }
+
+    private PublicStatusResponse.ProductHealth publicHealth(HealthStatus health) {
+        return switch (health) {
+            case OPERATIONAL, RUNNING -> PublicStatusResponse.ProductHealth.OPERATIONAL;
+            case DELAYED -> PublicStatusResponse.ProductHealth.DELAYED;
+            case DEGRADED -> PublicStatusResponse.ProductHealth.DEGRADED;
+            case ATTENTION_REQUIRED -> PublicStatusResponse.ProductHealth.OUTAGE;
+        };
+    }
+
+    private static PublicStatusResponse.ProductHealth moreSeverePublic(
+            PublicStatusResponse.ProductHealth left, PublicStatusResponse.ProductHealth right) {
+        return publicRank(left) >= publicRank(right) ? left : right;
+    }
+
+    private static int publicRank(PublicStatusResponse.ProductHealth status) {
+        return switch (status) {
+            case OPERATIONAL -> 0;
+            case DELAYED -> 1;
+            case DEGRADED -> 2;
+            case OUTAGE -> 3;
+        };
+    }
 
     @Transactional(readOnly = true)
     public StatusResponse getStatus() {
@@ -78,15 +136,24 @@ public class StatusService {
 
         Map<CatalogOutboxStatus, Integer> queue = new EnumMap<>(CatalogOutboxStatus.class);
         outboxRepository.countByStatus().forEach(count -> queue.put(count.getStatus(), safeInt(count.getCount())));
+        Map<DomainOutboxStatus, Integer> domainQueue = new EnumMap<>(DomainOutboxStatus.class);
+        if (domainOutboxRepository != null) {
+            domainOutboxRepository.countByStatus().forEach(count ->
+                    domainQueue.put(count.getStatus(), safeInt(count.getCount())));
+        }
         int catalogProcessing = safeInt(catalogJobs.countByStatus("PROCESSING"));
         int catalogWaiting = safeInt(catalogJobs.countByStatus("PENDING"));
         int catalogRetrying = safeInt(catalogJobs.countByStatus("RETRY"));
         int catalogDead = safeInt(catalogJobs.countByStatus("DEAD"));
         BackgroundProcessingStatus background = new BackgroundProcessingStatus(
-                value(queue, CatalogOutboxStatus.PROCESSING) + catalogProcessing,
-                value(queue, CatalogOutboxStatus.PENDING) + catalogWaiting,
-                value(queue, CatalogOutboxStatus.RETRY) + catalogRetrying,
-                value(queue, CatalogOutboxStatus.DEAD) + catalogDead);
+                value(queue, CatalogOutboxStatus.PROCESSING) + catalogProcessing
+                        + value(domainQueue, DomainOutboxStatus.PROCESSING),
+                value(queue, CatalogOutboxStatus.PENDING) + catalogWaiting
+                        + value(domainQueue, DomainOutboxStatus.PENDING),
+                value(queue, CatalogOutboxStatus.RETRY) + catalogRetrying
+                        + value(domainQueue, DomainOutboxStatus.RETRY),
+                value(queue, CatalogOutboxStatus.DEAD) + catalogDead
+                        + value(domainQueue, DomainOutboxStatus.DEAD));
 
         int importsProcessing = safeInt(importRepository.countByStateIn(List.of(
                 LetterboxdImportJobState.PARSING,
@@ -282,6 +349,10 @@ public class StatusService {
     }
 
     private int value(Map<CatalogOutboxStatus, Integer> counts, CatalogOutboxStatus key) {
+        return counts.getOrDefault(key, 0);
+    }
+
+    private int value(Map<DomainOutboxStatus, Integer> counts, DomainOutboxStatus key) {
         return counts.getOrDefault(key, 0);
     }
 

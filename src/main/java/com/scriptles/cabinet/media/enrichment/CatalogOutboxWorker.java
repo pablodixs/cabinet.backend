@@ -10,7 +10,10 @@ import com.scriptles.cabinet.media.external.ExternalMediaNotFoundException;
 import com.scriptles.cabinet.media.external.WikidataClient;
 import com.scriptles.cabinet.media.repository.CatalogOutboxRepository;
 import com.scriptles.cabinet.media.service.CatalogMetadataSyncService;
+import com.scriptles.cabinet.media.service.AlbumReleaseVersionSyncService;
 import com.scriptles.cabinet.media.enums.CatalogEventType;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,7 +36,9 @@ public class CatalogOutboxWorker {
     private final CatalogEnrichmentPersistenceService persistenceService;
     private final ThreadPoolTaskExecutor executor;
     private final Duration lockTimeout;
+    private final MeterRegistry meters;
     private CatalogMetadataSyncService metadataSyncService;
+    private AlbumReleaseVersionSyncService albumReleaseVersionSyncService;
 
     public CatalogOutboxWorker(
             CatalogOutboxRepository repository,
@@ -42,7 +47,8 @@ public class CatalogOutboxWorker {
             WikidataClient wikidataClient,
             CatalogEnrichmentPersistenceService persistenceService,
             @Qualifier("catalogOutboxTaskExecutor") ThreadPoolTaskExecutor executor,
-            @Value("${catalog.outbox.lock-timeout:15m}") Duration lockTimeout
+            @Value("${catalog.outbox.lock-timeout:15m}") Duration lockTimeout,
+            MeterRegistry meters
     ) {
         this.repository = repository;
         this.claimService = claimService;
@@ -51,11 +57,17 @@ public class CatalogOutboxWorker {
         this.persistenceService = persistenceService;
         this.executor = executor;
         this.lockTimeout = lockTimeout;
+        this.meters = meters;
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     void setMetadataSyncService(CatalogMetadataSyncService metadataSyncService) {
         this.metadataSyncService = metadataSyncService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAlbumReleaseVersionSyncService(AlbumReleaseVersionSyncService albumReleaseVersionSyncService) {
+        this.albumReleaseVersionSyncService = albumReleaseVersionSyncService;
     }
 
     @Scheduled(fixedDelayString = "${catalog.outbox.poll-delay:1000}")
@@ -81,6 +93,8 @@ public class CatalogOutboxWorker {
     void process(UUID eventId) {
         CatalogOutboxEvent event = repository.findById(eventId).orElse(null);
         if (event == null) return;
+        String eventType = event.getEventType().name();
+        Timer.Sample sample = Timer.start(meters);
         try {
             CatalogEventPayload payload = event.getPayload();
             if (event.getEventType() == CatalogEventType.MEDIA_REFRESH_REQUESTED) {
@@ -89,6 +103,13 @@ public class CatalogOutboxWorker {
                                 ? com.scriptles.cabinet.media.enums.CatalogSyncReason.IMPORT_ENRICHMENT
                                 : payload.reason());
                 claimService.complete(eventId);
+                recordCompleted(eventType);
+                return;
+            }
+            if (event.getEventType() == CatalogEventType.ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED) {
+                albumReleaseVersionSyncService.synchronize(event.getAggregateId(), payload.externalId());
+                claimService.complete(eventId);
+                recordCompleted(eventType);
                 return;
             }
             persistenceService.markEnriching(event.getAggregateId());
@@ -109,13 +130,27 @@ public class CatalogOutboxWorker {
                     : wikidata.map(WikidataClient.WikidataEnrichment::wikidataId).orElse(null);
             persistenceService.complete(event.getAggregateId(), external, payload.locale(), wikidataId);
             claimService.complete(eventId);
+            recordCompleted(eventType);
         } catch (RuntimeException failure) {
             boolean retrying = claimService.retry(eventId, failure);
-            if (!retrying && event.getEventType() != CatalogEventType.MEDIA_REFRESH_REQUESTED) {
+            meters.counter("cabinet.outbox.event.failure", "queue", "catalog", "event_type", eventType)
+                    .increment();
+            meters.counter("cabinet.outbox.event.total", "queue", "catalog", "event_type", eventType,
+                    "outcome", retrying ? "retry" : "dead").increment();
+            if (!retrying && event.getEventType() != CatalogEventType.MEDIA_REFRESH_REQUESTED
+                    && event.getEventType() != CatalogEventType.ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED) {
                 persistenceService.markFailed(event.getAggregateId(), failure.getMessage());
             }
             log.warn("Catalog enrichment event {} failed: {}", eventId, failure.getMessage());
+        } finally {
+            sample.stop(meters.timer("cabinet.outbox.processing.duration", "queue", "catalog",
+                    "event_type", eventType));
         }
+    }
+
+    private void recordCompleted(String eventType) {
+        meters.counter("cabinet.outbox.event.total", "queue", "catalog", "event_type", eventType,
+                "outcome", "completed").increment();
     }
 
     private void fetchSecondaryTranslation(

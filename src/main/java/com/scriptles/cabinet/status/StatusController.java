@@ -12,7 +12,7 @@ public class StatusController {
     private final StatusService statusService;
 
     @GetMapping
-    public StatusResponse getStatus() {
-        return statusService.getStatus();
+    public PublicStatusResponse getStatus() {
+        return statusService.getPublicStatus();
     }
 }

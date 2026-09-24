@@ -19,6 +19,7 @@ public class CatalogImportWriter {
     @Transactional
     public Media materialize(MediaTarget target, CatalogResolver.Resolution resolution) {
         Media media = materializationService.findOrCreateCore(target, resolution);
+        publishAlbumReleaseVersionsSyncIfRequired(media, target, resolution);
         if (target.source() != null && !organizationDiscovery.hasLinks(media)) {
             organizationDiscovery.discover(media, target.source(), target.externalId());
         }
@@ -29,6 +30,7 @@ public class CatalogImportWriter {
     @Transactional
     public Media materializeSeed(MediaTarget target, CatalogResolver.Resolution resolution) {
         Media media = materializationService.findOrCreateCore(target, resolution);
+        publishAlbumReleaseVersionsSyncIfRequired(media, target, resolution);
         // Collection seeds already contain enough data for CORE_READY. Provider-specific secondary
         // lookups belong to the committed CatalogOutbox pipeline, not this materialization step.
         publishEnrichmentIfRequired(media, target, resolution);
@@ -45,6 +47,18 @@ public class CatalogImportWriter {
                     target.mediaType(),
                     resolution.locale()
             );
+        }
+    }
+
+    private void publishAlbumReleaseVersionsSyncIfRequired(
+            Media media,
+            MediaTarget target,
+            CatalogResolver.Resolution resolution
+    ) {
+        if (target.source() == com.scriptles.cabinet.media.enums.ExternalSource.MUSICBRAINZ
+                && target.mediaType() == com.scriptles.cabinet.media.enums.MediaType.ALBUM) {
+            outboxPublisher.publishAlbumReleaseVersionsSync(
+                    media.getId(), target.externalId(), resolution.locale());
         }
     }
 }

@@ -57,6 +57,14 @@ public class CatalogQueryService {
         return collectionResponse(collection, viewerId, locale);
     }
 
+    @Cacheable(cacheNames = "collectionDetails",
+            key = "#id + ':' + #locale + ':' + #publicVersion",
+            unless = "#viewerId != null")
+    public CollectionResponse collection(UUID id, UUID viewerId, String locale, String publicVersion) {
+        Collection collection = collections.findById(id).orElseThrow(() -> notFound("COLLECTION_NOT_FOUND"));
+        return collectionResponse(collection, viewerId, locale);
+    }
+
     public CollectionResponse collectionBySlug(String slug, UUID viewerId, String locale) {
         Collection collection = collections.findBySlug(slug).orElseThrow(() -> notFound("COLLECTION_NOT_FOUND"));
         return collectionResponse(collection, viewerId, locale);
@@ -115,8 +123,15 @@ public class CatalogQueryService {
                 null);
     }
 
-    @Cacheable(cacheNames = "franchiseDetails", key = "#id")
     public FranchiseResponse franchise(UUID id, UUID viewerId) {
+        Franchise franchise = franchises.findById(id).orElseThrow(() -> notFound("FRANCHISE_NOT_FOUND"));
+        return franchiseResponse(franchise);
+    }
+
+    @Cacheable(cacheNames = "franchiseDetails",
+            key = "#id + ':' + #publicVersion",
+            unless = "#viewerId != null")
+    public FranchiseResponse franchise(UUID id, UUID viewerId, String publicVersion) {
         Franchise franchise = franchises.findById(id).orElseThrow(() -> notFound("FRANCHISE_NOT_FOUND"));
         return franchiseResponse(franchise);
     }

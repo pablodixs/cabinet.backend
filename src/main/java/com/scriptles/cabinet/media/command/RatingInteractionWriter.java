@@ -8,6 +8,8 @@ import com.scriptles.cabinet.media.dto.response.RatingResponse;
 import com.scriptles.cabinet.media.enrichment.CatalogOutboxPublisher;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.CatalogStatus;
+import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.RatingService;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.repository.UserRepository;
@@ -39,6 +41,10 @@ public class RatingInteractionWriter {
                         HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Usuário não encontrado"));
         Media media = materializationService.findOrCreateCore(target, resolution);
         RatingResponse saved = ratingService.upsertResolved(user, media, rating);
+        if (target.source() == ExternalSource.MUSICBRAINZ && target.mediaType() == MediaType.ALBUM) {
+            outboxPublisher.publishAlbumReleaseVersionsSync(
+                    media.getId(), target.externalId(), resolution.locale());
+        }
         if (target.source() != null && media.getCatalogStatus() != CatalogStatus.READY) {
             outboxPublisher.publishCoreReady(
                     media.getId(),

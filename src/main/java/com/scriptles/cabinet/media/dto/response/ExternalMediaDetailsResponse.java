@@ -55,7 +55,16 @@ public record ExternalMediaDetailsResponse(
     public record MovieDetails(Integer runtimeMinutes, Long budget, Long revenue, String director) {}
     public record TrackDetails(Integer durationSeconds, Boolean explicit) {}
     public record AlbumDetails(String albumType, Integer numberOfTracks, String animatedCoverUrl,
-                               List<TrackResponse> tracks) {}
+                               List<TrackResponse> tracks, List<ReleaseVersionResponse> releaseVersions) {
+        public AlbumDetails(String albumType, Integer numberOfTracks, String animatedCoverUrl,
+                            List<TrackResponse> tracks) {
+            this(albumType, numberOfTracks, animatedCoverUrl, tracks, List.of());
+        }
+    }
+    public record ReleaseVersionResponse(UUID id, String musicBrainzReleaseId, String title, String countryCode,
+                                         LocalDate releaseDate,
+                                         String format, String status, String barcode, String catalogNumber,
+                                         String labelName, String coverUrl, Integer trackCount, boolean primary) {}
     public record SeriesDetails(String status, Integer numberOfSeasons, Integer numberOfEpisodes,
                                 LocalDate lastAirDate, List<SeasonResponse> seasons) {}
     public record BookDetails(String isbn10, String isbn13, Integer pageCount, String publisher,

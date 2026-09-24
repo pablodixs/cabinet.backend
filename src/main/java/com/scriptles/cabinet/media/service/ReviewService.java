@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.common.api.RichTextDocument;
@@ -73,6 +75,7 @@ public class ReviewService {
     private final ProfileRepository profileRepository;
     private final ProfileService profileService;
     private final MediaLikeService mediaLikeService;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -281,10 +284,12 @@ public class ReviewService {
         boolean isNewReview = review.getId() == null;
 
         Rating rating = review.getRatingEntity();
+        boolean ratingAlreadyExisted = rating != null;
         if (requestedRating != null) {
             if (rating == null) {
-                rating = ratingRepository.findByUserIdAndMediaId(userId, mediaId)
-                        .orElseGet(() -> newRating(user, media));
+                Optional<Rating> existingRating = ratingRepository.findByUserIdAndMediaId(userId, mediaId);
+                ratingAlreadyExisted = existingRating.isPresent();
+                rating = existingRating.orElseGet(() -> newRating(user, media));
             }
             rating.setValue(requestedRating);
             rating.setRatedAt(Instant.now());
@@ -326,6 +331,16 @@ public class ReviewService {
         if (review.getPublishedAt() == null) review.setPublishedAt(Instant.now());
 
         Review saved = reviewRepository.saveAndFlush(review);
+        domainOutboxPublisher.publishMediaEvent(
+                isNewReview ? DomainEventType.REVIEW_CREATED : DomainEventType.REVIEW_UPDATED,
+                mediaId,
+                Map.of("userId", userId.toString(), "reviewId", saved.getId().toString()));
+        if (requestedRating != null) {
+            domainOutboxPublisher.publishMediaEvent(
+                    ratingAlreadyExisted ? DomainEventType.RATING_UPDATED : DomainEventType.RATING_CREATED,
+                    mediaId,
+                    Map.of("userId", userId.toString(), "ratingId", saved.getRatingEntity().getId().toString()));
+        }
         Instant occurredAt = saved.getUpdatedAt() == null
                 ? saved.getPublishedAt() == null ? Instant.now() : saved.getPublishedAt()
                 : saved.getUpdatedAt();
@@ -361,11 +376,17 @@ public class ReviewService {
         Review review = reviewRepository.findByAuthorProfileIdAndMediaId(profileId, mediaId).orElseGet(() -> {
             Review created = new Review(); created.setUser(user); created.setAuthorProfile(profile); created.setMedia(media); return created;
         });
+        boolean isNewReview = review.getId() == null;
         review.setContent(content);
         review.setRichContent(richContent);
         review.setContainsSpoilers(Boolean.TRUE.equals(request.containsSpoilers()));
         review.setVisibility(com.scriptles.cabinet.user.enums.Visibility.PUBLIC);
-        return response(reviewRepository.save(review), userId);
+        Review saved = reviewRepository.saveAndFlush(review);
+        domainOutboxPublisher.publishMediaEvent(
+                isNewReview ? DomainEventType.REVIEW_CREATED : DomainEventType.REVIEW_UPDATED,
+                mediaId,
+                Map.of("userId", userId.toString(), "reviewId", saved.getId().toString()));
+        return response(saved, userId);
     }
 
     @Transactional(readOnly = true)
@@ -391,6 +412,8 @@ public class ReviewService {
                     }
                     reviewLikeRepository.deleteByReviewId(review.getId());
                     userFeedService.remove(userId, mediaId, FeedActionType.REVIEWED);
+                    domainOutboxPublisher.publishMediaEvent(DomainEventType.REVIEW_REMOVED, mediaId,
+                            Map.of("userId", userId.toString(), "reviewId", review.getId().toString()));
                     reviewRepository.delete(review);
                 });
     }

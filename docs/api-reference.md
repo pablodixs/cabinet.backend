@@ -47,9 +47,17 @@ Security failures use `AUTHENTICATION_REQUIRED` (`401`) or `ACCESS_DENIED` (`403
 
 | Method and path | Access | Purpose |
 | --- | --- | --- |
-| `GET /v1/status` | Public | Product-oriented health summary, synchronization state, scheduled jobs, background queue/import counts, and recent activity. |
+| `GET /v1/status` | Public | Product-only state for Catalog, Search, Imports, Metadata sync, and External providers. Component and overall states are `OPERATIONAL`, `DEGRADED`, `DELAYED`, or `OUTAGE`; response omits queue depth, internal job runs, event data, and operational metrics. |
+| `GET /v1/admin/status` | Admin | Operational overview: queue depth/retries/dead jobs/oldest pending event, last scheduled syncs, provider latency/error rates, search fallback and zero-result rates, Hikari pool, Caffeine cache stats, and community projection lag. |
+| `GET /v1/admin/status/jobs` | Admin | Recent scheduled job runs; optional `key`, `limit=50` (max 100). Sensitive summaries and errors are omitted. |
+| `GET /v1/admin/status/jobs/{id}` | Admin | One scheduled job run by UUID. |
+| `GET /v1/admin/status/events` | Admin | Outbox event summaries; `queue=domain\|catalog`, optional status, `limit=50` (max 100). Payloads and raw errors are never returned. Aggregate ID is only returned for media events. |
+| `GET /v1/admin/status/events/{queue}/{id}` | Admin | Safe summary for one outbox event; `queue=domain\|catalog`. |
+| `GET /v1/admin/status/media/{mediaId}` | Admin | Media synchronization time, event/job counts, and safe recent event summaries. |
+| `GET /v1/admin/status/providers/{provider}` | Admin | Metrics for one configured provider; provider identifier is an `ExternalSource` name. |
+| `GET /v1/admin/status/catalog-jobs/{id}` | Admin | Safe catalog job details including status, attempts, media/collection reference, and timestamps. Payload, lock owner, and raw error are omitted. |
 
-The response includes an overall `status` (`OPERATIONAL`, `RUNNING`, `DELAYED`, `DEGRADED`, or `ATTENTION_REQUIRED`), `updatedAt`, system summaries, synchronization details, `backgroundProcessing` counts (`processing`, `waiting`, `retrying`, `failed`), Letterboxd `importProcessing` counts, scheduled jobs, and recent activity. Schedules are returned as readable frequency/time/time-zone values rather than cron expressions. Run metrics and timestamps can be `null` before the first recorded execution. The endpoint aggregates persisted state and does not contact external providers or return raw provider errors or individual outbox records. See [Background Processing](background-processing.md#operational-status) for the execution history and retention model.
+The public response contains only an overall status, update time, and five product component statuses. Administrative queue, worker, provider, search, database-pool, cache, and event details require the admin routes above. Admin event/job drill-down responses intentionally omit payloads, raw error text, credentials, lock owners, and authorization data. See [Background Processing](background-processing.md#operational-status) for status and retention details.
 
 ## Authentication
 
@@ -69,7 +77,7 @@ The response includes an overall `status` (`OPERATIONAL`, `RUNNING`, `DELAYED`, 
 | Method and path | Access | Query/body and behavior |
 | --- | --- | --- |
 | `GET /v1/search/header` | Public | Lightweight local search for the header. `query` (2–100), `scope=ALL\|MEDIA\|ARTIST`, optional media `type`; returns at most 5 relevance-ranked media/artists. Localized responses accept `locale` or `Accept-Language`. |
-| `GET /v1/media/search` | Public | `query` (min 3), optional `type`, `sort=RELEVANCE\|RATING`, `cursor`, `limit=20` (1–40). App-facing merged search; localized responses accept `locale` or `Accept-Language`. |
+| `GET /v1/media/search` | Public | `query` (min 3), optional `type`, `sort=RELEVANCE\|RATING`, `cursor`, `limit=20` (1–40). Relevance search returns local Cabinet matches first and consults TMDB, MusicBrainz, and Google Books only when local matches do not fill the page. Provider results remain external previews until an existing import/details/interaction flow materializes them. Localized responses accept `locale` or `Accept-Language`. |
 | `GET /v1/media/external/search` | Public | Optional `type`; required `query`; optional `language`, `startIndex=0`, `maxResults=20` (max 40). Searches provider catalogs; `language` overrides `Accept-Language`. |
 | `GET /v1/media/external/{source}/{type}/{externalId}` | Public | Optional `language`; provider-backed detail preview. `language` overrides `Accept-Language`. |
 | `GET /v1/media/external/{source}/{type}/{externalId}/relations` | Public | Optional `language`, `maxResults=12` (max 40). Related/adapted works; `language` overrides `Accept-Language`. |
@@ -79,7 +87,8 @@ The response includes an overall `status` (`OPERATIONAL`, `RUNNING`, `DELAYED`, 
 | `GET /v1/media/rankings/trending` | Public | Optional `type`, `locale`; `days=7` (1–30), `limit=12` (max 40). |
 | `GET /v1/media/rankings/anticipated` | Public | Optional `locale`; `limit=6` (max 40). Future movies ranked by public `PLANNED` entries. |
 | `GET /v1/collections` | Public | Required `type`; `page=0`, `size=50` (max 100). Collection titles accept `locale` or `Accept-Language`. |
-| `GET /v1/collections/{id}` | Public | Localized collection metadata and localized materialized items. Accepts `locale` or `Accept-Language`. |
+| `GET /v1/collections/{id}` | Public | Localized collection metadata and localized materialized items. Anonymous active responses use public caching and a version-based `ETag`; send `If-None-Match` to receive `304 Not Modified`. Authenticated responses include viewer progress and are `private, no-store`. Accepts `locale` or `Accept-Language`. |
+| `GET /v1/franchises/{id}` | Public | Franchise with linked collections and media. Anonymous active responses use public caching and a version-based `ETag`; send `If-None-Match` to receive `304 Not Modified`. Authenticated responses are `private, no-store`. |
 | `GET /v1/collections/slug/{slug}` | Public | Slug lookup with the same localization and fallback behavior as collection details. |
 
 Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EPISODE`, although a provider or endpoint may support only a subset. Full media examples and provider behavior are in [Media API details](media-api.md).
@@ -88,9 +97,9 @@ Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EP
 
 | Method and path | Access | Query/body and behavior |
 | --- | --- | --- |
-| `GET /v1/media/{mediaId}` | Public | Stored detail response, optionally viewer-aware artwork/community state. Accepts `locale` or `Accept-Language`. |
+| `GET /v1/media/{mediaId}` | Public | Stored public detail response. READY media returns public cache headers and a version-based `ETag`; send `If-None-Match` to receive `304 Not Modified`. The ETag changes with media, requested-locale translation, metadata events, and synchronized album-release versions. Accepts `locale` or `Accept-Language`. Imported album details include asynchronously synchronized MusicBrainz `releaseVersions` metadata alongside the canonical album tracklist. |
 | `GET /v1/media/{mediaId}/community` | Public | Public rating average and ten half-star buckets, plus community counts. |
-| `GET /v1/media/{mediaId}/me` | User | Current user's rating, likes, library state, review, and diary log count/date. |
+| `GET /v1/media/{mediaId}/me` | User | Current user's rating, likes, library state, review, and diary log count/date. Responses are `private, no-store`. |
 | `GET /v1/media/{mediaId}/activity` | User | Page friends' visible activity on this media; `page=0`, `size=10` (max 50). |
 | `GET /v1/media/{mediaId}/credits` | Public | Required `role`; `page=0`, `limit=20` (max 40). |
 | `GET /v1/media/{mediaId}/more-by` | Public | Optional `language`, `limit=12` (max 40). More work by the primary contributor; `language` overrides `Accept-Language`. |

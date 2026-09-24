@@ -13,13 +13,17 @@ flowchart LR
     Repositories --> DB[(PostgreSQL)]
     Services --> Registries["External provider registries"]
     Registries --> APIs["TMDB, MusicBrainz, Google Books, Wikidata, OMDb"]
-    Services --> Events["After-commit domain events"]
-    Events --> Workers["In-process executors and schedulers"]
+    Services --> Outbox["Transactional PostgreSQL outboxes"]
+    Outbox --> Workers["In-process executors and schedulers"]
     Workers --> Repositories
     Workers --> APIs
+    Repositories --> ReadModels["Rebuildable read models"]
+    ReadModels --> DB
 ```
 
 There is no message broker, distributed cache, object store, or separate worker deployment. Asynchronous work is executed inside the API process.
+
+PostgreSQL stores both canonical domain state and durable outbox work. Domain outbox handlers rebuild derived community-stat read models from canonical ratings, likes, list membership, and completion state. Read models and Caffeine caches are disposable accelerators; the domain tables remain authoritative.
 
 ## Package boundaries
 
@@ -80,9 +84,19 @@ sequenceDiagram
 
 The internal UUID becomes the preferred identifier after import. Re-import is idempotent around the external reference and also reconciles credits for older data.
 
+For a MusicBrainz album, that external identity is its Release Group. The import transaction also writes a catalog-outbox request to synchronize the associated MusicBrainz Releases after commit; edition metadata is attached to the canonical album while the main import remains usable and its canonical tracklist stays unchanged.
+
+### Local-first media search
+
+`GET /v1/media/search` searches persisted Cabinet media through localized PostgreSQL search documents first. The projection combines canonical and translated titles, creator credits, and alternative titles, using simple-language full-text search and trigram matching. If fewer than the requested number of local results match, the existing TMDB, MusicBrainz, and Google Books searches run as before and fill the remaining response slots. Persisted media and external previews retain their existing response distinction; search results alone never import a preview. Imports and metadata, translation, or credit changes update the local projection asynchronously through `domain_outbox_events`.
+
+The ranking gives exact title matches a score of 100 (95 for an exact original title), title prefixes 30 (27 for an original-title prefix), and trigram similarity up to 20. Full-text relevance is a smaller additional signal; current community popularity is capped at 0.25 and release recency at 0.5, so neither can outrank a strong title match. The `simple` dictionary is used for tokenization across catalog languages, with accent folding instead of language-specific stemming.
+
 ### Community interaction
 
 A typical write loads the authenticated user and target resource, checks visibility and release policy, then upserts or deletes a row. Likes and comments synchronize persistent notifications in the same business transaction. `NotificationChangedEvent` is emitted and handled after commit so SSE never advertises uncommitted data.
+
+Likes, ratings, completion changes, and public-list membership also write a durable domain outbox row in the same transaction. A worker recomputes the media's community aggregates and rating distribution from canonical state. `GET /v1/media/{mediaId}/community` reads those projections and keeps indexed queries for recent likers and completers; a bounded reconciliation schedule repairs missing, dirty, or old rows.
 
 ### Stale-while-revalidate read
 
@@ -91,6 +105,12 @@ External availability, external ratings, and awards use persisted snapshots. A c
 ### Visibility-aware public reads
 
 `Visibility` can be `PUBLIC`, `FOLLOWERS`, or `PRIVATE`. Public profile, diary, review, and list reads combine the resource visibility with follow/block state through services such as `SocialAccessPolicy`. Aggregate community numbers deliberately exclude private data.
+
+### HTTP caching for public catalog resources
+
+READY `GET /v1/media/{id}`, active `GET /v1/collections/{id}`, and active `GET /v1/franchises/{id}` responses support weak, version-based ETags and conditional `If-None-Match` requests. A matching validator returns `304` before the response body is assembled. The version key includes the canonical media version and metadata event for media, requested-locale translation timestamps, synchronized album release versions, and the relevant collection/franchise contents. Public responses use a 60-second browser freshness and a 5-minute shared-cache freshness window. Collection responses with viewer progress, authenticated franchise responses, and `/me` state explicitly use `private, no-store`.
+
+The web application gives its server-side fetches matching 60-second media and 5-minute collection revalidation windows and locale-aware Next.js cache tags. Viewer-specific requests use `cache: 'no-store'`. Cloudflare zone cache eligibility remains deployment configuration: JSON is not cached by default unless the zone's cache rules permit it. The rule for collection/franchise paths must bypass requests carrying the Cabinet session cookie; `Vary: Cookie` alone is not a substitute for an explicit edge bypass rule. OpenNext tag-based on-demand invalidation also needs a persistent tag-cache binding before `revalidateTag` can invalidate across deployed instances; the current project has no such binding configured.
 
 ## Consistency and concurrency
 

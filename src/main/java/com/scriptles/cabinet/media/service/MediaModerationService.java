@@ -2,6 +2,8 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.media.dto.request.UpdateMediaMetadataRequest;
 import com.scriptles.cabinet.media.dto.response.ModerationMediaResponse;
 import com.scriptles.cabinet.media.catalog.GenreCatalogService;
@@ -44,6 +46,7 @@ public class MediaModerationService {
     private final GenreCatalogService genreCatalogService;
     private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
     private ExternalReferenceRepository externalReferenceRepository;
+    private DomainOutboxPublisher domainOutboxPublisher;
 
     @org.springframework.beans.factory.annotation.Autowired
     void setRefreshDependencies(
@@ -52,6 +55,11 @@ public class MediaModerationService {
     ) {
         this.metadataRefreshScheduler = metadataRefreshScheduler;
         this.externalReferenceRepository = externalReferenceRepository;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDomainOutboxPublisher(DomainOutboxPublisher domainOutboxPublisher) {
+        this.domainOutboxPublisher = domainOutboxPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -144,6 +152,10 @@ public class MediaModerationService {
         revision.setBeforeState(beforeState);
         revision.setAfterState(snapshot(saved, albumDetails));
         revisionRepository.save(revision);
+        if (domainOutboxPublisher != null) {
+            domainOutboxPublisher.publishMediaEvent(
+                    DomainEventType.MEDIA_METADATA_CHANGED, mediaId, Map.of("source", "moderation"));
+        }
         return ModerationMediaResponse.from(
                 saved,
                 albumDetails == null ? null : albumDetails.getAnimatedCoverUrl()

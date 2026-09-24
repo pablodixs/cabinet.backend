@@ -57,6 +57,13 @@ Do not rewrite applied migrations. Add a new versioned migration and update the 
 | `V24` | Link persistent notifications to Letterboxd import jobs. |
 | `V25` | Allow `LETTERBOXD` in database checks for external-source columns. |
 | `V53` | Add canonical genres, translations, provider references, curated aliases, media links, and migrate genre interests. |
+| `V54` | Add the durable `domain_outbox_events` table and active-claim, aggregate, created-at, and stale-processing indexes. |
+| `V55` | Add materialized community statistics, rating distribution buckets, and dirty-media reconciliation markers. |
+| `V56` | Add daily cross-media ranking activity snapshots and dirty/rebuild state. |
+| `V57` | Add localized PostgreSQL search documents with simple-language full-text and trigram indexes. |
+| `V58` | Add MusicBrainz album release-version metadata linked to canonical album media, with unique release IDs and album/barcode indexes. |
+| `V59` | Index metadata outbox events and album-release sync timestamps used to version public resource validators. |
+| `V60` | Add partial operational indexes for active/dead outbox counts. |
 
 ## PostgreSQL-specific features
 
@@ -101,6 +108,16 @@ Services are the transaction boundary. General conventions:
 - notification SSE events use `AFTER_COMMIT`;
 - each Letterboxd item applies in `REQUIRES_NEW` for partial success;
 - optimistic `@Version` protects concurrent moderator changes to media and awards.
+
+`domain_outbox_events` is deliberately separate from `catalog_outbox`. Domain services must insert domain events in the same transaction as the canonical mutation; `DomainOutboxPublisher` rejects calls without an active transaction. Workers claim due events with `FOR UPDATE SKIP LOCKED`, apply at-least-once handlers, and cap retries before moving events to `DEAD`.
+
+`media_community_stats` and `media_rating_distribution` are rebuildable read models. The canonical ratings, likes, list items, and library entries remain authoritative. Community-stat events mark a media row dirty in the source transaction; the outbox handler recomputes the aggregates from canonical tables and clears only the dirty version it observed. A bounded reconciliation job repairs dirty, missing, and old projections.
+
+`media_ranking_snapshot` stores per-media daily signal counts separately from current community statistics. The outbox handler rebuilds the last 30 days from canonical ratings, likes, completed library entries, diary activities, public lists, and public reviews. A resumable cursor backfills missing media in bounded batches; reconciliation also refreshes old or dirty active snapshots. Rankings apply period selection and score decay over this compact daily snapshot.
+
+`media_search_documents` is a rebuildable, per-locale projection of persisted searchable media. Imports and metadata/translation/credit updates enqueue `MEDIA_IMPORTED` or `MEDIA_METADATA_CHANGED` in their canonical transaction; outbox handlers rebuild every localized document for that media. A bounded reconciliation job fills documents for existing catalog rows and refreshes old projections. Search uses PostgreSQL `simple` text search on unaccented normalized text plus GIN trigram indexes, avoiding a single Portuguese or English stemming dictionary for the multilingual catalog. Search popularity is a deliberately small tie-breaker; exact and prefix title matches dominate it.
+
+For a pure SQL ranking such as top-rated media, a materialized view with a unique media ID index could support `REFRESH MATERIALIZED VIEW CONCURRENTLY` without blocking reads. That refresh still recomputes the view and would need separate definitions or scans for each trending window. The current trending score combines several event families, uses configurable weights, and supports windows from 1 to 30 days, so the per-media daily snapshot is the better fit for event-driven rebuilds. Top-rated remains a direct canonical ratings query until measured query cost justifies its own materialized view or snapshot.
 
 External provider reads sometimes occur during a larger service operation such as import. There is no distributed rollback for an already-completed provider request; only database mutations roll back.
 

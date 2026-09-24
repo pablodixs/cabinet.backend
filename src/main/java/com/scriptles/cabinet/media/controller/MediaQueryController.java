@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.controller;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.common.http.HttpCacheValidators;
 import com.scriptles.cabinet.media.dto.response.AlbumTracksResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
@@ -26,6 +27,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,15 +55,31 @@ public class MediaQueryController {
     public ResponseEntity<PublicMediaDetailsResponse> findDetails(
             @PathVariable UUID mediaId,
             @RequestParam(required = false) String locale,
-            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage,
+            @RequestHeader(name = "If-None-Match", required = false) String ifNoneMatch
     ) {
         String requestedLocale = catalogLocaleResolver.resolve(locale, acceptLanguage).tag();
-        PublicMediaDetailsResponse response = mediaQueryService.findDetails(mediaId, requestedLocale);
+        String publicVersion = mediaQueryService.currentPublicVersion(mediaId, requestedLocale);
+        String etag = publicVersion == null ? null
+                : HttpCacheValidators.weakEtag("media:" + mediaId + ":" + requestedLocale, publicVersion);
+        if (HttpCacheValidators.matchesIfNoneMatch(ifNoneMatch, etag)) {
+            ResponseEntity.BodyBuilder notModified = ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .header("ETag", etag)
+                    .header("Cache-Control",
+                            "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
+            if (locale == null || locale.isBlank()) notModified.header("Vary", "Accept-Language");
+            return notModified.build();
+        }
+
+        PublicMediaDetailsResponse response = publicVersion == null
+                ? mediaQueryService.findDetails(mediaId, requestedLocale)
+                : mediaQueryService.findDetails(mediaId, requestedLocale, publicVersion);
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header("Content-Language", response.resolvedLocale());
         if (response.catalogStatus() == CatalogStatus.READY) {
             builder.header("Cache-Control",
-                    "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400");
+                    "public, max-age=60, s-maxage=300, stale-while-revalidate=86400");
+            if (etag != null) builder.header("ETag", etag);
         } else {
             builder.header("Cache-Control", "no-store, max-age=0")
                     .header("Retry-After", "2");
@@ -88,11 +106,13 @@ public class MediaQueryController {
     }
 
     @GetMapping("/{mediaId}/me")
-    public UserMediaStateResponse findUserState(
+    public ResponseEntity<UserMediaStateResponse> findUserState(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable UUID mediaId
     ) {
-        return mediaQueryService.findUserState(mediaId, user.id());
+        return ResponseEntity.ok()
+                .header("Cache-Control", "private, no-store")
+                .body(mediaQueryService.findUserState(mediaId, user.id()));
     }
 
     @GetMapping("/{mediaId}/credits")

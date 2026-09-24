@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.user.service;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.common.api.PageResponse;
@@ -79,6 +81,7 @@ public class DiaryService {
     private final UserTagService userTagService;
     private final UserFeedService userFeedService;
     private final UserMediaArtworkService userMediaArtworkService;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional
     public DiaryEntryResponse create(UUID userId, CreateDiaryEntryRequest request) {
@@ -109,6 +112,8 @@ public class DiaryService {
         activity.setTags(normalizeTags(request.tags()));
         userTagService.ensureTags(user, activity.getTags());
         activity = activityRepository.saveAndFlush(activity);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.DIARY_ENTRY_CREATED, media.getId(),
+                Map.of("userId", userId.toString(), "diaryEntryId", activity.getId().toString()));
 
         if (reviewContent != null) {
             upsertCanonicalReview(user, media, rating, activity, reviewContent,
@@ -184,6 +189,9 @@ public class DiaryService {
         if (!DIARY_TYPES.contains(activity.getType())) {
             throw notFound("DIARY_ENTRY_NOT_FOUND", "Registro do diário não encontrado");
         }
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.DIARY_ENTRY_REMOVED,
+                activity.getMedia().getId(),
+                Map.of("userId", userId.toString(), "diaryEntryId", entryId.toString()));
         reviewRepository.findByActivityId(entryId).ifPresent(review -> {
             review.setActivity(null);
             reviewRepository.saveAndFlush(review);
@@ -220,6 +228,8 @@ public class DiaryService {
         activity.setTags(normalizeTags(request.tags()));
         userTagService.ensureTags(user, activity.getTags());
         activity = activityRepository.saveAndFlush(activity);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.DIARY_ENTRY_UPDATED, media.getId(),
+                Map.of("userId", userId.toString(), "diaryEntryId", activity.getId().toString()));
 
         Review review = reviewRepository.findByActivityId(entryId).orElse(null);
         if (reviewContent != null) {
@@ -228,6 +238,8 @@ public class DiaryService {
         } else if (review != null) {
             reviewLikeRepository.deleteByReviewId(review.getId());
             reviewLikeRepository.flush();
+            domainOutboxPublisher.publishMediaEvent(DomainEventType.REVIEW_REMOVED, media.getId(),
+                    Map.of("userId", userId.toString(), "reviewId", review.getId().toString()));
             reviewRepository.delete(review);
             reviewRepository.flush();
             userFeedService.remove(userId, media.getId(), FeedActionType.REVIEWED);
@@ -300,8 +312,8 @@ public class DiaryService {
             return ratingRepository.findByUserIdAndMediaId(user.getId(), media.getId()).orElse(null);
         }
         java.math.BigDecimal normalized = RatingValue.normalize(value);
-        Rating rating = ratingRepository.findByUserIdAndMediaId(user.getId(), media.getId())
-                .orElseGet(() -> {
+        var existing = ratingRepository.findByUserIdAndMediaId(user.getId(), media.getId());
+        Rating rating = existing.orElseGet(() -> {
                     Rating created = new Rating();
                     created.setUser(user);
                     created.setMedia(media);
@@ -312,6 +324,10 @@ public class DiaryService {
         rating.setVisibility(visibility);
         rating.setRatedAt(Instant.now());
         Rating saved = ratingRepository.save(rating);
+        domainOutboxPublisher.publishMediaEvent(
+                existing.isPresent() ? DomainEventType.RATING_UPDATED : DomainEventType.RATING_CREATED,
+                media.getId(),
+                Map.of("userId", user.getId().toString(), "ratingId", saved.getId().toString()));
         userFeedService.record(user, media, FeedActionType.RATED, saved.getRatedAt(), visibility,
                 saved.getValue(), null, false);
         return saved;
@@ -328,8 +344,8 @@ public class DiaryService {
             String backdropKey,
             String richContent
     ) {
-        Review review = reviewRepository.findByUserIdAndMediaId(user.getId(), media.getId())
-                .orElseGet(() -> {
+        var existing = reviewRepository.findByUserIdAndMediaId(user.getId(), media.getId());
+        Review review = existing.orElseGet(() -> {
                     Review created = new Review();
                     created.setUser(user);
                     created.setMedia(media);
@@ -359,7 +375,11 @@ public class DiaryService {
         }
         review.setContainsSpoilers(containsSpoilers);
         review.setVisibility(visibility);
-        reviewRepository.save(review);
+        Review saved = reviewRepository.saveAndFlush(review);
+        domainOutboxPublisher.publishMediaEvent(
+                existing.isPresent() ? DomainEventType.REVIEW_UPDATED : DomainEventType.REVIEW_CREATED,
+                media.getId(),
+                Map.of("userId", user.getId().toString(), "reviewId", saved.getId().toString()));
         Instant occurredAt = activity.getOccurredOn()
                 .atStartOfDay(ZoneId.of("America/Sao_Paulo")).toInstant();
         userFeedService.record(user, media, FeedActionType.REVIEWED, occurredAt, visibility,

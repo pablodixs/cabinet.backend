@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.media.enrichment;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.media.entity.*;
 import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.enums.*;
@@ -33,6 +35,7 @@ public class CatalogEnrichmentPersistenceService {
     private final MediaCreditService creditService;
     private final CatalogLocaleResolver localeResolver;
     private final GenreCatalogService genreCatalogService;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional
     @Caching(evict = {
@@ -70,6 +73,8 @@ public class CatalogEnrichmentPersistenceService {
         media.setEnrichmentSyncedAt(Instant.now());
         media.setSyncVersion(media.getSyncVersion() + 1);
         media.setLastSyncError(null);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_METADATA_CHANGED, mediaId,
+                java.util.Map.of("syncVersion", media.getSyncVersion(), "locale", normalizedLocale));
     }
 
     @Transactional
@@ -81,6 +86,8 @@ public class CatalogEnrichmentPersistenceService {
         Media media = mediaRepository.findById(mediaId)
                 .orElseThrow(() -> new IllegalArgumentException("Media not found"));
         updateDetails(media, external);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_METADATA_CHANGED, mediaId,
+                java.util.Map.of("structureUpdated", true));
     }
 
     @Transactional
@@ -91,6 +98,8 @@ public class CatalogEnrichmentPersistenceService {
         String normalizedLocale = localeResolver.normalize(locale);
         upsertTranslation(media, external, normalizedLocale);
         genreCatalogService.add(mediaId, external.genres(), normalizedLocale);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_METADATA_CHANGED, mediaId,
+                java.util.Map.of("locale", normalizedLocale));
     }
 
     @Transactional

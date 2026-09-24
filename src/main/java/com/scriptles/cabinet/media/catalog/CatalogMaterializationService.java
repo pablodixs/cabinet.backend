@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.media.catalog;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.media.dto.request.MediaTarget;
 import com.scriptles.cabinet.media.entity.*;
 import com.scriptles.cabinet.media.enums.*;
@@ -25,6 +27,7 @@ public class CatalogMaterializationService {
     private final TrackDetailsRepository trackDetailsRepository;
     private final CatalogLocaleResolver localeResolver;
     private final GenreCatalogService genreCatalogService;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     public Media findOrCreateCore(MediaTarget target, CatalogResolver.Resolution resolution) {
         if (resolution.alreadyMaterialized()) {
@@ -67,6 +70,10 @@ public class CatalogMaterializationService {
         reference.setPrimaryReference(true);
         reference.setLastSyncedAt(Instant.now());
         externalReferenceRepository.saveAndFlush(reference);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_IMPORTED, saved.getId(),
+                java.util.Map.of("source", target.source() == null ? "UNKNOWN" : target.source().name(),
+                        "externalId", target.externalId() == null ? "" : target.externalId(),
+                        "mediaType", target.mediaType().name()));
         return saved;
     }
 

@@ -78,7 +78,7 @@ Credits connect media to canonical `Person` records with roles and ordering. `Pe
 
 ### Discovery
 
-App search supports `RELEVANCE` and community `RATING` ordering with opaque cursor pagination. Top-rated rankings use page pagination. Trending ranks recent public activity with weights: rating `3`, media like `2`, and public library interaction `1`.
+App search supports `RELEVANCE` and community `RATING` ordering with opaque cursor pagination. Top-rated rankings use page pagination. Trending ranks daily snapshots of public ratings, likes, completions, diary logs, public-list additions, and reviews with configurable weights and exponential time decay.
 
 `MoreByService` uses the primary contributor for a work, combines locally imported works with provider results, de-duplicates identities, and exposes whether the provider type is supported.
 

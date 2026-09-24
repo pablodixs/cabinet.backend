@@ -10,6 +10,8 @@ import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.external.ExternalMediaProvider;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.MediaSearchDocumentRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
@@ -48,6 +50,10 @@ class MediaSearchServiceTest {
     @Mock
     private ExternalReferenceRepository externalReferenceRepository;
     @Mock
+    private MediaRepository mediaRepository;
+    @Mock
+    private MediaSearchDocumentRepository searchDocumentRepository;
+    @Mock
     private RatingRepository ratingRepository;
     @Mock
     private MediaCreditService mediaCreditService;
@@ -68,6 +74,8 @@ class MediaSearchServiceTest {
         mediaSearchService = new MediaSearchService(
                 providerRegistry,
                 externalReferenceRepository,
+                mediaRepository,
+                searchDocumentRepository,
                 ratingRepository,
                 mediaCreditService,
                 new MediaSearchItemAssembler(

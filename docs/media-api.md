@@ -137,9 +137,12 @@ page pagination:
 GET /v1/media/rankings/top-rated?type=MOVIE&page=0&limit=20
 ```
 
-The homepage-oriented trending endpoint combines activity inside a recent window. A public rating has weight 3, a
-media like has weight 2, and a public library interaction has weight 1. `days` defaults to 7 and accepts 1 through
-30; `limit` defaults to 12.
+The homepage-oriented trending endpoint combines public rating changes (weight 3), media likes (2), public
+completions (2), diary logs (1.5), public-list additions (1), and public reviews (2). Each signal decays
+exponentially: its weight is multiplied by `0.5^(age in days / half-life)`. The default half-life is three days,
+so an activity three days old contributes half as much as a new activity. The weights and half-life are
+configurable with the `MEDIA_TRENDING_*` settings. `days` defaults to 7 and accepts 1 through 30; `limit` defaults
+to 12. The window uses UTC calendar days.
 
 ```http
 GET /v1/media/rankings/trending?type=SERIES&days=7&limit=12
@@ -643,7 +646,7 @@ when provider credits are incomplete.
 
 ### Album
 
-Album details prefer an official MusicBrainz release with the most complete track list. `discNumber` distinguishes multi-disc releases. Track duration falls back to the recording duration when the release track itself has no length.
+Album identity remains the MusicBrainz Release Group. Album details prefer an official MusicBrainz release with the most complete track list for the canonical `tracks` array. `discNumber` distinguishes multi-disc releases. Track duration falls back to the recording duration when the release track itself has no length. Imported album responses may also include `releaseVersions`, populated asynchronously with edition metadata; external previews return an empty list. The array is ordered with the selected primary version first. These records do not include edition-specific tracks.
 
 ```json
 {
@@ -653,6 +656,23 @@ Album details prefer an official MusicBrainz release with the most complete trac
     "albumType": "Album",
     "numberOfTracks": 10,
     "animatedCoverUrl": "https://example.com/animated-cover.gif",
+    "releaseVersions": [
+      {
+        "id": "cabinet-release-version-uuid",
+        "musicBrainzReleaseId": "musicbrainz-release-uuid",
+        "title": "Album title",
+        "countryCode": "GB",
+        "releaseDate": "1997-09-29",
+        "format": "CD",
+        "status": "Official",
+        "barcode": "1234567890123",
+        "catalogNumber": "CAT-001",
+        "labelName": "Example Records",
+        "coverUrl": "https://coverartarchive.org/release/musicbrainz-release-uuid/front-500",
+        "trackCount": 10,
+        "primary": true
+      }
+    ],
     "tracks": [
       {
         "externalId": "recording-uuid",

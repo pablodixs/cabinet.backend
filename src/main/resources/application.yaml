@@ -60,6 +60,41 @@ management:
       exposure:
         include: health,info,metrics,caches
 
+domain:
+  outbox:
+    poll-delay: ${DOMAIN_OUTBOX_POLL_DELAY:1000}
+    lock-timeout: ${DOMAIN_OUTBOX_LOCK_TIMEOUT:5m}
+    max-attempts: ${DOMAIN_OUTBOX_MAX_ATTEMPTS:8}
+    base-backoff: ${DOMAIN_OUTBOX_BASE_BACKOFF:2s}
+    max-backoff: ${DOMAIN_OUTBOX_MAX_BACKOFF:5m}
+
+media:
+  search:
+    local:
+      reconcile:
+        poll-delay: ${MEDIA_SEARCH_LOCAL_RECONCILE_POLL_DELAY:10m}
+        batch-size: ${MEDIA_SEARCH_LOCAL_RECONCILE_BATCH_SIZE:50}
+        stale-after: ${MEDIA_SEARCH_LOCAL_STALE_AFTER:30d}
+  community-stats:
+    reconcile:
+      poll-delay: ${MEDIA_COMMUNITY_STATS_RECONCILE_POLL_DELAY:5m}
+      batch-size: ${MEDIA_COMMUNITY_STATS_RECONCILE_BATCH_SIZE:100}
+      stale-after: ${MEDIA_COMMUNITY_STATS_STALE_AFTER:7d}
+  trending:
+    score:
+      rating-weight: ${MEDIA_TRENDING_RATING_WEIGHT:3.0}
+      like-weight: ${MEDIA_TRENDING_LIKE_WEIGHT:2.0}
+      completion-weight: ${MEDIA_TRENDING_COMPLETION_WEIGHT:2.0}
+      log-weight: ${MEDIA_TRENDING_LOG_WEIGHT:1.5}
+      list-addition-weight: ${MEDIA_TRENDING_LIST_ADDITION_WEIGHT:1.0}
+      review-weight: ${MEDIA_TRENDING_REVIEW_WEIGHT:2.0}
+      half-life: ${MEDIA_TRENDING_HALF_LIFE:3d}
+    snapshot:
+      reconcile:
+        poll-delay: ${MEDIA_TRENDING_SNAPSHOT_RECONCILE_POLL_DELAY:5m}
+        batch-size: ${MEDIA_TRENDING_SNAPSHOT_RECONCILE_BATCH_SIZE:100}
+        stale-after: ${MEDIA_TRENDING_SNAPSHOT_STALE_AFTER:7d}
+
 catalog:
   tmdb:
     backfill:

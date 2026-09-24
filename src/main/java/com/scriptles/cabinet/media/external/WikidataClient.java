@@ -1,6 +1,8 @@
 package com.scriptles.cabinet.media.external;
 
 import com.scriptles.cabinet.media.config.ExternalApiProperties;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.AwardDatePrecision;
 import com.scriptles.cabinet.media.enums.AwardResult;
@@ -52,23 +54,31 @@ public class WikidataClient {
     private final RestClient.Builder restClientBuilder;
     private final ExternalApiProperties.Wikidata wikidata;
     private final Clock clock;
+    private final MeterRegistry meters;
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private final Map<String, RelationCacheEntry> relationCache = new ConcurrentHashMap<>();
 
     @Autowired
     public WikidataClient(
             @Qualifier("wikidataRestClientBuilder") RestClient.Builder restClientBuilder,
-            ExternalApiProperties properties
+            ExternalApiProperties properties,
+            MeterRegistry meters
     ) {
-        this(restClientBuilder, properties, Clock.systemUTC());
+        this(restClientBuilder, properties, Clock.systemUTC(), meters);
     }
 
     WikidataClient(RestClient.Builder restClientBuilder, ExternalApiProperties properties, Clock clock) {
+        this(restClientBuilder, properties, clock, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
+    private WikidataClient(RestClient.Builder restClientBuilder, ExternalApiProperties properties, Clock clock,
+                           MeterRegistry meters) {
         this.restClientBuilder = restClientBuilder;
         this.wikidata = properties.wikidata() == null
                 ? ExternalApiProperties.Wikidata.defaults()
                 : properties.wikidata();
         this.clock = clock;
+        this.meters = meters;
     }
 
     public Optional<WikidataEnrichment> find(
@@ -374,6 +384,9 @@ public class WikidataClient {
                 + UriUtils.encodeQueryParam(query, StandardCharsets.UTF_8)
                 + "&format=json");
         for (int attempt = 0; ; attempt++) {
+            Timer.Sample sample = Timer.start(meters);
+            meters.counter("cabinet.provider.requests", "provider", "WIKIDATA", "operation", "sparql").increment();
+            String outcome = "success";
             try {
                 return restClientBuilder.clone().baseUrl(wikidata.sparqlUrl()).build().get()
                         .uri(uri)
@@ -381,16 +394,29 @@ public class WikidataClient {
                         .retrieve()
                         .body(JsonNode.class);
             } catch (RestClientResponseException exception) {
+                outcome = "failure";
+                meters.counter("cabinet.provider.failures", "provider", "WIKIDATA", "operation", "sparql")
+                        .increment();
+                if (exception.getStatusCode().value() == 429) {
+                    meters.counter("cabinet.provider.rate_limited", "provider", "WIKIDATA",
+                            "operation", "sparql").increment();
+                }
                 int maxRetries = maxRetries(exception.getStatusCode());
                 if (attempt >= maxRetries) {
                     throw exception;
                 }
                 waitBeforeRetry(exception, attempt);
             } catch (ResourceAccessException exception) {
+                outcome = "failure";
+                meters.counter("cabinet.provider.failures", "provider", "WIKIDATA", "operation", "sparql")
+                        .increment();
                 if (attempt >= MAX_TRANSIENT_RETRIES) {
                     throw exception;
                 }
                 waitBeforeRetry(null, attempt);
+            } finally {
+                sample.stop(meters.timer("cabinet.provider.duration", "provider", "WIKIDATA",
+                        "operation", "sparql", "outcome", outcome));
             }
         }
     }

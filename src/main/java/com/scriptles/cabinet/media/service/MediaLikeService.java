@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.response.MediaLikeResponse;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
@@ -26,6 +28,7 @@ public class MediaLikeService {
     private final MediaRepository mediaRepository;
     private final UserFeedService userFeedService;
     private final InterestProfileCache interestProfileCache;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional(readOnly = true)
     public MediaLikeResponse find(UUID userId, UUID mediaId) {
@@ -47,7 +50,10 @@ public class MediaLikeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_MEDIA_CAPABILITY",
                     "Episódios não podem ser curtidos diretamente");
         }
-        mediaLikeRepository.insertIfAbsent(UUID.randomUUID(), userId, mediaId);
+        int inserted = mediaLikeRepository.insertIfAbsent(UUID.randomUUID(), userId, mediaId);
+        if (inserted == 0) return new MediaLikeResponse(true);
+        domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_LIKED, mediaId,
+                java.util.Map.of("userId", userId.toString()));
         userFeedService.record(user, media, FeedActionType.LIKED, java.time.Instant.now(), Visibility.PUBLIC,
                 null, null, false);
         return new MediaLikeResponse(true);
@@ -57,7 +63,11 @@ public class MediaLikeService {
     @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void unlike(UUID userId, UUID mediaId) {
         interestProfileCache.invalidate(userId);
-        mediaLikeRepository.deleteByUserIdAndMediaId(userId, mediaId);
+        long deleted = mediaLikeRepository.deleteByUserIdAndMediaId(userId, mediaId);
+        if (deleted > 0) {
+            domainOutboxPublisher.publishMediaEvent(DomainEventType.MEDIA_UNLIKED, mediaId,
+                    java.util.Map.of("userId", userId.toString()));
+        }
         userFeedService.remove(userId, mediaId, FeedActionType.LIKED);
     }
 

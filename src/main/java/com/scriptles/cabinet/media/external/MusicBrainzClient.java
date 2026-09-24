@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -105,6 +107,130 @@ public class MusicBrainzClient implements ExternalMediaProvider, ExternalPersonW
     }
 
     public record OrganizationCredit(String externalId, String name, String countryCode, String externalUrl) {}
+
+    public List<AlbumReleaseVersionSnapshot> findAlbumReleaseVersions(String releaseGroupId) {
+        List<JsonNode> releases = new ArrayList<>();
+        int offset = 0;
+        int total = Integer.MAX_VALUE;
+        while (offset < total) {
+            JsonNode page = browseReleasesByReleaseGroup(releaseGroupId, offset, 100);
+            Integer count = integer(page, "release-count");
+            int pageSize = page.path("releases").size();
+            releases.addAll(iterable(page.path("releases")));
+            total = count == null ? offset + pageSize : count;
+            if (pageSize == 0 || pageSize < 100) break;
+            offset += pageSize;
+        }
+
+        JsonNode primary = selectRelease(arrayNode(releases));
+        String primaryId = primary == null ? null : text(primary, "id");
+        List<AlbumReleaseVersionSnapshot> versions = new ArrayList<>();
+        for (JsonNode release : releases) {
+            String releaseId = text(release, "id");
+            if (releaseId == null) continue;
+            UUID parsedId;
+            try {
+                parsedId = UUID.fromString(releaseId);
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+            versions.add(new AlbumReleaseVersionSnapshot(
+                    parsedId,
+                    text(release, "title"),
+                    text(release, "country"),
+                    date(text(release, "date")),
+                    releaseFormats(release),
+                    text(release, "status"),
+                    text(release, "barcode"),
+                    releaseValues(release.path("label-info"), "catalog-number"),
+                    releaseLabelNames(release.path("label-info")),
+                    release.path("cover-art-archive").path("front").asBoolean(false)
+                            ? COVER_ART_ARCHIVE_BASE_URL + "/release/" + releaseId + "/front-500" : null,
+                    releaseTrackCount(release),
+                    releaseId.equals(primaryId)
+            ));
+        }
+        return List.copyOf(versions);
+    }
+
+    public record AlbumReleaseVersionSnapshot(
+            UUID musicBrainzReleaseId,
+            String title,
+            String countryCode,
+            LocalDate releaseDate,
+            String format,
+            String status,
+            String barcode,
+            String catalogNumber,
+            String labelName,
+            String coverUrl,
+            Integer trackCount,
+            boolean primary
+    ) {}
+
+    private JsonNode browseReleasesByReleaseGroup(String releaseGroupId, int offset, int limit) {
+        waitForRateLimit();
+        try {
+            return restClientBuilder.clone().baseUrl(properties.musicbrainz().baseUrl()).build().get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/release")
+                            .queryParam("fmt", "json")
+                            .queryParam("release-group", releaseGroupId)
+                            .queryParam("inc", "media+labels")
+                            .queryParam("offset", offset)
+                            .queryParam("limit", limit)
+                            .build())
+                    .header("User-Agent", properties.musicbrainz().userAgent())
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 503) {
+                throw new ExternalMediaRateLimitException("MusicBrainz rate limit exceeded", exception);
+            }
+            throw new ExternalMediaException(
+                    "MusicBrainz responded with HTTP " + exception.getStatusCode().value(), exception
+            );
+        } catch (RestClientException exception) {
+            throw new ExternalMediaException("Unable to communicate with MusicBrainz", exception);
+        }
+    }
+
+    private List<JsonNode> iterable(JsonNode values) {
+        List<JsonNode> result = new ArrayList<>();
+        values.forEach(result::add);
+        return result;
+    }
+
+    private JsonNode arrayNode(List<JsonNode> nodes) {
+        return tools.jackson.databind.node.JsonNodeFactory.instance.arrayNode().addAll(nodes);
+    }
+
+    private String releaseFormats(JsonNode release) {
+        Set<String> formats = new java.util.LinkedHashSet<>();
+        for (JsonNode medium : release.path("media")) {
+            String format = text(medium, "format");
+            if (format != null) formats.add(format);
+        }
+        return formats.isEmpty() ? null : String.join(", ", formats);
+    }
+
+    private String releaseLabelNames(JsonNode labelInfo) {
+        Set<String> labels = new java.util.LinkedHashSet<>();
+        for (JsonNode item : labelInfo) {
+            String name = text(item.path("label"), "name");
+            if (name != null) labels.add(name);
+        }
+        return labels.isEmpty() ? null : String.join(", ", labels);
+    }
+
+    private String releaseValues(JsonNode values, String field) {
+        Set<String> distinct = new java.util.LinkedHashSet<>();
+        for (JsonNode value : values) {
+            String text = text(value, field);
+            if (text != null) distinct.add(text);
+        }
+        return distinct.isEmpty() ? null : String.join(", ", distinct);
+    }
 
     @Override
     public PersonWorks findPersonWorks(String personExternalId, String language) {

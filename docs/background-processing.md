@@ -2,14 +2,15 @@
 
 ## Execution model
 
-All asynchronous and scheduled work runs inside the web application process. `@EnableScheduling` is enabled by `NotificationSchedulingConfiguration`. Catalog enrichment uses a durable PostgreSQL outbox; there is no external broker or worker service.
+All asynchronous and scheduled work runs inside the web application process. `@EnableScheduling` is enabled by `NotificationSchedulingConfiguration`. Catalog enrichment and selected domain-derived effects use separate durable PostgreSQL outboxes; there is no external broker or worker service.
 
-Three bounded executors are defined:
+Bounded executors are defined:
 
 | Bean | Core/max threads | Queue | Uses |
 | --- | --- | --- | --- |
 | `externalInfoTaskExecutor` | 2 / 4 | 100 | Availability, ratings, awards, tracked-series synchronization |
 | `catalogOutboxTaskExecutor` | 4 / 4 | 0 | Catalog translations, credits, tracks, and seasons |
+| `domainOutboxTaskExecutor` | 2 / 2 | 0 | Domain event handlers for community stats, trending snapshots, search documents, and cache invalidation |
 | `letterboxdImportExecutor` | 1 / 2 | 20 | Matching and applying Letterboxd import jobs |
 
 Rejected submissions are caught and logged for external-info/award/series scheduling. Letterboxd scheduling submits directly; queue rejection can surface from the event listener.
@@ -19,6 +20,10 @@ Rejected submissions are caught and logged for external-info/award/series schedu
 | Schedule | Time | Behavior |
 | --- | --- | --- |
 | Catalog outbox | Every second by default | Recovers stale claims, claims only free executor capacity, and dispatches enrichment concurrently. |
+| Domain outbox | Every second by default | Claims due domain events with `FOR UPDATE SKIP LOCKED`, recovers stale claims, dispatches with bounded concurrency, and applies jittered exponential retries before moving exhausted events to `DEAD`. Handlers also update local search documents after imports and catalog metadata changes. |
+| Community statistics reconciliation | Every 5 minutes by default | Rebuilds a bounded batch of dirty, missing, or older-than-7-day media community projections. Configurable with `MEDIA_COMMUNITY_STATS_RECONCILE_POLL_DELAY`, `MEDIA_COMMUNITY_STATS_RECONCILE_BATCH_SIZE`, and `MEDIA_COMMUNITY_STATS_STALE_AFTER`. |
+| Local media search reconciliation | Every 10 minutes by default | Indexes a bounded batch of missing media search documents and refreshes documents older than 30 days. Configurable with `MEDIA_SEARCH_LOCAL_RECONCILE_POLL_DELAY`, `MEDIA_SEARCH_LOCAL_RECONCILE_BATCH_SIZE`, and `MEDIA_SEARCH_LOCAL_STALE_AFTER`. |
+| Trending snapshot reconciliation | Every 5 minutes by default | Rebuilds a bounded batch of dirty media, advances a resumable initial backfill, and refreshes active snapshots older than seven days. Configurable with `MEDIA_TRENDING_SNAPSHOT_RECONCILE_POLL_DELAY`, `MEDIA_TRENDING_SNAPSHOT_RECONCILE_BATCH_SIZE`, and `MEDIA_TRENDING_SNAPSHOT_STALE_AFTER`. |
 | TMDB catalog changes | Daily at `03:30 America/Sao_Paulo` by default | Scans changed movies and series and queues stale catalog enrichment. Configurable with `CATALOG_TMDB_CHANGES_CRON` and `CATALOG_TMDB_CHANGES_ZONE`. |
 | Collection synchronization | Daily at `16:30 America/Sao_Paulo` by default | Queues referenced film collections whose TMDB data is stale. Configurable with `CATALOG_COLLECTION_TMDB_SYNC_CRON` and `CATALOG_COLLECTION_TMDB_SYNC_ZONE`. |
 | Notification SSE heartbeat | Every 25 seconds | Sends `heartbeat: ping` to all process-local connections and removes broken emitters. |
@@ -42,6 +47,18 @@ When a series becomes `IN_PROGRESS`, `UserMediaService` publishes `SeriesTrackin
 ### Catalog enrichment
 
 Media imports commit core metadata and a `catalog_outbox` event together. The worker claims rows with `FOR UPDATE SKIP LOCKED`, persists tracks or seasons as soon as the primary provider responds, and finishes optional translation and Wikidata enrichment afterward. Claims left in `PROCESSING` by an interrupted process return to `RETRY` after the configured lock timeout.
+
+MusicBrainz album imports also write `ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED` in that same transaction. The catalog worker pages through Release Group releases after commit and upserts edition metadata in a separate short transaction. This work does not delay canonical album import, does not replace the Release Group identity, and does not create per-edition `Media(TRACK)` rows. It shares catalog outbox retries and stale-claim recovery.
+
+### Domain outbox
+
+Domain mutations write `domain_outbox_events` in the same transaction as the canonical change. The initial event set covers media likes, ratings, completion state, list membership, reviews, diary entries, media imports, and metadata changes. A bounded worker dispatches through `DomainOutboxDispatcher` and registered `DomainEventHandler`s. Delivery is at least once, so handlers must tolerate repeats. Handlers evict community cache entries for the media (and parent album/series), plus detail cache entries after import or metadata changes. Like, rating, completion, and public-list membership events also rebuild the media's community statistics and rating distribution from canonical state. This queue remains separate from `catalog_outbox`, which is still responsible for provider enrichment.
+
+`MediaQueryService.findCommunity()` reads aggregate counts and rating buckets from these projections. It continues to query the indexed recent-liker and recent-completer lists, and the `mediaCommunity` Caffeine cache remains enabled. Child album/series rating totals aggregate the same projections across eligible tracks or episodes.
+
+Ranking-relevant domain events also mark a `media_ranking_snapshot_state` row dirty in the source transaction. The ranking handler rebuilds only that media's daily public activity factors for the last 30 days. The trending endpoint scores and orders these rows in PostgreSQL; the score weights and half-life are configurable. The reconciliation schedule bootstraps media without snapshots and repairs old or dirty snapshots.
+
+The media-search handler responds to `MEDIA_IMPORTED` and `MEDIA_METADATA_CHANGED` by rebuilding that media's per-locale search documents from canonical media, translations, credits, and external references. The scheduled reconciliation backfills existing media in bounded batches and repairs old documents. Search requests never materialize external previews.
 
 ### Letterboxd jobs
 
@@ -85,22 +102,28 @@ Emitters are stored in concurrent in-memory sets. Completion, timeout, send erro
 
 ## Operational status
 
-`GET /v1/status` returns a public, product-oriented summary for the Cabinet Status page. The endpoint reads persisted job executions, grouped catalog outbox counts, and aggregate Letterboxd import state; it does not call external providers. It omits raw provider errors and per-item outbox details.
+`GET /v1/status` returns only product health for Catalog, Search, Imports, Metadata sync, and External providers, using `OPERATIONAL`, `DEGRADED`, `DELAYED`, or `OUTAGE`. It omits queue depth, internal job runs, event details, provider metrics, and import counts. Detailed operational data is available only under the admin-protected `/v1/admin/status/*` routes.
 
-Important high-level executions are stored in `background_job_runs` with stable job keys and separate execution and product-health states. Start, completion, and failure writes use independent transactions so a failed scheduled operation remains visible even if its own transaction rolls back. Job-run history older than 30 days is removed during the existing notification retention maintenance. The durable catalog outbox remains a separate fine-grained work queue and is aggregated by status for the endpoint.
+Important high-level executions are stored in `background_job_runs` with stable job keys and separate execution and product-health states. Start, completion, and failure writes use independent transactions so a failed scheduled operation remains visible even if its own transaction rolls back. Job-run history older than 30 days is removed during the existing notification retention maintenance. The durable catalog outbox remains a separate fine-grained work queue and is aggregated by status for the endpoint. Domain outbox counts are not yet exposed by this endpoint.
 
 ## Multi-instance implications
 
-Running more than one replica is safe for most database writes because of transactions and uniqueness constraints, but background behavior is not coordinated:
+Running more than one replica is safe for most database writes because of transactions and uniqueness constraints. The catalog and domain outboxes coordinate event claims through PostgreSQL `FOR UPDATE SKIP LOCKED`; claims are committed before dispatch and recovered after the lock timeout. Domain completion, retry, and release are fenced by a unique per-claim token, so an expired worker cannot overwrite the state of a later claim. A handler can still finish its side effect after its lease expires, so handlers remain at-least-once and must be idempotent. Community and ranking handlers rebuild from canonical state; search handlers upsert documents.
+
+The remaining background behaviors are process-local or require separate coordination:
 
 - every replica runs every cron schedule;
-- in-flight de-duplication is per replica;
+- in-flight sets in provider refresh schedulers and the discovery `running` flag only reduce duplicate work on one process; they are not locks or correctness authorities. PostgreSQL state, uniqueness constraints, repeatable reads/rebuilds, and subsequent stale reads/scans determine durable results;
 - an after-commit notification signal reaches only SSE clients connected to that same replica;
-- queued tasks vanish if the owning process terminates;
-- Letterboxd recovery can submit the same durable job from multiple starting replicas unless deployment startup is serialized; state and item checks reduce but do not formally eliminate duplicate execution.
+- non-durable provider refresh work already submitted to an in-memory executor may be lost when its process stops. It is requested again by a later stale read or scheduled tracked-series scan; it is best-effort enrichment, not a durable user mutation;
+- Letterboxd import jobs and items are persisted and are recovered on startup, but the after-commit event is only a wake-up signal and more than one replica may submit the same job during recovery. Item state checks and idempotent domain writes reduce duplicate effects, but this job runner does not yet have the outbox's cross-replica claim/fencing protocol. Keep this limitation visible when evaluating multiple replicas.
 
-For reliable horizontal scaling, introduce distributed locks for cron jobs, a durable outbox/queue for work, and a shared pub/sub channel for SSE invalidation. The existing REST state remains the authoritative fallback.
+The outboxes coordinate durable work through PostgreSQL across replicas. Caffeine caches and executor limits remain process-local; the current domain cache invalidation handler runs on the replica that claims the event, so other replicas rely on the existing cache TTL and synchronous mutation-path invalidation. Every replica runs scheduled jobs, so scheduled scans must remain bounded and idempotent. Distributed cron locks, shared cache invalidation/pub-sub, and cross-replica SSE delivery are separate deployment decisions and are not configured here.
 
 ## Observability
 
-Workers log provider refresh failures and Letterboxd duration/count metrics. The Status page exposes persisted high-level execution history and current outbox/import aggregates, but it is not a live executor or provider-latency monitor. There is no Actuator or metrics registry dependency, so executor saturation, provider latency, and SSE counts are not exported. Production deployments should collect structured logs and add metrics before depending on these jobs for strict delivery guarantees.
+The admin status overview exposes durable outbox and catalog-job depths, oldest pending time, recent scheduled job runs, provider latency/error rates, search fallback/zero-result rates, database pool, cache stats, and community projection lag. Provider and search rates use process-lifetime Micrometer counters and reset when the application process restarts. Event and job drill-down routes return status, attempts, identifiers, and timestamps only. They omit JSON payloads, raw error messages, lock owners, credentials, and authorization data. Actuator exposes the existing Micrometer registry at `/actuator/metrics`. The durable outbox gauges are `cabinet.outbox.pending`, `cabinet.outbox.retry`, `cabinet.outbox.dead`, and `cabinet.outbox.oldest.seconds`, tagged by `queue=domain|catalog`; event attempts, failures, and processing timers are tagged by queue and bounded event type. Snapshots refresh every 30 seconds from indexed PostgreSQL status subsets. Community rebuilds export duration and failure counters, while `cabinet.community.lag.seconds` tracks the oldest dirty marker.
+
+Provider calls through `ExternalMediaProviderRegistry`, plus Wikidata SPARQL and OMDb rating lookups, export request, failure, duration, and rate-limit metrics using provider and operation tags. Search exports end-to-end/stage duration, local result count, provider fallback count, and zero-result count. Each Spring-managed Caffeine cache exports cumulative hit, miss, and eviction statistics plus current estimated size, tagged by cache name. Spring Boot's Hikari binder exposes the active/idle/pending connection gauges and acquisition timer under `hikaricp.connections.*`; no second pool sampler is added. These operational details remain in Actuator rather than expanding the public `/v1/status` response.
+
+Micrometer counters, Hikari/cache gauges, and the recent-search failure marker are process-local. In a multi-instance deployment, an admin request reads metrics from the instance that served it, and public Search health may briefly differ between instances after a search failure. This repository does not configure cluster-wide metric aggregation.

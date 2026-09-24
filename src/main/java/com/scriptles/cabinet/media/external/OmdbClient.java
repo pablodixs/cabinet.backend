@@ -3,6 +3,8 @@ package com.scriptles.cabinet.media.external;
 import com.scriptles.cabinet.media.config.OmdbProperties;
 import com.scriptles.cabinet.media.enums.ExternalRatingMetric;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -20,6 +22,11 @@ import java.util.Optional;
 public class OmdbClient {
     private final RestClient.Builder restClientBuilder;
     private final OmdbProperties properties;
+    private final MeterRegistry meters;
+
+    public OmdbClient(RestClient.Builder restClientBuilder, OmdbProperties properties) {
+        this(restClientBuilder, properties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
 
     public boolean isConfigured() {
         return properties.configured();
@@ -58,6 +65,9 @@ public class OmdbClient {
     }
 
     private JsonNode get(String imdbId) {
+        Timer.Sample sample = Timer.start(meters);
+        meters.counter("cabinet.provider.requests", "provider", "OMDB", "operation", "rating_lookup").increment();
+        String outcome = "success";
         try {
             return restClientBuilder.clone().baseUrl(properties.baseUrl()).build().get()
                     .uri(uriBuilder -> uriBuilder
@@ -70,12 +80,23 @@ public class OmdbClient {
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientResponseException exception) {
+            outcome = "failure";
+            meters.counter("cabinet.provider.failures", "provider", "OMDB", "operation", "rating_lookup")
+                    .increment();
             if (exception.getStatusCode().value() == 429) {
+                meters.counter("cabinet.provider.rate_limited", "provider", "OMDB",
+                        "operation", "rating_lookup").increment();
                 throw new ExternalMediaRateLimitException("OMDb rate limit exceeded", exception);
             }
             throw new ExternalMediaException("OMDb responded with HTTP " + exception.getStatusCode().value(), exception);
         } catch (RestClientException exception) {
+            outcome = "failure";
+            meters.counter("cabinet.provider.failures", "provider", "OMDB", "operation", "rating_lookup")
+                    .increment();
             throw new ExternalMediaException("Unable to query OMDb", exception);
+        } finally {
+            sample.stop(meters.timer("cabinet.provider.duration", "provider", "OMDB",
+                    "operation", "rating_lookup", "outcome", outcome));
         }
     }
 

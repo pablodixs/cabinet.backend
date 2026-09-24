@@ -132,6 +132,7 @@ public class SecurityConfig {
                         ).permitAll()
 
                         .requestMatchers("/v1/hq-console/**").hasRole("HQ")
+                        .requestMatchers("/v1/admin/status", "/v1/admin/status/**").hasRole("ADMIN")
                         .requestMatchers("/v1/hq/**").hasRole("ADMIN")
                         .requestMatchers("/v1/moderation/hq/**", "/v1/moderation/hq").hasRole("ADMIN")
                         .requestMatchers("/actuator/**").hasRole("ADMIN")

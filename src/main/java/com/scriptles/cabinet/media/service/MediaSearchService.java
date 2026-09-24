@@ -12,6 +12,8 @@ import com.scriptles.cabinet.media.external.ExternalMediaException;
 import com.scriptles.cabinet.media.external.ExternalMediaProvider;
 import com.scriptles.cabinet.media.external.ExternalMediaProviderRegistry;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
+import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.MediaSearchDocumentRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
@@ -54,6 +56,8 @@ public class MediaSearchService {
 
     private final ExternalMediaProviderRegistry providerRegistry;
     private final ExternalReferenceRepository externalReferenceRepository;
+    private final MediaRepository mediaRepository;
+    private final MediaSearchDocumentRepository searchDocumentRepository;
     private final RatingRepository ratingRepository;
     private final MediaCreditService mediaCreditService;
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
@@ -61,6 +65,25 @@ public class MediaSearchService {
     private final CatalogLocaleResolver localeResolver;
     private final MediaTranslationResolver translationResolver;
     private final MeterRegistry meterRegistry;
+    private final SearchOperationalState searchOperationalState;
+
+    public MediaSearchService(
+            ExternalMediaProviderRegistry providerRegistry,
+            ExternalReferenceRepository externalReferenceRepository,
+            MediaRepository mediaRepository,
+            MediaSearchDocumentRepository searchDocumentRepository,
+            RatingRepository ratingRepository,
+            MediaCreditService mediaCreditService,
+            MediaSearchItemAssembler mediaSearchItemAssembler,
+            UserArtworkResolver userArtworkResolver,
+            CatalogLocaleResolver localeResolver,
+            MediaTranslationResolver translationResolver,
+            MeterRegistry meterRegistry
+    ) {
+        this(providerRegistry, externalReferenceRepository, mediaRepository, searchDocumentRepository, ratingRepository,
+                mediaCreditService, mediaSearchItemAssembler, userArtworkResolver, localeResolver, translationResolver,
+                meterRegistry, new SearchOperationalState());
+    }
 
     @Transactional(readOnly = true)
     public MediaSearchPageResponse search(
@@ -111,12 +134,84 @@ public class MediaSearchService {
         String normalizedQuery = query.trim();
         String requestedLocale = localeResolver.normalize(locale);
 
-        return timed("api", () -> sort == MediaSearchSort.RATING
-                ? timed("rating", () -> searchByRating(normalizedQuery, type, cursor, limit, viewerId, requestedLocale))
-                : searchByRelevance(normalizedQuery, type, cursor, limit, viewerId, requestedLocale));
+        try {
+            MediaSearchPageResponse result = timed("api", () -> sort == MediaSearchSort.RATING
+                    ? timed("rating", () -> searchByRating(normalizedQuery, type, cursor, limit, viewerId, requestedLocale))
+                    : searchByRelevance(normalizedQuery, type, cursor, limit, viewerId, requestedLocale));
+            if (result.items().isEmpty()) meterRegistry.counter("cabinet.search.zero_results").increment();
+            searchOperationalState.recordSuccess();
+            return result;
+        } catch (RuntimeException failure) {
+            meterRegistry.counter("cabinet.search.failure").increment();
+            searchOperationalState.recordFailure();
+            throw failure;
+        }
     }
 
     private MediaSearchPageResponse searchByRelevance(
+            String query,
+            MediaType type,
+            String cursor,
+            int limit,
+            UUID viewerId,
+            String locale
+    ) {
+        LocalFirstCursor state = decodeLocalFirstCursor(cursor);
+        if (state.providersStarted()) {
+            meterRegistry.counter("cabinet.search.provider.fallback").increment();
+            MediaSearchPageResponse external = searchExternalByRelevance(
+                    query, type, state.providerCursor(), limit, viewerId, locale);
+            return new MediaSearchPageResponse(
+                    deduplicate(external.items(), Set.of(), limit),
+                    external.nextCursor() == null ? null : encodeLocalFirstCursor(
+                            state.localOffset(), true, external.nextCursor()));
+        }
+
+        List<UUID> localIds = timed("local", () -> searchDocumentRepository.search(
+                normalizeForSearch(query),
+                type == null ? null : type.name(),
+                localeResolver.fallbackChain(locale),
+                limit + 1,
+                state.localOffset()
+        ));
+        List<UUID> selectedLocalIds = localIds.stream().limit(limit).toList();
+        meterRegistry.summary("cabinet.search.local.results").record(selectedLocalIds.size());
+        List<Media> loadedMedia = mediaRepository.findAllById(selectedLocalIds);
+        Map<UUID, Media> mediaById = loadedMedia.stream().collect(Collectors.toMap(
+                Media::getId, media -> media, (first, ignored) -> first));
+        List<Media> orderedMedia = selectedLocalIds.stream()
+                .map(mediaById::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        List<MediaSearchItemResponse> localItems = timed("enrichment", () ->
+                mediaSearchItemAssembler.fromImported(orderedMedia, viewerId, locale));
+
+        if (localIds.size() > limit) {
+            return new MediaSearchPageResponse(localItems,
+                    encodeLocalFirstCursor(state.localOffset() + selectedLocalIds.size(), false, null));
+        }
+        if (localIds.size() == limit) {
+            return new MediaSearchPageResponse(localItems, null);
+        }
+
+        int remaining = limit - localItems.size();
+        if (remaining <= 0) return new MediaSearchPageResponse(localItems, null);
+
+        meterRegistry.counter("cabinet.search.provider.fallback").increment();
+        MediaSearchPageResponse external = searchExternalByRelevance(query, type, null, remaining, viewerId, locale);
+        Set<SearchIdentity> localIdentities = localItems.stream()
+                .map(MediaSearchService::identity)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        List<MediaSearchItemResponse> merged = new ArrayList<>(localItems);
+        merged.addAll(deduplicate(external.items(), localIdentities, remaining));
+        String nextCursor = external.nextCursor() == null
+                ? null
+                : encodeLocalFirstCursor(state.localOffset() + selectedLocalIds.size(), true, external.nextCursor());
+        return new MediaSearchPageResponse(merged, nextCursor);
+    }
+
+    private MediaSearchPageResponse searchExternalByRelevance(
             String query,
             MediaType type,
             String cursor,
@@ -138,8 +233,32 @@ public class MediaSearchService {
                 ? encode("s:%d".formatted(state.offset() + consumed))
                 : null;
 
-        return new MediaSearchPageResponse(timed("enrichment",
-                () -> mediaSearchItemAssembler.fromExternal(page, viewerId)), nextCursor);
+        List<MediaSearchItemResponse> items = timed("enrichment",
+                () -> mediaSearchItemAssembler.fromExternal(page, viewerId));
+        return new MediaSearchPageResponse(deduplicate(items, Set.of(), limit), nextCursor);
+    }
+
+    private String normalizeForSearch(String query) {
+        return query.toLowerCase(java.util.Locale.ROOT).trim();
+    }
+
+    private List<MediaSearchItemResponse> deduplicate(
+            List<MediaSearchItemResponse> items,
+            Set<SearchIdentity> existing,
+            int limit
+    ) {
+        Set<SearchIdentity> seen = new java.util.HashSet<>(existing);
+        return items.stream()
+                .filter(item -> identity(item) == null || seen.add(identity(item)))
+                .limit(limit)
+                .toList();
+    }
+
+    private static SearchIdentity identity(MediaSearchItemResponse item) {
+        if (item == null || item.source() == null || item.type() == null || item.externalId() == null) {
+            return null;
+        }
+        return new SearchIdentity(item.source(), item.type(), item.externalId());
     }
 
     private MediaSearchPageResponse searchAllByRelevance(
@@ -288,6 +407,7 @@ public class MediaSearchService {
                 ))
                 .filter(java.util.Objects::nonNull)
                 .toList();
+        meterRegistry.summary("cabinet.search.local.results").record(items.size());
         String nextCursor = ratings.hasNext()
                 ? encode("r:%d".formatted(state.page() + 1))
                 : null;
@@ -413,6 +533,41 @@ public class MediaSearchService {
         }
     }
 
+    private LocalFirstCursor decodeLocalFirstCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return new LocalFirstCursor(0, false, null);
+        }
+        String decoded = decode(cursor);
+        // Accept provider cursors issued before local-first search was enabled.
+        if (decoded.startsWith("s:") || decoded.startsWith("a:")) {
+            return new LocalFirstCursor(0, true, cursor);
+        }
+        String[] values = decoded.split(":", 4);
+        if (values.length != 4 || !"l".equals(values[0])) throw invalidCursor();
+        try {
+            int localOffset = nonNegative(values[1]);
+            boolean providersStarted = switch (values[2]) {
+                case "local" -> false;
+                case "external" -> true;
+                default -> throw invalidCursor();
+            };
+            String providerCursor = "-".equals(values[3]) ? null : values[3];
+            if (providersStarted && providerCursor == null) throw invalidCursor();
+            if (!providersStarted && providerCursor != null) throw invalidCursor();
+            return new LocalFirstCursor(localOffset, providersStarted, providerCursor);
+        } catch (RuntimeException exception) {
+            throw invalidCursor();
+        }
+    }
+
+    private String encodeLocalFirstCursor(int localOffset, boolean providersStarted, String providerCursor) {
+        return encode("l:%d:%s:%s".formatted(
+                localOffset,
+                providersStarted ? "external" : "local",
+                providerCursor == null ? "-" : providerCursor
+        ));
+    }
+
     private AllCursor decodeAllCursor(String cursor) {
         if (cursor == null || cursor.isBlank()) {
             return new AllCursor(0, 0, 0, false, false, false, SourceSlot.TMDB);
@@ -476,6 +631,12 @@ public class MediaSearchService {
     }
 
     private record RatingCursor(int page) {
+    }
+
+    private record LocalFirstCursor(int localOffset, boolean providersStarted, String providerCursor) {
+    }
+
+    private record SearchIdentity(ExternalSource source, MediaType type, String externalId) {
     }
 
     private record AllCursor(

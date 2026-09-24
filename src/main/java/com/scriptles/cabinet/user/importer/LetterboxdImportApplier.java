@@ -1,5 +1,7 @@
 package com.scriptles.cabinet.user.importer;
 
+import com.scriptles.cabinet.common.outbox.DomainEventType;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.lists.entity.MediaListItem;
@@ -58,6 +60,7 @@ public class LetterboxdImportApplier {
     private final ObjectMapper objectMapper;
     private final UserFeedService userFeedService;
     private final InterestProfileCache interestProfileCache;
+    private final DomainOutboxPublisher domainOutboxPublisher;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LetterboxdImportItemState apply(UUID itemId) {
@@ -76,6 +79,7 @@ public class LetterboxdImportApplier {
         addLetterboxdReference(media, item.getLetterboxdUri());
         UserMedia existingEntry = userMediaRepository.findByUserIdAndMediaId(user.getId(), media.getId()).orElse(null);
         boolean importedWatchlist = false;
+        UserMediaStatus previousStatus = existingEntry == null ? null : existingEntry.getStatus();
         if (existingEntry == null && (payload.watched() || payload.watchlist())) {
             UserMedia entry = new UserMedia();
             entry.setUser(user);
@@ -84,10 +88,14 @@ public class LetterboxdImportApplier {
             entry.setPrivateEntry(false);
             applyStatus(entry, payload);
             userMediaRepository.save(entry);
+            if (entry.getStatus() == UserMediaStatus.COMPLETED) {
+                publish(DomainEventType.MEDIA_COMPLETED, media, user, "Letterboxd");
+            }
             importedWatchlist = payload.watchlist() && !payload.watched();
         } else if (existingEntry != null && item.isOverrideStatus() && (payload.watched() || payload.watchlist())) {
             applyStatus(existingEntry, payload);
             userMediaRepository.save(existingEntry);
+            publishCompletionTransition(user, media, previousStatus, existingEntry.getStatus());
             importedWatchlist = payload.watchlist() && !payload.watched();
         } else if (existingEntry != null && (payload.watched() || payload.watchlist())) {
             preserved = true;
@@ -117,6 +125,11 @@ public class LetterboxdImportApplier {
             activity.setSource(ExternalSource.LETTERBOXD);
             activity.setSourceKey(source.sourceKey());
             activity = activityRepository.save(activity);
+            if (activity.getType() == ProfileActivityType.WATCHED
+                    || activity.getType() == ProfileActivityType.REWATCHED) {
+                publish(DomainEventType.DIARY_ENTRY_CREATED, media, user,
+                        "diaryEntryId", activity.getId().toString());
+            }
             if (source.review() != null && !source.review().isBlank()
                     && (latestReviewActivity == null
                     || activity.getOccurredOn().isAfter(latestReviewActivity.getOccurredOn()))) {
@@ -134,7 +147,10 @@ public class LetterboxdImportApplier {
             }
             rating.setValue(payload.rating());
             rating.setRatedAt(toInstant(payload.ratingOn()));
+            boolean wasCreated = rating.getId() == null;
             rating = ratingRepository.save(rating);
+            publish(wasCreated ? DomainEventType.RATING_CREATED : DomainEventType.RATING_UPDATED,
+                    media, user, "ratingId", rating.getId().toString());
             userFeedService.record(user, media, FeedActionType.RATED, rating.getRatedAt(), rating.getVisibility(),
                     rating.getValue(), null, false);
         } else if (rating != null && payload.rating() != null) {
@@ -143,6 +159,7 @@ public class LetterboxdImportApplier {
 
         Review review = reviewRepository.findByUserIdAndMediaId(user.getId(), media.getId()).orElse(null);
         if (payload.review() != null && (review == null || item.isOverrideReview())) {
+            boolean wasCreated = review == null;
             if (review == null) {
                 review = new Review();
                 review.setUser(user);
@@ -156,7 +173,9 @@ public class LetterboxdImportApplier {
             if (review.getPublishedAt() == null || item.isOverrideReview()) {
                 review.setPublishedAt(toInstant(payload.reviewOn()));
             }
-            reviewRepository.save(review);
+            review = reviewRepository.save(review);
+            publish(wasCreated ? DomainEventType.REVIEW_CREATED : DomainEventType.REVIEW_UPDATED,
+                    media, user, "reviewId", review.getId().toString());
             userFeedService.record(user, media, FeedActionType.REVIEWED, review.getPublishedAt(),
                     review.getVisibility(), review.getRating(), review.getContent(), false);
         } else if (review != null && payload.review() != null) {
@@ -166,6 +185,7 @@ public class LetterboxdImportApplier {
         if (payload.liked()) {
             Instant likedAt = toInstant(payload.likedOn());
             if (mediaLikeRepository.insertIfAbsentAt(UUID.randomUUID(), user.getId(), media.getId(), likedAt) > 0) {
+                publish(DomainEventType.MEDIA_LIKED, media, user, "Letterboxd");
                 userFeedService.record(user, media, FeedActionType.LIKED, likedAt, Visibility.PUBLIC,
                         null, null, false);
             }
@@ -188,7 +208,11 @@ public class LetterboxdImportApplier {
                 listItem.setMedia(media);
                 listItem.setPosition(membership.position());
                 listItem.setNotes(membership.notes());
-                listItemRepository.save(listItem);
+                listItem = listItemRepository.save(listItem);
+                if (list.getVisibility() == Visibility.PUBLIC) {
+                    publish(DomainEventType.LIST_ITEM_ADDED, media, user,
+                            "listId", list.getId().toString(), "listItemId", listItem.getId().toString());
+                }
             }
         }
 
@@ -232,6 +256,41 @@ public class LetterboxdImportApplier {
             entry.setCompletedAt(null);
         }
         entry.setLastInteractionAt(instant);
+    }
+
+    private void publishCompletionTransition(
+            User user,
+            Media media,
+            UserMediaStatus previousStatus,
+            UserMediaStatus newStatus
+    ) {
+        if (previousStatus == UserMediaStatus.COMPLETED && newStatus != UserMediaStatus.COMPLETED) {
+            publish(DomainEventType.MEDIA_UNCOMPLETED, media, user, "Letterboxd");
+        } else if (newStatus == UserMediaStatus.COMPLETED && previousStatus != UserMediaStatus.COMPLETED) {
+            publish(DomainEventType.MEDIA_COMPLETED, media, user, "Letterboxd");
+        }
+    }
+
+    private void publish(DomainEventType type, Media media, User user, String source) {
+        publish(type, media, user, "source", source);
+    }
+
+    private void publish(DomainEventType type, Media media, User user, String key, String value) {
+        domainOutboxPublisher.publishMediaEvent(type, media.getId(),
+                java.util.Map.of("userId", user.getId().toString(), key, value));
+    }
+
+    private void publish(
+            DomainEventType type,
+            Media media,
+            User user,
+            String key1,
+            String value1,
+            String key2,
+            String value2
+    ) {
+        domainOutboxPublisher.publishMediaEvent(type, media.getId(),
+                java.util.Map.of("userId", user.getId().toString(), key1, value1, key2, value2));
     }
 
     private LocalDate latestActivityDate(LetterboxdItemPayload payload) {
