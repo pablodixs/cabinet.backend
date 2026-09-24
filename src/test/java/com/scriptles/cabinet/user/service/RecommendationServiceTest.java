@@ -2,6 +2,7 @@ package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.dto.response.TrendingMediaResponse;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.MediaRelation;
@@ -47,6 +48,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class RecommendationServiceTest {
     @Mock InterestGraphService interestGraphService;
+    @Mock GenreCatalogService genreCatalogService;
     @Mock MediaRepository mediaRepository;
     @Mock MediaCreditRepository mediaCreditRepository;
     @Mock MediaRelationRepository mediaRelationRepository;
@@ -67,12 +69,13 @@ class RecommendationServiceTest {
     @Test
     void ranksPositiveMatchesAndUsesNegativePeopleAsStrongPenalty() {
         UUID userId = UUID.randomUUID();
+        UUID dramaId = UUID.randomUUID();
         Media preferred = media("Preferred", "Drama");
         Media penalized = media("Penalized", "Drama");
         Person disliked = person("Disliked actor");
         MediaCredit credit = credit(penalized, disliked);
 
-        var genreKey = new InterestGraphService.InterestKey(InterestTargetType.GENRE, "drama");
+        var genreKey = new InterestGraphService.InterestKey(InterestTargetType.GENRE, dramaId.toString());
         var personKey = new InterestGraphService.InterestKey(
                 InterestTargetType.PERSON, disliked.getId().toString());
         var profile = new InterestGraphService.InterestProfile(Map.of(
@@ -91,6 +94,9 @@ class RecommendationServiceTest {
         when(scoringCredit.getPosition()).thenReturn(0);
         when(mediaCreditRepository.findScoringCredits(any(), any())).thenReturn(List.of(scoringCredit));
         when(ratingRepository.summarizeRatings(any(), any())).thenReturn(List.of());
+        when(genreCatalogService.forMediaIds(anyCollection(), eq("en-US"))).thenReturn(Map.of(
+                preferred.getId(), List.of(new GenreCatalogService.GenreValue(dramaId, "Drama")),
+                penalized.getId(), List.of(new GenreCatalogService.GenreValue(dramaId, "Drama"))));
         when(mediaSearchItemAssembler.fromImported(any(), eq(userId), eq("en-US")))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
@@ -158,6 +164,7 @@ class RecommendationServiceTest {
         when(mediaRepository.findAllWithGenresByIdIn(anyCollection()))
                 .thenReturn(List.of(adaptation));
         when(ratingRepository.summarizeRatings(any(), any())).thenReturn(List.of());
+        when(genreCatalogService.forMediaIds(anyCollection(), eq("en-US"))).thenReturn(Map.of());
         when(mediaSearchItemAssembler.fromImported(List.of(adaptation), userId, "en-US"))
                 .thenReturn(List.of(response(adaptation)));
 

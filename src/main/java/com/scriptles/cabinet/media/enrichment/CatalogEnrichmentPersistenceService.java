@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.enrichment;
 
 import com.scriptles.cabinet.media.entity.*;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.enums.*;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.*;
@@ -31,6 +32,7 @@ public class CatalogEnrichmentPersistenceService {
     private final SeriesSeasonRepository seasonRepository;
     private final MediaCreditService creditService;
     private final CatalogLocaleResolver localeResolver;
+    private final GenreCatalogService genreCatalogService;
 
     @Transactional
     @Caching(evict = {
@@ -55,6 +57,7 @@ public class CatalogEnrichmentPersistenceService {
         media.setCountryCode(external.countryCode());
         media.setWikidataId(wikidataId);
         if (external.genres() != null && !external.genres().isEmpty()) {
+            genreCatalogService.replace(mediaId, external.genres(), normalizedLocale);
             media.setGenres(external.genres().stream()
                     .map(ExternalMedia.ExternalGenre::name)
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
@@ -85,7 +88,9 @@ public class CatalogEnrichmentPersistenceService {
     public void saveTranslation(UUID mediaId, ExternalMedia external, String locale) {
         Media media = mediaRepository.findById(mediaId)
                 .orElseThrow(() -> new IllegalArgumentException("Media not found"));
-        upsertTranslation(media, external, localeResolver.normalize(locale));
+        String normalizedLocale = localeResolver.normalize(locale);
+        upsertTranslation(media, external, normalizedLocale);
+        genreCatalogService.add(mediaId, external.genres(), normalizedLocale);
     }
 
     @Transactional

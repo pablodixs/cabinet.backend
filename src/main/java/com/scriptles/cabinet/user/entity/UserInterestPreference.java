@@ -53,6 +53,9 @@ public class UserInterestPreference {
     @Column(name = "genre_label", length = 100)
     private String genreLabel;
 
+    @Column(name = "genre_id")
+    private UUID genreId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "person_id")
     private Person person;

@@ -3,8 +3,9 @@ package com.scriptles.cabinet.catalog.entity;
 import com.scriptles.cabinet.catalog.domain.CatalogEntityStatus; import com.scriptles.cabinet.catalog.collection.*;
 import jakarta.persistence.*; import lombok.Getter; import lombok.NoArgsConstructor; import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp; import org.hibernate.annotations.UpdateTimestamp; import java.time.*; import java.util.UUID;
+import org.hibernate.annotations.Cache; import org.hibernate.annotations.CacheConcurrencyStrategy;
 
-@Entity @Table(name="collections") @Getter @Setter @NoArgsConstructor
+@Entity @Cacheable @Cache(usage = CacheConcurrencyStrategy.READ_WRITE) @Table(name="collections") @Getter @Setter @NoArgsConstructor
 public class Collection {
  @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id;
  @Column(nullable=false, unique=true, length=180) private String slug;

@@ -16,6 +16,7 @@ import com.scriptles.cabinet.catalog.entity.CollectionItem;
 import com.scriptles.cabinet.catalog.entity.FranchiseMedia;
 import com.scriptles.cabinet.catalog.repository.CollectionItemRepository;
 import com.scriptles.cabinet.catalog.repository.FranchiseMediaRepository;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
@@ -68,6 +69,7 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class MediaQueryService {
     private final MediaRepository mediaRepository;
+    private final GenreCatalogService genreCatalogService;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final AlbumDetailsRepository albumDetailsRepository;
     private final BookDetailsRepository bookDetailsRepository;
@@ -144,8 +146,9 @@ public class MediaQueryService {
         }
 
         catalogTranslationLoader.loadIfMissing(media, primaryReference, requestedLocale);
-        List<ExternalMediaDetailsResponse.GenreResponse> genres = media.getGenres().stream()
-                .map(name -> new ExternalMediaDetailsResponse.GenreResponse(null, name, ExternalSource.MANUAL))
+        List<ExternalMediaDetailsResponse.GenreResponse> genres = genreCatalogService.forMedia(mediaId, requestedLocale).stream()
+                .map(genre -> new ExternalMediaDetailsResponse.GenreResponse(
+                        genre.id().toString(), genre.name(), ExternalSource.MANUAL))
                 .toList();
         ResolvedMediaTranslation translation = mediaTranslationResolver.resolve(media, requestedLocale);
         MediaCreditService.CreditSummary creditSummary = mediaCreditService.summary(media);

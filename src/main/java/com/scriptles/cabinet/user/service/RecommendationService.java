@@ -2,6 +2,7 @@ package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaRelation;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -48,9 +49,9 @@ public class RecommendationService {
     private static final UUID EMPTY_UUID = new UUID(0L, 0L);
     private static final int MAX_SEEDS_PER_TYPE = 50;
     private static final int MAX_TRENDING_CANDIDATES = 200;
-    private static final String EMPTY_GENRE = "__no_genre__";
 
     private final InterestGraphService interestGraphService;
+    private final GenreCatalogService genreCatalogService;
     private final InterestScoringPolicy policy;
     private final MediaRepository mediaRepository;
     private final MediaCreditRepository mediaCreditRepository;
@@ -80,9 +81,9 @@ public class RecommendationService {
         List<InterestGraphService.InterestNode> positiveMedia = topPositive(
                 profile, InterestTargetType.MEDIA);
 
-        Collection<String> genreKeys = positiveGenres.isEmpty()
-                ? List.of(EMPTY_GENRE)
-                : positiveGenres.stream().map(node -> node.key().targetId()).toList();
+        Collection<UUID> genreIds = positiveGenres.isEmpty()
+                ? List.of(EMPTY_UUID)
+                : positiveGenres.stream().map(node -> UUID.fromString(node.key().targetId())).toList();
         Collection<UUID> personIds = positivePeople.isEmpty()
                 ? List.of(EMPTY_UUID)
                 : positivePeople.stream().map(node -> UUID.fromString(node.key().targetId())).toList();
@@ -90,7 +91,7 @@ public class RecommendationService {
                 ? List.of(EMPTY_UUID) : profile.interactedMediaIds();
 
         LinkedHashSet<UUID> candidateIds = mediaRepository.findInterestCandidates(
-                        types, excluded, genreKeys, personIds, PageRequest.of(0, poolSize)).stream()
+                        types, excluded, genreIds, personIds, PageRequest.of(0, poolSize)).stream()
                 .map(Media::getId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
@@ -115,11 +116,14 @@ public class RecommendationService {
                 .collect(Collectors.groupingBy(CreditScoringProjection::getMediaId, LinkedHashMap::new,
                         Collectors.toList()));
         Map<UUID, RatingSummary> ratings = loadRatings(candidateIds);
+        Map<UUID, List<GenreCatalogService.GenreValue>> genresByMedia =
+                genreCatalogService.forMediaIds(candidateIds, locale);
 
         List<ScoredCandidate> scored = candidates.stream()
                 .map(media -> score(media, creditsByMedia.getOrDefault(media.getId(), List.of()),
                         profile, relations.byCandidate().getOrDefault(media.getId(), List.of()),
-                        ratings.getOrDefault(media.getId(), RatingSummary.EMPTY)))
+                        ratings.getOrDefault(media.getId(), RatingSummary.EMPTY),
+                        genresByMedia.getOrDefault(media.getId(), List.of())))
                 .filter(candidate -> candidate.score() > 0)
                 .sorted(candidateComparator())
                 .limit(limit)
@@ -186,19 +190,18 @@ public class RecommendationService {
             List<CreditScoringProjection> credits,
             InterestGraphService.InterestProfile profile,
             List<RelatedSeed> relations,
-            RatingSummary rating
+            RatingSummary rating,
+            List<GenreCatalogService.GenreValue> genres
     ) {
         List<Contribution> contributions = new ArrayList<>();
-        Map<String, String> genres = media.getGenres().stream()
-                .collect(Collectors.toMap(policy::normalizeGenre, genre -> genre,
-                        (first, ignored) -> first, LinkedHashMap::new));
         int genreCount = Math.max(1, genres.size());
-        genres.forEach((key, label) -> {
+        genres.forEach(genre -> {
+            String key = genre.id().toString();
             InterestGraphService.InterestNode node = profile.nodes().get(
                     new InterestGraphService.InterestKey(InterestTargetType.GENRE, key));
             if (node != null) {
                 contributions.add(new Contribution(
-                        new RecommendationReasonResponse(RecommendationReasonType.GENRE, key, label),
+                        new RecommendationReasonResponse(RecommendationReasonType.GENRE, key, genre.name()),
                         node.effectiveScore() / genreCount));
             }
         });

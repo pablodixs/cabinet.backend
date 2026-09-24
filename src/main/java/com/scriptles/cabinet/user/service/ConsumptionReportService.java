@@ -2,6 +2,7 @@ package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.time.CabinetTime;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -61,6 +62,7 @@ public class ConsumptionReportService {
     private final SeriesEpisodeRepository seriesEpisodeRepository;
     private final AlbumTrackRepository albumTrackRepository;
     private final MediaRepository mediaRepository;
+    private final GenreCatalogService genreCatalogService;
     private final MediaCreditRepository mediaCreditRepository;
 
     @Transactional(readOnly = true)
@@ -158,7 +160,7 @@ public class ConsumptionReportService {
                         Set.of(MediaType.MOVIE, MediaType.SERIES)),
                 rankPeople(periodEvents, CreditRole.ARTIST,
                         Set.of(MediaType.ALBUM)),
-                rankStrings(periodEvents, this::genresFor),
+                rankGenres(periodEvents),
                 rankStrings(periodEvents, this::countryFor),
                 rankStrings(periodEvents, this::languageFor,
                         String::toUpperCase),
@@ -260,11 +262,27 @@ public class ConsumptionReportService {
         return new ConsumptionReportSection(items, totals.getEligibleEventCount(), totals.getAttributedEventCount());
     }
 
-    private Collection<String> genresFor(ReportEvent event) {
-        if (event.sourceMedia() != null && hasNonBlank(event.sourceMedia().getGenres())) {
-            return event.sourceMedia().getGenres();
+    private ConsumptionReportSection rankGenres(List<ReportEvent> events) {
+        Set<UUID> ids = events.stream().flatMap(event -> java.util.stream.Stream.of(
+                        event.media().getId(), event.sourceMedia() == null ? null : event.sourceMedia().getId()))
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, List<GenreCatalogService.GenreValue>> byMedia = new LinkedHashMap<>();
+        List<UUID> mediaIds = List.copyOf(ids);
+        for (int start = 0; start < mediaIds.size(); start += 100) {
+            byMedia.putAll(genreCatalogService.forMediaIds(
+                    mediaIds.subList(start, Math.min(start + 100, mediaIds.size())), "pt-BR"));
         }
-        return event.media().getGenres() == null ? List.of() : event.media().getGenres();
+        Map<String, Aggregate> aggregates = new LinkedHashMap<>();
+        long attributed = 0;
+        for (ReportEvent event : events) {
+            List<GenreCatalogService.GenreValue> genres = event.sourceMedia() == null ? List.of()
+                    : byMedia.getOrDefault(event.sourceMedia().getId(), List.of());
+            if (genres.isEmpty()) genres = byMedia.getOrDefault(event.media().getId(), List.of());
+            if (!genres.isEmpty()) attributed++;
+            genres.forEach(genre -> add(aggregates, genre.id().toString(), genre.name(),
+                    null, null, event.date()));
+        }
+        return section(aggregates, events.size(), attributed, RANKING_LIMIT);
     }
 
     private Collection<String> countryFor(ReportEvent event) {

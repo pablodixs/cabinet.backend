@@ -4,6 +4,7 @@ import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpdateMediaMetadataRequest;
 import com.scriptles.cabinet.media.dto.response.ModerationMediaResponse;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.AlbumDetails;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaMetadataRevision;
@@ -40,6 +41,7 @@ public class MediaModerationService {
     private final MediaMetadataRevisionRepository revisionRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final GenreCatalogService genreCatalogService;
     private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
     private ExternalReferenceRepository externalReferenceRepository;
 
@@ -135,6 +137,7 @@ public class MediaModerationService {
         }
 
         Media saved = mediaRepository.saveAndFlush(media);
+        genreCatalogService.replaceNames(saved.getId(), saved.getGenres(), saved.getDefaultLocale());
         MediaMetadataRevision revision = new MediaMetadataRevision();
         revision.setMedia(saved);
         revision.setEditedBy(editor);

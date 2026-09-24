@@ -76,8 +76,8 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
             where media.typeValue in :types
               and media.id not in :excludedIds
               and (
-                exists (select genreMedia.id from Media genreMedia join genreMedia.genres genre
-                        where genreMedia = media and lower(trim(genre)) in :genreKeys)
+                exists (select genreMedia.id from Media genreMedia join genreMedia.canonicalGenres genre
+                        where genreMedia = media and genre.id in :genreIds)
                 or exists (select credit.id from MediaCredit credit
                            where credit.media = media and credit.person.id in :personIds)
               )
@@ -86,7 +86,7 @@ public interface MediaRepository extends JpaRepository<Media, UUID> {
     List<Media> findInterestCandidates(
             @Param("types") Set<String> types,
             @Param("excludedIds") Collection<UUID> excludedIds,
-            @Param("genreKeys") Collection<String> genreKeys,
+            @Param("genreIds") Collection<UUID> genreIds,
             @Param("personIds") Collection<UUID> personIds,
             Pageable pageable
     );

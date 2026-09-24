@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.repository;
 
+import com.scriptles.cabinet.media.entity.Genre;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,6 +31,7 @@ class UserMediaLibraryFilterRepositoryTest {
     @Autowired UserMediaRepository userMediaRepository;
     @Autowired MediaRepository mediaRepository;
     @Autowired RatingRepository ratingRepository;
+    @Autowired org.springframework.boot.jpa.test.autoconfigure.TestEntityManager entityManager;
 
     @Test
     void combinesSearchGenreRatingAndPrivacyFilters() {
@@ -38,10 +41,17 @@ class UserMediaLibraryFilterRepositoryTest {
                 "Library Filter",
                 "hash"
         ));
+        Genre dramaGenre = new Genre();
+        dramaGenre.setId(UUID.randomUUID());
+        dramaGenre.setCanonicalKey("drama");
+        entityManager.persist(dramaGenre);
         Media alpha = media(MediaType.MOVIE, "Alpha", "Drama");
+        alpha.getCanonicalGenres().add(dramaGenre);
         Media beta = media(MediaType.BOOK, "Beta", "Drama");
+        beta.getCanonicalGenres().add(dramaGenre);
         Media gamma = media(MediaType.ALBUM, "Gamma", "Comedy");
         Media privateMedia = media(MediaType.SERIES, "Private Alpha", "Drama");
+        privateMedia.getCanonicalGenres().add(dramaGenre);
 
         libraryEntry(user, alpha, false);
         libraryEntry(user, beta, false);
@@ -58,7 +68,7 @@ class UserMediaLibraryFilterRepositoryTest {
                 null,
                 null,
                 "%alpha%",
-                "Drama",
+                dramaGenre.getId(),
                 LibraryRatingFilter.FOUR_PLUS.name(),
                 List.of(Visibility.PUBLIC),
                 LibrarySort.RATING.name(),
@@ -70,7 +80,7 @@ class UserMediaLibraryFilterRepositoryTest {
                 null,
                 null,
                 null,
-                "Drama",
+                dramaGenre.getId(),
                 LibraryRatingFilter.UNRATED.name(),
                 List.of(Visibility.PUBLIC),
                 LibrarySort.TITLE.name(),

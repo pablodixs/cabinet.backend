@@ -14,6 +14,7 @@ import com.scriptles.cabinet.user.dto.response.ProfileLikeResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileTagResponse;
 import com.scriptles.cabinet.user.dto.response.ProfileTaggedMediaResponse;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.LibraryRatingFilter;
 import com.scriptles.cabinet.user.enums.LibrarySort;
@@ -29,6 +30,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -46,6 +48,7 @@ import java.util.List;
 public class UserController {
     private final UserService userService;
     private final UserProfileService userProfileService;
+    private static final CatalogLocaleResolver localeResolver = new CatalogLocaleResolver();
     private final SocialGraphService socialGraphService;
 
     @GetMapping("/search")
@@ -159,10 +162,13 @@ public class UserController {
     @GetMapping("/{username}/library/filters")
     public LibraryFilterOptionsResponse findLibraryFilters(
             @PathVariable String username,
-            @AuthenticationPrincipal AuthenticatedUser viewer
+            @AuthenticationPrincipal AuthenticatedUser viewer,
+            @RequestParam(required = false) String locale,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
         return userProfileService.findLibraryFilters(
-                username, viewer == null ? null : viewer.id());
+                username, viewer == null ? null : viewer.id(),
+                localeResolver.resolve(locale, acceptLanguage).tag());
     }
 
     @GetMapping("/{username}/likes")

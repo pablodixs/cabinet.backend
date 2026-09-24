@@ -5,6 +5,8 @@ import com.scriptles.cabinet.media.dto.response.ArtistResponse;
 import com.scriptles.cabinet.media.dto.response.AwardPageResponse;
 import com.scriptles.cabinet.media.dto.response.PersonWorkResponse;
 import com.scriptles.cabinet.media.enums.AwardResult;
+import com.scriptles.cabinet.media.enums.ArtistWorkSort;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.service.ArtistService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.util.List;
 
 @RestController
 @Validated
@@ -49,11 +52,33 @@ public class PeopleController {
             @RequestParam(defaultValue = "24") @Min(1) @Max(40) int size,
             @RequestParam(required = false) @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
             @RequestParam(required = false) MediaType type,
+            @RequestParam(required = false) CreditRole role,
+            @RequestParam(defaultValue = "RELEASE_DATE_DESC") ArtistWorkSort sort,
+            @RequestParam(required = false) @Min(1800) @Max(2100) Integer year,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
+    ) {
+        String requestedLocale = localeResolver.resolve(language, acceptLanguage).tag();
+        PageResponse<PersonWorkResponse> works = role == null && year == null
+                && sort == ArtistWorkSort.RELEASE_DATE_DESC
+                ? personWorksService.getObject().findWorks(personId, page, size, requestedLocale, type)
+                : personWorksService.getObject().findWorks(personId, page, size, requestedLocale,
+                        type, role, sort, year);
+        return LocalizedResponse.ok(
+                works,
+                requestedLocale,
+                language == null || language.isBlank()
+        );
+    }
+
+    @GetMapping("/{personId}/work-roles")
+    public ResponseEntity<List<CreditRole>> findWorkRoles(
+            @PathVariable UUID personId,
+            @RequestParam(required = false) @Pattern(regexp = "^[a-z]{2}(-[A-Z]{2})?$") String language,
             @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage
     ) {
         String requestedLocale = localeResolver.resolve(language, acceptLanguage).tag();
         return LocalizedResponse.ok(
-                personWorksService.getObject().findWorks(personId, page, size, requestedLocale, type),
+                personWorksService.getObject().findRoles(personId, requestedLocale),
                 requestedLocale,
                 language == null || language.isBlank()
         );

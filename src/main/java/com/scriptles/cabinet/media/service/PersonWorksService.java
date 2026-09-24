@@ -8,6 +8,8 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.ExternalSource;
+import com.scriptles.cabinet.media.enums.ArtistWorkSort;
+import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.external.AlbumCoverService;
 import com.scriptles.cabinet.media.external.ExternalMedia;
@@ -55,12 +57,45 @@ public class PersonWorksService {
     private final CatalogLocaleResolver localeResolver;
     private final MediaTranslationResolver translationResolver;
 
+    public List<CreditRole> findRoles(UUID personId, String language) {
+        findPerson(personId);
+        String requestedLocale = localeResolver.normalize(
+                language == null ? CatalogLocaleResolver.DEFAULT_LOCALE : language);
+        EnumSet<CreditRole> roles = EnumSet.noneOf(CreditRole.class);
+        roles.addAll(mediaCreditRepository.findDistinctRolesByPersonId(personId));
+        for (ExternalSource source : WORK_SOURCES) {
+            identityResolver.findExternalId(personId, source).ifPresent(externalId -> {
+                PersonWorksCatalogService.CatalogResult catalog = catalogService.find(
+                        source, externalId, requestedLocale);
+                if (catalog != null && catalog.items() != null) {
+                    catalog.items().stream().filter(work -> work != null && work.role() != null)
+                            .forEach(work -> roles.add(work.role()));
+                }
+            });
+        }
+        return List.copyOf(roles);
+    }
+
     public PageResponse<PersonWorkResponse> findWorks(
             UUID personId,
             int page,
             int size,
             String language,
             MediaType type
+    ) {
+        return findWorks(personId, page, size, language, type, null, ArtistWorkSort.RELEASE_DATE_DESC);
+    }
+
+    public PageResponse<PersonWorkResponse> findWorks(
+            UUID personId, int page, int size, String language, MediaType type,
+            CreditRole role, ArtistWorkSort sort
+    ) {
+        return findWorks(personId, page, size, language, type, role, sort, null);
+    }
+
+    public PageResponse<PersonWorkResponse> findWorks(
+            UUID personId, int page, int size, String language, MediaType type,
+            CreditRole role, ArtistWorkSort sort, Integer year
     ) {
         findPerson(personId);
         String requestedLocale = localeResolver.normalize(
@@ -90,6 +125,8 @@ public class PersonWorksService {
         }
 
         Map<ExternalKey, WorkCandidate> externalCandidates = new LinkedHashMap<>();
+        Map<UUID, Double> importedPopularity = new LinkedHashMap<>();
+        Map<ExternalKey, Double> externalPopularity = new LinkedHashMap<>();
         for (ExternalSource source : WORK_SOURCES) {
             if (!supports(source, type)) {
                 continue;
@@ -107,8 +144,10 @@ public class PersonWorksService {
                         continue;
                     }
                     ExternalKey key = new ExternalKey(work.media().source(), work.media().externalId());
+                    externalPopularity.merge(key, work.relevance(), Math::max);
                     // A Cabinet import is authoritative for the whole work, including its credits.
                     if (importedByExternalKey.containsKey(key)) {
+                        importedPopularity.merge(importedByExternalKey.get(key), work.relevance(), Math::max);
                         continue;
                     }
                     WorkCandidate existing = externalCandidates.get(key);
@@ -122,7 +161,15 @@ public class PersonWorksService {
         }
         candidates.addAll(externalCandidates.values());
 
-        candidates.sort(workOrder());
+        if (role != null) {
+            candidates.removeIf(candidate -> candidate.credits().stream()
+                    .noneMatch(credit -> credit.role() == role));
+        }
+        if (year != null) {
+            candidates.removeIf(candidate -> candidate.releaseDate() == null
+                    || candidate.releaseDate().getYear() != year);
+        }
+        candidates.sort(workOrder(sort, importedPopularity, externalPopularity));
         long requestedFrom = (long) page * size;
         int fromIndex = requestedFrom >= candidates.size()
                 ? candidates.size()
@@ -330,13 +377,31 @@ public class PersonWorksService {
         );
     }
 
-    private Comparator<WorkCandidate> workOrder() {
-        return Comparator
+    private Comparator<WorkCandidate> workOrder(
+            ArtistWorkSort sort, Map<UUID, Double> importedPopularity,
+            Map<ExternalKey, Double> externalPopularity
+    ) {
+        Comparator<WorkCandidate> recent = Comparator
                 .comparing(WorkCandidate::releaseDate,
-                        Comparator.nullsLast(Comparator.reverseOrder()))
+                        Comparator.nullsLast(Comparator.reverseOrder()));
+        Comparator<WorkCandidate> oldest = Comparator.comparing(WorkCandidate::releaseDate,
+                Comparator.nullsLast(Comparator.naturalOrder()));
+        Comparator<WorkCandidate> title = Comparator.comparing(WorkCandidate::title,
+                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+        Comparator<WorkCandidate> primary = switch (sort) {
+            case POPULARITY -> Comparator.<WorkCandidate>comparingDouble(candidate ->
+                    candidate.imported()
+                            ? importedPopularity.getOrDefault(candidate.id(), 0.0)
+                            : externalPopularity.getOrDefault(
+                                    new ExternalKey(candidate.source(), candidate.externalId()), 0.0)
+            ).reversed().thenComparing(recent);
+            case RELEASE_DATE_DESC -> recent;
+            case RELEASE_DATE_ASC -> oldest;
+            case TITLE -> title;
+        };
+        return primary
                 .thenComparing(WorkCandidate::imported, Comparator.reverseOrder())
-                .thenComparing(WorkCandidate::title,
-                        Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                .thenComparing(title)
                 .thenComparing(WorkCandidate::source,
                         Comparator.nullsLast(Comparator.comparing(Enum::name)))
                 .thenComparing(WorkCandidate::externalId,

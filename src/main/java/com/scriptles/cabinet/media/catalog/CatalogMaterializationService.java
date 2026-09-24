@@ -24,6 +24,7 @@ public class CatalogMaterializationService {
     private final BookDetailsRepository bookDetailsRepository;
     private final TrackDetailsRepository trackDetailsRepository;
     private final CatalogLocaleResolver localeResolver;
+    private final GenreCatalogService genreCatalogService;
 
     public Media findOrCreateCore(MediaTarget target, CatalogResolver.Resolution resolution) {
         if (resolution.alreadyMaterialized()) {
@@ -53,6 +54,7 @@ public class CatalogMaterializationService {
         media.setCatalogStatus(CatalogStatus.CORE_READY);
         media.setCoreSyncedAt(Instant.now());
         Media saved = mediaRepository.saveAndFlush(media);
+        genreCatalogService.replace(saved.getId(), external.genres(), locale);
 
         saveMinimalDetails(saved, external);
         saveTranslation(saved, external, locale);

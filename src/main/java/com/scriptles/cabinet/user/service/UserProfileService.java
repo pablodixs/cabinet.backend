@@ -2,6 +2,7 @@ package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.MediaLike;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
@@ -65,6 +66,7 @@ public class UserProfileService {
     private static final int RECENT_ITEMS_LIMIT = 4;
 
     private final UserRepository userRepository;
+    private final GenreCatalogService genreCatalogService;
     private final UserMediaRepository userMediaRepository;
     private final UserMediaActivityRepository userMediaActivityRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
@@ -329,13 +331,17 @@ public class UserProfileService {
     ) {
         ProfileAccess access = findProfileAccess(username, viewerId);
         List<Visibility> visibleInteractions = visibleInteractions(access);
+        UUID genreId = genre == null || genre.isBlank() ? null : genreCatalogService.uniqueLegacyId(genre);
+        if (genre != null && !genre.isBlank() && genreId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_GENRE", "Gênero inválido ou ambíguo");
+        }
         Page<UserMedia> entries = userMediaRepository.findProfileLibrary(
                 access.user().getId(),
                 access.ownProfile(),
                 status,
                 type,
                 normalizeLibraryQuery(query),
-                normalizeBlank(genre),
+                genreId,
                 rating.name(),
                 visibleInteractions,
                 sort.name(),
@@ -387,12 +393,15 @@ public class UserProfileService {
     @Transactional(readOnly = true)
     public LibraryFilterOptionsResponse findLibraryFilters(
             String username,
-            UUID viewerId
+            UUID viewerId,
+            String locale
     ) {
         ProfileAccess access = findProfileAccess(username, viewerId);
         return new LibraryFilterOptionsResponse(
-                userMediaRepository.findProfileLibraryGenres(
-                        access.user().getId(), access.ownProfile())
+                genreCatalogService.libraryOptions(
+                        access.user().getId(), access.ownProfile(), locale).stream()
+                        .map(value -> new LibraryFilterOptionsResponse.GenreOption(
+                                value.id().toString(), value.name())).toList()
         );
     }
 

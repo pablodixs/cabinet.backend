@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -17,6 +19,8 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
+@Cacheable
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 @Table(name = "media",
         indexes = {
                 @Index(
@@ -69,6 +73,11 @@ public class Media {
             indexes = @Index(name = "idx_media_genres_media_id", columnList = "media_id"))
     @Column(name = "genre", length = 100, nullable = false)
     private Set<String> genres = new LinkedHashSet<>();
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "media_genre", joinColumns = @JoinColumn(name = "media_id"),
+            inverseJoinColumns = @JoinColumn(name = "genre_id"))
+    private Set<Genre> canonicalGenres = new LinkedHashSet<>();
 
     private LocalDate releaseDate;
 

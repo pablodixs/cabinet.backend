@@ -7,11 +7,15 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.Cache;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
+@Cacheable
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 @Table(name = "people", uniqueConstraints = @UniqueConstraint(
         name = "uk_people_external_reference",
         columnNames = {"external_source", "external_id"}

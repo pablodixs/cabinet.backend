@@ -5,6 +5,7 @@ import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.entity.AlbumDetails;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.ExternalReference;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaLike;
 import com.scriptles.cabinet.media.entity.MovieDetails;
@@ -106,6 +107,9 @@ class MediaQueryServiceTest {
     private CatalogTranslationLoader catalogTranslationLoader;
     @Mock
     private MediaTranslationResolver mediaTranslationResolver;
+
+    @Mock
+    private GenreCatalogService genreCatalogService;
 
     @InjectMocks
     private MediaQueryService mediaQueryService;
@@ -448,6 +452,8 @@ class MediaQueryServiceTest {
         albumDetails.setAnimatedCoverUrl("https://example.com/discovery.gif");
 
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(genreCatalogService.forMedia(org.mockito.ArgumentMatchers.eq(mediaId), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(List.of(new GenreCatalogService.GenreValue(UUID.randomUUID(), "Drama")));
         stubTranslation(media);
         when(externalReferenceRepository.findAllByMediaId(mediaId)).thenReturn(List.of());
         when(albumDetailsRepository.findById(mediaId)).thenReturn(Optional.of(albumDetails));
@@ -491,6 +497,8 @@ class MediaQueryServiceTest {
         completed.setUser(completer);
 
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
+        when(genreCatalogService.forMedia(org.mockito.ArgumentMatchers.eq(mediaId), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(List.of(new GenreCatalogService.GenreValue(UUID.randomUUID(), "Drama")));
         stubTranslation(media);
         when(externalReferenceRepository.findAllByMediaId(mediaId)).thenReturn(List.of(reference));
         when(movieDetailsRepository.findById(mediaId)).thenReturn(Optional.of(movieDetails));

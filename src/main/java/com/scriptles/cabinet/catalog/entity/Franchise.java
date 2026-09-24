@@ -5,9 +5,10 @@ import com.scriptles.cabinet.catalog.franchise.FranchiseType;
 import jakarta.persistence.*;
 import lombok.Getter; import lombok.NoArgsConstructor; import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp; import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.Cache; import org.hibernate.annotations.CacheConcurrencyStrategy;
 import java.time.*; import java.util.UUID;
 
-@Entity @Table(name="franchises", indexes=@Index(name="idx_franchises_parent", columnList="parent_id"))
+@Entity @Cacheable @Cache(usage = CacheConcurrencyStrategy.READ_WRITE) @Table(name="franchises", indexes=@Index(name="idx_franchises_parent", columnList="parent_id"))
 @Getter @Setter @NoArgsConstructor
 public class Franchise {
  @Id @GeneratedValue(strategy=GenerationType.UUID) private UUID id;

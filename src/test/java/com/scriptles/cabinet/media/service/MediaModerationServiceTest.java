@@ -3,6 +3,7 @@ package com.scriptles.cabinet.media.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.request.UpdateMediaMetadataRequest;
 import com.scriptles.cabinet.media.entity.AlbumDetails;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaMetadataRevision;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -36,6 +37,7 @@ class MediaModerationServiceTest {
     @Mock MediaMetadataRevisionRepository revisionRepository;
     @Mock UserRepository userRepository;
     @Mock ObjectMapper objectMapper;
+    @Mock GenreCatalogService genreCatalogService;
 
     @Test
     void updatesMetadataAndRecordsRevision() {
@@ -50,7 +52,7 @@ class MediaModerationServiceTest {
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"state\":true}");
 
         MediaModerationService service = new MediaModerationService(
-                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper);
+                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper, genreCatalogService);
         var response = service.update(mediaId, request(3L), editorId);
 
         assertThat(response.title()).isEqualTo("Novo título");
@@ -71,7 +73,7 @@ class MediaModerationServiceTest {
         Media media = media(mediaId, 4);
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         MediaModerationService service = new MediaModerationService(
-                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper);
+                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper, genreCatalogService);
 
         assertThatThrownBy(() -> service.update(mediaId, request(3L), UUID.randomUUID()))
                 .isInstanceOf(ApiException.class)
@@ -98,7 +100,7 @@ class MediaModerationServiceTest {
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"state\":true}");
 
         MediaModerationService service = new MediaModerationService(
-                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper);
+                mediaRepository, albumDetailsRepository, revisionRepository, userRepository, objectMapper, genreCatalogService);
         var response = service.update(mediaId, request(2L, " https://example.com/new.gif "), editorId);
 
         assertThat(response.animatedCoverUrl()).isEqualTo("https://example.com/new.gif");

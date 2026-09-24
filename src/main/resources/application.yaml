@@ -14,9 +14,18 @@ spring:
       max-lifetime: 300000
   jpa:
     open-in-view: false
+    shared-cache-mode: ENABLE_SELECTIVE
     properties:
       hibernate:
         format_sql: true
+        cache:
+          use_second_level_cache: true
+          region:
+            factory_class: jcache
+        javax:
+          cache:
+            provider: com.github.benmanes.caffeine.jcache.spi.CaffeineCachingProvider
+            missing_cache_strategy: create
         jdbc:
           batch_size: 50
         order_inserts: true

@@ -2,6 +2,7 @@ package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -48,6 +49,7 @@ public class InterestGraphService {
     private static final double EPSILON = 0.00001;
 
     private final InterestScoringPolicy policy;
+    private final GenreCatalogService genreCatalogService;
     private final UserInterestPreferenceRepository preferenceRepository;
     private final RatingRepository ratingRepository;
     private final MediaLikeRepository mediaLikeRepository;
@@ -66,7 +68,7 @@ public class InterestGraphService {
 
     @Transactional(readOnly = true)
     public PageResponse<InterestResponse> interests(
-            UUID userId, InterestTargetType targetType, int page, int size) {
+            UUID userId, InterestTargetType targetType, int page, int size, String locale) {
         List<InterestResponse> all = build(userId).nodes().values().stream()
                 .filter(node -> node.key().type() == targetType)
                 .filter(node -> Math.abs(node.effectiveScore()) > EPSILON)
@@ -78,7 +80,15 @@ public class InterestGraphService {
         int from = (int) Math.min((long) page * size, all.size());
         int to = Math.min(from + size, all.size());
         int pages = all.isEmpty() ? 0 : (int) Math.ceil((double) all.size() / size);
-        return new PageResponse<>(all.subList(from, to), page, size, all.size(), pages);
+        List<InterestResponse> localized = all.subList(from, to).stream()
+                .map(item -> item.targetType() == InterestTargetType.GENRE
+                        ? new InterestResponse(item.targetType(), item.targetId(),
+                                java.util.Objects.requireNonNullElse(
+                                        genreCatalogService.label(UUID.fromString(item.targetId()), locale), item.label()),
+                                item.polarity(), item.explicitPreference(), item.inferred(), item.strength())
+                        : item)
+                .toList();
+        return new PageResponse<>(localized, page, size, all.size(), pages);
     }
 
     @Transactional
@@ -95,6 +105,7 @@ public class InterestGraphService {
         });
         entity.setPreference(request.preference());
         entity.setGenreKey(target.genreKey());
+        entity.setGenreId(target.genreKey() == null ? null : UUID.fromString(target.genreKey()));
         entity.setGenreLabel(target.genreLabel());
         entity.setPerson(target.person());
         entity.setMedia(target.media());
@@ -112,18 +123,15 @@ public class InterestGraphService {
 
     @Transactional(readOnly = true)
     public List<InterestOptionResponse> options(
-            InterestTargetType targetType, String query, MediaType mediaType, int limit) {
+            InterestTargetType targetType, String query, MediaType mediaType, int limit, String locale) {
         if (mediaType != null) requireSupported(mediaType);
         String normalizedQuery = query == null ? "" : query.trim();
         PageRequest page = PageRequest.of(0, limit);
         return switch (targetType) {
-            case GENRE -> mediaRepository.findGenreOptions(
-                            mediaType == null ? null : mediaType.name(), normalizedQuery, page).stream()
-                    .collect(Collectors.toMap(policy::normalizeGenre, genre -> genre,
-                            (first, ignored) -> first, LinkedHashMap::new))
-                    .entrySet().stream()
-                    .map(entry -> new InterestOptionResponse(
-                            targetType, entry.getKey(), entry.getValue(), null, null))
+            case GENRE -> genreCatalogService.options(normalizedQuery, locale,
+                            mediaType == null ? null : mediaType.name(), limit).stream()
+                    .map(genre -> new InterestOptionResponse(
+                            targetType, genre.id().toString(), genre.name(), null, null))
                     .toList();
             case PERSON -> personRepository
                     .findInterestOptions(normalizedQuery,
@@ -172,6 +180,8 @@ public class InterestGraphService {
         preferences.stream().filter(preference -> preference.getTargetType() == InterestTargetType.MEDIA)
                 .map(preference -> preference.getMedia().getId()).forEach(seedIds::add);
         Map<UUID, Media> mediaById = loadMedia(seedIds);
+        Map<UUID, List<GenreCatalogService.GenreValue>> genresByMedia =
+                genreCatalogService.forMediaIds(seedIds, "pt-BR");
         List<CreditScoringProjection> loadedCredits = loadPrincipalCredits(seedIds);
         Map<UUID, List<CreditScoringProjection>> creditsByMedia = loadedCredits.stream()
                 .collect(Collectors.groupingBy(CreditScoringProjection::getMediaId, LinkedHashMap::new,
@@ -196,14 +206,11 @@ public class InterestGraphService {
                     : policy.explicit(mediaPreference.getPreference());
             if (Math.abs(seed) <= EPSILON) return;
 
-            List<GenreValue> genres = media.getGenres().stream()
-                    .map(label -> new GenreValue(policy.normalizeGenre(label), label))
-                    .collect(Collectors.toMap(GenreValue::key, value -> value,
-                            (first, ignored) -> first, LinkedHashMap::new)).values().stream().toList();
+            List<GenreCatalogService.GenreValue> genres = genresByMedia.getOrDefault(mediaId, List.of());
             if (!genres.isEmpty()) {
                 double contribution = seed * InterestScoringPolicy.GENRE_SHARE / genres.size();
                 genres.forEach(genre -> add(inferred,
-                        new InterestKey(InterestTargetType.GENRE, genre.key()), genre.label(), contribution));
+                        new InterestKey(InterestTargetType.GENRE, genre.id().toString()), genre.name(), contribution));
             }
 
             List<CreditScoringProjection> credits = creditsByMedia.getOrDefault(mediaId, List.of());
@@ -279,9 +286,10 @@ public class InterestGraphService {
         ValidTarget target = parseTarget(type, targetId);
         return switch (type) {
             case GENRE -> {
-                List<String> labels = mediaRepository.findGenreLabels(target.genreKey(), PageRequest.of(0, 1));
-                if (labels.isEmpty()) throw notFound("INTEREST_TARGET_NOT_FOUND", "Gênero não encontrado");
-                yield new ValidTarget(type, target.genreKey(), labels.getFirst(), null, null);
+                UUID id = genreCatalogService.uniqueLegacyId(target.genreKey());
+                if (id == null) throw notFound("INTEREST_TARGET_NOT_FOUND", "Gênero não encontrado");
+                String label = genreCatalogService.label(id, "pt-BR");
+                yield new ValidTarget(type, id.toString(), label, null, null);
             }
             case PERSON -> {
                 Person person = personRepository.findById(target.person().getId()).orElseThrow(() ->
@@ -302,9 +310,9 @@ public class InterestGraphService {
             throw invalidTarget();
         }
         if (type == InterestTargetType.GENRE) {
-            String key = policy.normalizeGenre(targetId);
-            if (key.length() > 100) throw invalidTarget();
-            return new ValidTarget(type, key, null, null, null);
+            UUID id = genreCatalogService.uniqueLegacyId(targetId);
+            if (id == null) throw invalidTarget();
+            return new ValidTarget(type, id.toString(), null, null, null);
         }
         try {
             UUID id = UUID.fromString(targetId);
@@ -334,7 +342,8 @@ public class InterestGraphService {
 
     private InterestKey key(UserInterestPreference preference) {
         return switch (preference.getTargetType()) {
-            case GENRE -> new InterestKey(InterestTargetType.GENRE, preference.getGenreKey());
+            case GENRE -> new InterestKey(InterestTargetType.GENRE,
+                    preference.getGenreId() == null ? preference.getGenreKey() : preference.getGenreId().toString());
             case PERSON -> new InterestKey(InterestTargetType.PERSON, preference.getPerson().getId().toString());
             case MEDIA -> new InterestKey(InterestTargetType.MEDIA, preference.getMedia().getId().toString());
         };

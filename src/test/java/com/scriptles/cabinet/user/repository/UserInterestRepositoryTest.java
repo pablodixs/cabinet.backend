@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.repository;
 
+import com.scriptles.cabinet.media.entity.Genre;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaRepository;
@@ -28,13 +29,18 @@ class UserInterestRepositoryTest {
 
     @Test
     void findsCandidatesAndGenreLabelsByNormalizedGenre() {
+        Genre dramaGenre = new Genre();
+        dramaGenre.setId(UUID.randomUUID());
+        dramaGenre.setCanonicalKey("drama");
+        entityManager.persist(dramaGenre);
         Media drama = media("Drama", "Drama");
+        drama.getCanonicalGenres().add(dramaGenre);
         media("Comedy", "Comedy");
         entityManager.flush();
         entityManager.clear();
 
         List<Media> candidates = mediaRepository.findInterestCandidates(
-                Set.of("MOVIE"), List.of(new UUID(0, 0)), List.of("drama"),
+                Set.of("MOVIE"), List.of(new UUID(0, 0)), List.of(dramaGenre.getId()),
                 List.of(new UUID(0, 0)), PageRequest.of(0, 20));
 
         assertThat(candidates).extracting(Media::getId).containsExactly(drama.getId());

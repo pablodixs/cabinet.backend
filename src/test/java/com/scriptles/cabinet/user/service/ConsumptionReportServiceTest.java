@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.service;
 
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -37,6 +38,7 @@ class ConsumptionReportServiceTest {
     @Mock AlbumTrackRepository albumTrackRepository;
     @Mock MediaRepository mediaRepository;
     @Mock MediaCreditRepository mediaCreditRepository;
+    @Mock GenreCatalogService genreCatalogService;
 
     @Test
     void aggregatesMonthlyEventsAndKeepsTopFiveStable() {
@@ -52,6 +54,10 @@ class ConsumptionReportServiceTest {
                 .thenReturn(List.of(first, second));
         when(episodeWatchRepository.findAllConsumptionWatches(any())).thenReturn(List.of());
         when(mediaRepository.findAllWithGenresByIdIn(anyCollection())).thenReturn(List.of(movie));
+        UUID genreId = UUID.randomUUID();
+        when(genreCatalogService.forMediaIds(anyCollection(), org.mockito.ArgumentMatchers.eq("pt-BR")))
+                .thenReturn(java.util.Map.of(movie.getId(),
+                        List.of(new GenreCatalogService.GenreValue(genreId, "Drama"))));
         ReportRankingProjection ranking = org.mockito.Mockito.mock(ReportRankingProjection.class);
         when(ranking.getPersonId()).thenReturn(directorId);
         when(ranking.getPersonName()).thenReturn("Walter Salles");
@@ -89,7 +95,7 @@ class ConsumptionReportServiceTest {
 
     private ConsumptionReportService service() {
         return new ConsumptionReportService(activityRepository, episodeWatchRepository,
-                seriesEpisodeRepository, albumTrackRepository, mediaRepository, mediaCreditRepository);
+                seriesEpisodeRepository, albumTrackRepository, mediaRepository, genreCatalogService, mediaCreditRepository);
     }
 
     private Media media(MediaType type, String title, LocalDate releaseDate) {

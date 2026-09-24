@@ -115,7 +115,7 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
                       and (:searchQuery is null
                         or lower(media.title) like :searchQuery
                         or lower(coalesce(media.originalTitle, '')) like :searchQuery)
-                      and (:genre is null or :genre member of media.genres)
+                      and (:genre is null or exists (select canonical.id from Media genreMedia join genreMedia.canonicalGenres canonical where genreMedia = media and canonical.id = :genre))
                       and (:ratingFilter = 'ALL'
                         or (:ratingFilter = 'UNRATED'
                             and rating.id is null)
@@ -158,7 +158,7 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
                       and (:searchQuery is null
                         or lower(media.title) like :searchQuery
                         or lower(coalesce(media.originalTitle, '')) like :searchQuery)
-                      and (:genre is null or :genre member of media.genres)
+                      and (:genre is null or exists (select canonical.id from Media genreMedia join genreMedia.canonicalGenres canonical where genreMedia = media and canonical.id = :genre))
                       and (:ratingFilter = 'ALL'
                         or (:ratingFilter = 'UNRATED'
                             and rating.id is null)
@@ -178,7 +178,7 @@ public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
             @Param("status") UserMediaStatus status,
             @Param("type") MediaType type,
             @Param("searchQuery") String searchQuery,
-            @Param("genre") String genre,
+            @Param("genre") UUID genre,
             @Param("ratingFilter") String ratingFilter,
             @Param("ratingVisibilities") List<Visibility> ratingVisibilities,
             @Param("sortMode") String sortMode,

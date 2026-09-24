@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.ArtistWorkSort;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.external.AlbumCoverService;
@@ -167,6 +168,60 @@ class PersonWorksServiceTest {
                     new PersonWorkResponse.CreditResponse(CreditRole.ACTOR, "Tyler Durden"),
                     new PersonWorkResponse.CreditResponse(CreditRole.PRODUCER, null));
         });
+    }
+
+    @Test
+    void filtersByRoleBeforePagingAndSortsExternalWorksByPopularity() {
+        UUID personId = UUID.randomUUID();
+        Person person = person(personId, ExternalSource.TMDB, "7467");
+        ExternalMedia popular = externalMedia(ExternalSource.TMDB, MediaType.MOVIE,
+                "1", "Popular", LocalDate.of(2000, 1, 1));
+        ExternalMedia recent = externalMedia(ExternalSource.TMDB, MediaType.MOVIE,
+                "2", "Recent", LocalDate.of(2024, 1, 1));
+        ExternalMedia acted = externalMedia(ExternalSource.TMDB, MediaType.MOVIE,
+                "3", "Acted", LocalDate.of(2025, 1, 1));
+        when(personRepository.findById(personId)).thenReturn(Optional.of(person));
+        when(identityResolver.findExternalId(personId, ExternalSource.TMDB)).thenReturn(Optional.of("7467"));
+        when(catalogService.find(ExternalSource.TMDB, "7467", "pt-BR"))
+                .thenReturn(new PersonWorksCatalogService.CatalogResult(List.of(
+                        new ExternalPersonWorksProvider.Work(recent, CreditRole.DIRECTOR, null, 2),
+                        new ExternalPersonWorksProvider.Work(popular, CreditRole.DIRECTOR, null, 20),
+                        new ExternalPersonWorksProvider.Work(acted, CreditRole.ACTOR, null, 50)
+                ), false));
+
+        var first = service.findWorks(personId, 0, 1, "pt-BR", MediaType.MOVIE,
+                CreditRole.DIRECTOR, ArtistWorkSort.POPULARITY);
+        var second = service.findWorks(personId, 1, 1, "pt-BR", MediaType.MOVIE,
+                CreditRole.DIRECTOR, ArtistWorkSort.POPULARITY);
+        var releasedIn2024 = service.findWorks(personId, 0, 8, "pt-BR", MediaType.MOVIE,
+                CreditRole.DIRECTOR, ArtistWorkSort.POPULARITY, 2024);
+
+        assertThat(first.totalElements()).isEqualTo(2);
+        assertThat(first.totalPages()).isEqualTo(2);
+        assertThat(first.items()).extracting(PersonWorkResponse::title).containsExactly("Popular");
+        assertThat(second.items()).extracting(PersonWorkResponse::title).containsExactly("Recent");
+        assertThat(releasedIn2024.items()).extracting(PersonWorkResponse::title)
+                .containsExactly("Recent");
+    }
+
+    @Test
+    void includesExternalOnlyRolesInArtistNavigation() {
+        UUID personId = UUID.randomUUID();
+        Person person = person(personId, ExternalSource.TMDB, "7467");
+        ExternalMedia movie = externalMedia(ExternalSource.TMDB, MediaType.MOVIE,
+                "1", "Movie", LocalDate.of(2024, 1, 1));
+        when(personRepository.findById(personId)).thenReturn(Optional.of(person));
+        when(mediaCreditRepository.findDistinctRolesByPersonId(personId))
+                .thenReturn(List.of(CreditRole.ACTOR));
+        when(identityResolver.findExternalId(personId, ExternalSource.TMDB))
+                .thenReturn(Optional.of("7467"));
+        when(catalogService.find(ExternalSource.TMDB, "7467", "pt-BR"))
+                .thenReturn(new PersonWorksCatalogService.CatalogResult(List.of(
+                        new ExternalPersonWorksProvider.Work(movie, CreditRole.DIRECTOR, null, 10)
+                ), false));
+
+        assertThat(service.findRoles(personId, "pt-BR"))
+                .containsExactly(CreditRole.DIRECTOR, CreditRole.ACTOR);
     }
 
     private Person person(UUID id, ExternalSource source, String externalId) {

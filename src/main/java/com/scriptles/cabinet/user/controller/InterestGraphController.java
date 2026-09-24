@@ -60,8 +60,11 @@ public class InterestGraphController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestParam InterestTargetType targetType,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size) {
-        return interestGraphService.interests(user.id(), targetType, page, size);
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size,
+            @RequestParam(required = false) String locale,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage) {
+        return interestGraphService.interests(user.id(), targetType, page, size,
+                localeResolver.resolve(locale, acceptLanguage).tag());
     }
 
     @PutMapping("/interests")
@@ -85,7 +88,10 @@ public class InterestGraphController {
             @RequestParam InterestTargetType targetType,
             @RequestParam(defaultValue = "") @Size(max = 100) String query,
             @RequestParam(required = false) MediaType mediaType,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int limit) {
-        return interestGraphService.options(targetType, query, mediaType, limit);
+            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int limit,
+            @RequestParam(required = false) String locale,
+            @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage) {
+        return interestGraphService.options(targetType, query, mediaType, limit,
+                localeResolver.resolve(locale, acceptLanguage).tag());
     }
 }

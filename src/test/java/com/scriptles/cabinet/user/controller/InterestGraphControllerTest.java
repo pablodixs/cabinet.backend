@@ -87,7 +87,7 @@ class InterestGraphControllerTest {
         InterestResponse interest = new InterestResponse(InterestTargetType.GENRE, "drama", "Drama",
                 InterestPreference.POSITIVE, null, true, 0.6);
         when(interestGraphService.interests(
-                principal.id(), InterestTargetType.GENRE, 0, 20))
+                principal.id(), InterestTargetType.GENRE, 0, 20, "pt-BR"))
                 .thenReturn(new PageResponse<>(List.of(interest), 0, 20, 1, 1));
 
         mockMvc.perform(get("/v1/me/interests")

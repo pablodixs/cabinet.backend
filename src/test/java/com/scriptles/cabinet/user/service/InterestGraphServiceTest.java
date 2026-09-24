@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.service;
 
+import com.scriptles.cabinet.media.catalog.GenreCatalogService;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.MediaLike;
@@ -52,6 +53,7 @@ class InterestGraphServiceTest {
     @Mock MediaCreditRepository mediaCreditRepository;
     @Mock PersonRepository personRepository;
     @Mock InterestProfileCache profileCache;
+    @Mock GenreCatalogService genreCatalogService;
 
     @Spy InterestScoringPolicy policy = new InterestScoringPolicy();
 
@@ -60,6 +62,8 @@ class InterestGraphServiceTest {
     @Test
     void buildsSignalsAndLetsExplicitGenreOverrideTheInference() {
         UUID userId = UUID.randomUUID();
+        UUID dramaId = UUID.randomUUID();
+        UUID fictionId = UUID.randomUUID();
         Media media = media("Solaris", "Drama", "Science Fiction");
         Rating rating = new Rating();
         rating.setMedia(media);
@@ -82,7 +86,8 @@ class InterestGraphServiceTest {
 
         UserInterestPreference explicit = new UserInterestPreference();
         explicit.setTargetType(InterestTargetType.GENRE);
-        explicit.setGenreKey("drama");
+        explicit.setGenreKey(dramaId.toString());
+        explicit.setGenreId(dramaId);
         explicit.setGenreLabel("Drama");
         explicit.setPreference(InterestPreference.NEGATIVE);
 
@@ -92,13 +97,17 @@ class InterestGraphServiceTest {
         when(preferenceRepository.findAllByUserId(userId)).thenReturn(List.of(explicit));
         when(mediaRepository.findAllWithGenresByIdIn(
                 org.mockito.ArgumentMatchers.anyCollection())).thenReturn(List.of(media));
+        when(genreCatalogService.forMediaIds(org.mockito.ArgumentMatchers.anyCollection(),
+                org.mockito.ArgumentMatchers.eq("pt-BR"))).thenReturn(java.util.Map.of(media.getId(),
+                List.of(new GenreCatalogService.GenreValue(dramaId, "Drama"),
+                        new GenreCatalogService.GenreValue(fictionId, "Science Fiction"))));
         when(mediaCreditRepository.findPrincipalScoringCredits(
                 org.mockito.ArgumentMatchers.anyCollection()))
                 .thenReturn(List.of(credit));
 
         var profile = service.build(userId);
         var drama = profile.nodes().get(new InterestGraphService.InterestKey(
-                InterestTargetType.GENRE, "drama"));
+                InterestTargetType.GENRE, dramaId.toString()));
         var person = profile.nodes().get(new InterestGraphService.InterestKey(
                 InterestTargetType.PERSON, director.getId().toString()));
         var work = profile.nodes().get(new InterestGraphService.InterestKey(
@@ -114,26 +123,31 @@ class InterestGraphServiceTest {
     @Test
     void upsertsAndClearsAnExplicitGenreOverride() {
         UUID userId = UUID.randomUUID();
+        UUID genreId = UUID.randomUUID();
         User user = User.create("reader@example.com", "reader", "Reader", "hash");
         user.setId(userId);
         UserInterestPreference existing = new UserInterestPreference();
         existing.setUser(user);
         existing.setTargetType(InterestTargetType.GENRE);
-        existing.setGenreKey("science fiction");
+        existing.setGenreKey(genreId.toString());
+        existing.setGenreId(genreId);
         existing.setGenreLabel("Science Fiction");
         existing.setPreference(InterestPreference.POSITIVE);
 
         when(userRepository.findById(userId)).thenReturn(java.util.Optional.of(user));
-        when(mediaRepository.findGenreLabels(
-                org.mockito.ArgumentMatchers.eq("science fiction"), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(List.of("Science Fiction"));
+        when(genreCatalogService.uniqueLegacyId(" Science   Fiction ")).thenReturn(genreId);
+        when(genreCatalogService.uniqueLegacyId("science fiction")).thenReturn(genreId);
+        when(genreCatalogService.uniqueLegacyId(genreId.toString())).thenReturn(genreId);
+        when(genreCatalogService.label(genreId, "pt-BR")).thenReturn("Science Fiction");
         when(preferenceRepository.findByUserIdAndTargetTypeAndGenreKey(
-                userId, InterestTargetType.GENRE, "science fiction"))
+                userId, InterestTargetType.GENRE, genreId.toString()))
                 .thenReturn(java.util.Optional.of(existing));
         when(preferenceRepository.findAllByUserId(userId)).thenReturn(List.of(existing));
         when(ratingRepository.findAllByUserId(userId)).thenReturn(List.of());
         when(mediaLikeRepository.findAllByUserId(userId)).thenReturn(List.of());
         when(userMediaRepository.findAllByUserId(userId)).thenReturn(List.of());
+        when(genreCatalogService.forMediaIds(org.mockito.ArgumentMatchers.anyCollection(),
+                org.mockito.ArgumentMatchers.eq("pt-BR"))).thenReturn(java.util.Map.of());
 
         var response = service.upsert(userId, new UpsertInterestPreferenceRequest(
                 InterestTargetType.GENRE, " Science   Fiction ", InterestPreference.NEGATIVE));
