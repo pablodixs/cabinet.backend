@@ -132,13 +132,13 @@ O cursor codifica esses dois valores e deve ser tratado pelo cliente como opaco.
 
 `UserInterestPreference` guarda somente escolhas explícitas do usuário. Cada registro aponta para exatamente um destes tipos de alvo:
 
-- `GENRE`: chave normalizada e rótulo de gênero;
+- `GENRE`: UUID canônico do gênero e rótulo de exibição;
 - `PERSON`: uma pessoa do catálogo;
 - `MEDIA`: uma mídia do catálogo.
 
 A preferência é `POSITIVE` ou `NEGATIVE`. A combinação `(usuário, alvo lógico)` é única, portanto o `PUT` cria ou substitui a preferência existente.
 
-Gêneros são normalizados removendo espaços externos, condensando espaços repetidos e convertendo o texto para minúsculas. Pessoas e mídias são identificadas por UUID. Preferências de mídia aceitam apenas `MOVIE`, `SERIES`, `ALBUM` e `BOOK`.
+Gêneros são identificados por UUID canônico, independentemente do idioma ou provedor. Nomes legados só são aceitos quando identificam um único gênero. Pessoas e mídias também são identificadas por UUID. Preferências de mídia aceitam apenas `MOVIE`, `SERIES`, `ALBUM` e `BOOK`.
 
 O grafo completo não é salvo. `InterestGraphService.build(userId)` o reconstrói usando as preferências e o estado atual das avaliações, curtidas, biblioteca, gêneros e créditos.
 

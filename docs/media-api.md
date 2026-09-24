@@ -952,8 +952,10 @@ present in the member's library, ratings, likes or explicit media preferences ar
 up to three genre, person or related-work reasons; when the graph cannot fill the requested limit, seven-day trending
 items are appended with source `TRENDING`.
 
-Explicit preferences are idempotently upserted and can target a normalized genre key or the Cabinet UUID of a person
-or imported work:
+Explicit preferences are idempotently upserted and target a Cabinet genre UUID, person UUID, or imported-work UUID.
+`GET /v1/me/interests/options?targetType=GENRE` returns genre UUIDs and labels in the requested locale
+(`locale=pt-BR|en-US` or `Accept-Language`). During migration, an old genre name is accepted only when it
+resolves to exactly one genre:
 
 ```http
 PUT /v1/me/interests
@@ -961,14 +963,19 @@ Content-Type: application/json
 
 {
   "targetType": "GENRE",
-  "targetId": "science fiction",
+  "targetId": "<genre-uuid>",
   "preference": "POSITIVE"
 }
 ```
 
 ```http
-DELETE /v1/me/interests?targetType=GENRE&targetId=science%20fiction
+DELETE /v1/me/interests?targetType=GENRE&targetId=<genre-uuid>
 ```
+
+Imported media details expose the Cabinet genre UUID in `genres[].id`; external previews retain the provider's
+`id` and `source`. Library filter options return `{ "id": "<genre-uuid>", "name": "Ficção científica" }`
+entries, and `GET /v1/users/{username}/library?genre=<genre-uuid>` filters by identity.
+Legacy name filters are accepted only when the name is unambiguous.
 
 Deleting removes only the explicit override. An interest inferred from existing activity may remain visible. Interest
 pages expose a normalized `strength` from 0 to 1, but recommendation responses do not expose the internal score.

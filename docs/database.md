@@ -56,6 +56,7 @@ Do not rewrite applied migrations. Add a new versioned migration and update the 
 | `V23` | Add normalized genre labels to interest preferences. |
 | `V24` | Link persistent notifications to Letterboxd import jobs. |
 | `V25` | Allow `LETTERBOXD` in database checks for external-source columns. |
+| `V53` | Add canonical genres, translations, provider references, curated aliases, media links, and migrate genre interests. |
 
 ## PostgreSQL-specific features
 

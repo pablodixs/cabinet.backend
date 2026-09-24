@@ -781,21 +781,30 @@ Para `pt-BR`, uma capa em português deve ser preferida; se não existir, uma im
 
 ### 10.5 Gêneros
 
-Hoje os gêneros são strings em `media_genres`. Isso mistura identidade e tradução.
+A migração `V53` separou a identidade das traduções. `media_genres` permanece como compatibilidade temporária.
 
-Modelo recomendado:
+Modelo implementado:
 
 ```text
 genre
 - id
-- provider
-- external_id
 - canonical_key
+- provisional
 
 genre_translation
 - genre_id
 - locale
 - name
+
+genre_external_ref
+- genre_id
+- source
+- external_id
+
+genre_alias
+- locale
+- normalized_name
+- genre_id
 
 media_genre
 - media_id
@@ -804,7 +813,7 @@ media_genre
 
 Isso permite que o mesmo gênero seja “Drama” nos dois idiomas, “Science Fiction” em inglês e “Ficção científica” em português.
 
-Na fase inicial, é aceitável manter `media_genres` e adicionar traduções depois, mas qualquer novo trabalho de busca/filtro deve evitar depender da string localizada como identidade.
+Busca, filtros, interesses e recomendações usam o UUID canônico; uma fusão revisada pode consolidar gêneros provisórios.
 
 ### 10.6 Pessoas
 

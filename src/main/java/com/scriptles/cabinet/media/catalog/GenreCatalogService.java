@@ -30,7 +30,10 @@ public class GenreCatalogService {
         if (name == null || name.isBlank()) throw new IllegalArgumentException("Genre name is required");
         String normalized = normalize(name);
         String language = "en-US".equals(locale) ? "en-US" : "pt-BR";
-        String key = "legacy:" + language + ":" + normalized;
+        String key = source != null && source != ExternalSource.MANUAL
+                && externalId != null && !externalId.isBlank()
+                ? "provider:" + source.name() + ":" + externalId.trim()
+                : "legacy:" + language + ":" + normalized;
         UUID id = null;
         if (source != null && source != ExternalSource.MANUAL && externalId != null && !externalId.isBlank()) {
             List<UUID> matches = jdbc.query("select genre_id from genre_external_ref where source = ? and external_id = ?",
@@ -60,13 +63,13 @@ public class GenreCatalogService {
 
     @Transactional
     public void replace(UUID mediaId, Collection<ExternalMedia.ExternalGenre> genres, String locale) {
-        Map<UUID, Boolean> ids = new LinkedHashMap<>();
+        java.util.Set<UUID> ids = new java.util.LinkedHashSet<>();
         if (genres != null) for (ExternalMedia.ExternalGenre genre : genres) {
             if (genre.name() != null && !genre.name().isBlank())
-                ids.put(resolve(genre.name(), locale, genre.source(), genre.id()), true);
+                ids.add(resolve(genre.name(), locale, genre.source(), genre.id()));
         }
         jdbc.update("delete from media_genre where media_id = ?", mediaId);
-        ids.keySet().forEach(id -> jdbc.update(
+        ids.forEach(id -> jdbc.update(
                 "insert into media_genre(media_id, genre_id) values (?, ?) on conflict do nothing", mediaId, id));
     }
 
@@ -84,6 +87,32 @@ public class GenreCatalogService {
             UUID id = resolve(genre.name(), locale, genre.source(), genre.id());
             jdbc.update("insert into media_genre(media_id, genre_id) values (?, ?) on conflict do nothing", mediaId, id);
         }
+    }
+
+    /** Applies a reviewed merge while keeping the target's existing preference on conflicts. */
+    @Transactional
+    public void merge(UUID sourceId, UUID targetId) {
+        if (sourceId.equals(targetId)) return;
+        Integer sourceCount = jdbc.queryForObject("select count(*) from genre where id = ?", Integer.class, sourceId);
+        Integer targetCount = jdbc.queryForObject("select count(*) from genre where id = ?", Integer.class, targetId);
+        if (sourceCount == null || sourceCount == 0 || targetCount == null || targetCount == 0)
+            throw new IllegalArgumentException("Both genres must exist");
+        jdbc.update("insert into genre_translation(genre_id,locale,name,normalized_name) " +
+                "select ?,locale,name,normalized_name from genre_translation where genre_id = ? " +
+                "on conflict (genre_id,locale) do nothing", targetId, sourceId);
+        jdbc.update("insert into genre_alias(locale,normalized_name,genre_id) " +
+                "select locale,normalized_name,? from genre_translation where genre_id = ? " +
+                "on conflict (locale,normalized_name) do nothing", targetId, sourceId);
+        jdbc.update("update genre_alias set genre_id = ? where genre_id = ?", targetId, sourceId);
+        jdbc.update("update genre_external_ref set genre_id = ? where genre_id = ?", targetId, sourceId);
+        jdbc.update("insert into media_genre(media_id,genre_id) select media_id,? from media_genre " +
+                "where genre_id = ? on conflict do nothing", targetId, sourceId);
+        jdbc.update("delete from user_interest_preferences source using user_interest_preferences target " +
+                "where source.genre_id = ? and target.genre_id = ? and source.user_id = target.user_id",
+                sourceId, targetId);
+        jdbc.update("update user_interest_preferences set genre_id = ?, genre_key = ? where genre_id = ?",
+                targetId, targetId.toString(), sourceId);
+        jdbc.update("delete from genre where id = ?", sourceId);
     }
 
     public List<GenreValue> forMedia(UUID mediaId, String locale) {

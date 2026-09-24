@@ -11,6 +11,7 @@ export type CreditRole =
   | "ARTIST" | "COMPOSER" | "PRODUCER" | "SCREENWRITER";
 
 export interface Genre {
+  /** Cabinet UUID on imported media; provider ID on external previews. */
   id: string | null;
   name: string;
   source: ExternalSource;
