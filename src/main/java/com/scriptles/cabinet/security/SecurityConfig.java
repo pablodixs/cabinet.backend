@@ -136,7 +136,7 @@ public class SecurityConfig {
                         .requestMatchers("/v1/moderation/hq/**", "/v1/moderation/hq").hasRole("ADMIN")
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
 
-                        .anyRequest().hasRole("USER")
+                        .anyRequest().hasAnyRole("USER", "MODERATOR", "ADMIN")
                 )
 
                 .exceptionHandling(exceptions -> exceptions
