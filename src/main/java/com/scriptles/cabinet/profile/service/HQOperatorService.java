@@ -28,8 +28,10 @@ public class HQOperatorService {
 
     @Transactional(readOnly = true)
     public AuthenticatedHQ authenticate(String handle, String email, String password) {
-        HQProfile hq = hqs.findByProfileHandleIgnoreCase(handle).orElseThrow(this::invalidCredentials);
-        HQOperator operator = operators.findByHqProfileIdAndEmailIgnoreCase(hq.getId(), email).orElseThrow(this::invalidCredentials);
+        String normalizedHandle = handle == null ? "" : handle.trim().replaceFirst("^@", "");
+        String normalizedEmail = email == null ? "" : email.trim();
+        HQProfile hq = hqs.findByProfileHandleIgnoreCase(normalizedHandle).orElseThrow(this::invalidCredentials);
+        HQOperator operator = operators.findByHqProfileIdAndEmailIgnoreCase(hq.getId(), normalizedEmail).orElseThrow(this::invalidCredentials);
         if (!operator.isActive() || hq.getClaimStatus() == HQClaimStatus.SUSPENDED || !passwords.matches(password, operator.getPasswordHash())) throw invalidCredentials();
         return principal(operator);
     }
@@ -60,6 +62,12 @@ public class HQOperatorService {
         return operators.findByHqProfileIdOrderByCreatedAtAsc(hqId).stream().map(this::view).toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<OperatorView> listByProfileId(UUID profileId) {
+        HQProfile hq = hqs.findByProfileId(profileId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "HQ não encontrada"));
+        return list(hq.getId());
+    }
+
     @Transactional
     public void deactivate(UUID hqId, UUID operatorId) {
         HQOperator operator = operators.findById(operatorId).filter(o -> o.getHqProfile().getId().equals(hqId))
@@ -76,6 +84,18 @@ public class HQOperatorService {
         HQOperator operator = operators.findById(operatorId).orElseThrow(this::invalidCredentials);
         if (!operator.isActive() || currentPassword == null || !passwords.matches(currentPassword, operator.getPasswordHash())) throw invalidCredentials();
         if (newPassword == null || newPassword.length() < 12) throw new ApiException(HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "A nova senha deve ter pelo menos 12 caracteres");
+        operator.setPasswordHash(passwords.encode(newPassword));
+    }
+
+    @Transactional
+    public void resetPassword(UUID profileId, UUID operatorId, String newPassword) {
+        HQProfile hq = hqs.findByProfileId(profileId).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "HQ não encontrada"));
+        HQOperator operator = operators.findById(operatorId)
+                .filter(found -> found.getHqProfile().getId().equals(hq.getId()))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "OPERATOR_NOT_FOUND", "Acesso não encontrado"));
+        if (newPassword == null || newPassword.length() < 12) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "A nova senha deve ter pelo menos 12 caracteres");
+        }
         operator.setPasswordHash(passwords.encode(newPassword));
     }
 
