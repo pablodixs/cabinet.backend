@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           bundle="$(mktemp -d)"
-          trap 'rm -rf "$bundle" /tmp/cabinet-source.tar.gz' EXIT
+          trap 'rm -rf "$bundle"' EXIT
           sh ./mvnw --batch-mode --no-transfer-progress -DskipTests package
           artifact="$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' -print -quit)"
           test -n "$artifact"
