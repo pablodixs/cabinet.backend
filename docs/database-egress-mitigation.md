@@ -2,13 +2,13 @@
 
 ## Temporary catalog-job settings
 
-The application defaults keep TMDB catalog backfill disabled and bound enabled backfills to a batch size of 1 and 20 active jobs. Production can make the pause explicit with:
+The application defaults keep TMDB catalog backfill disabled and bound enabled backfills to a batch size of 1 and 20 active jobs. Production on the VPS can make the pause explicit with:
 
 ```text
 CATALOG_TMDB_BACKFILL_ENABLED=false
 ```
 
-If backfill must continue, keep the bounded defaults or set `CATALOG_TMDB_BACKFILL_BATCH_SIZE=1` and `CATALOG_TMDB_BACKFILL_MAX_ACTIVE_JOBS=20`. User syncs, ratings, and likes do not use this switch. Restore higher throughput only after reviewing daily query rows and Supabase egress.
+If backfill must continue, keep the bounded defaults or set `CATALOG_TMDB_BACKFILL_BATCH_SIZE=1` and `CATALOG_TMDB_BACKFILL_MAX_ACTIVE_JOBS=20`. User syncs, ratings, and likes do not use this switch. Restore higher throughput only after reviewing daily query rows and database I/O on the VPS.
 
 ## Baseline and daily comparison
 
@@ -28,9 +28,9 @@ Use daily deltas rather than comparing cumulative totals from different reset wi
 
 The same view reports Micrometer search timings for the service as a whole, TMDB, MusicBrainz, Google Books, result enrichment, and rating searches. Values are cumulative since the process started; a restart resets them. External provider calls overlap, so their averages must not be added together. Hikari active, idle, and pending connection gauges help identify pool contention. PostgreSQL query statistics measure database execution, while the search timers measure application and external-provider latency. For a production incident, compare both views over the same period.
 
-If `pg_stat_statements` is unavailable to the application role, the endpoint still returns search and pool metrics and marks PostgreSQL statistics unavailable. Check the Supabase Query Performance report or grant only the database monitoring privilege required by the deployment; do not expose the admin endpoint publicly.
+If `pg_stat_statements` is unavailable to the application role, the endpoint still returns search and pool metrics and marks PostgreSQL statistics unavailable. Check whether the extension is enabled on the VPS PostgreSQL instance and whether the application role can read it; keep the admin endpoint restricted.
 
-In Supabase Usage, compare **Database Egress**, **Shared Pooler Egress**, **Storage Egress**, and **Cached Egress** on matching date ranges. The application cannot read those account-level usage totals, so they remain a dashboard check.
+The application database is PostgreSQL on the VPS. Supabase Storage is used for profile avatars and its usage metrics do not measure Cabinet database queries. Compare `pg_stat_statements` snapshots with VPS CPU, memory, disk I/O, and PostgreSQL connection metrics over matching periods.
 
 ## Completion target
 
