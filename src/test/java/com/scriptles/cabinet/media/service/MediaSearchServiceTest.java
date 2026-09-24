@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -157,6 +159,33 @@ class MediaSearchServiceTest {
         assertThat(second.items()).extracting(item -> item.externalId()).containsExactly("b1", "s1");
         assertThat(first.items()).extracting(item -> item.externalId())
                 .doesNotContainAnyElementsOf(second.items().stream().map(item -> item.externalId()).toList());
+    }
+
+    @Test
+    void globalSearchStartsProviderRequestsConcurrently() {
+        ExternalMediaProvider tmdb = mock(ExternalMediaProvider.class);
+        ExternalMediaProvider musicBrainz = mock(ExternalMediaProvider.class);
+        ExternalMediaProvider googleBooks = mock(ExternalMediaProvider.class);
+        CountDownLatch started = new CountDownLatch(3);
+
+        when(providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)).thenReturn(tmdb);
+        when(providerRegistry.get(ExternalSource.MUSICBRAINZ, MediaType.ALBUM)).thenReturn(musicBrainz);
+        when(providerRegistry.get(ExternalSource.GOOGLE_BOOKS, MediaType.BOOK)).thenReturn(googleBooks);
+        when(tmdb.searchAll("nome", "pt-BR", 0, 3)).thenAnswer(invocation -> awaitOtherProviders(started));
+        when(musicBrainz.search(MediaType.ALBUM, "nome", "pt-BR", 0, 3))
+                .thenAnswer(invocation -> awaitOtherProviders(started));
+        when(googleBooks.search(MediaType.BOOK, "nome", "pt-BR", 0, 3))
+                .thenAnswer(invocation -> awaitOtherProviders(started));
+
+        mediaSearchService.search("nome", null, MediaSearchSort.RELEVANCE, null, 2);
+
+        assertThat(started.getCount()).isZero();
+    }
+
+    private List<ExternalMedia> awaitOtherProviders(CountDownLatch started) throws InterruptedException {
+        started.countDown();
+        assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+        return List.of();
     }
 
     @Test

@@ -33,6 +33,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
@@ -143,33 +147,38 @@ public class MediaSearchService {
         AllCursor state = decodeAllCursor(cursor);
         int fetchLimit = limit + 1;
 
-        List<ExternalMedia> tmdb = state.tmdbDone()
-                ? List.of()
-                : providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)
-                .searchAll(query, locale, state.tmdbOffset(), fetchLimit);
-
+        List<ExternalMedia> tmdb;
         List<ExternalMedia> albums;
-        boolean albumFailed = false;
-        try {
-            albums = state.albumDone()
-                    ? List.of()
-                    : providerRegistry.get(ExternalSource.MUSICBRAINZ, MediaType.ALBUM)
-                    .search(MediaType.ALBUM, query, locale, state.albumOffset(), fetchLimit);
-        } catch (ExternalMediaException exception) {
-            albums = List.of();
-            albumFailed = true;
-        }
-
         List<ExternalMedia> books;
-        boolean bookFailed = false;
-        try {
-            books = state.bookDone()
-                    ? List.of()
-                    : providerRegistry.get(ExternalSource.GOOGLE_BOOKS, MediaType.BOOK)
-                    .search(MediaType.BOOK, query, locale, state.bookOffset(), fetchLimit);
-        } catch (ExternalMediaException exception) {
-            books = List.of();
-            bookFailed = true;
+        boolean albumFailed;
+        boolean bookFailed;
+        // Provider calls do not use the JPA session. Run them together so the response
+        // waits for the slowest catalog instead of the sum of all three latencies.
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            CompletableFuture<List<ExternalMedia>> tmdbFuture = CompletableFuture.supplyAsync(
+                    () -> state.tmdbDone() ? List.of() : providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)
+                            .searchAll(query, locale, state.tmdbOffset(), fetchLimit), executor);
+            CompletableFuture<ProviderResult> albumFuture = CompletableFuture.supplyAsync(
+                    () -> searchOptionalProvider(state.albumDone(), () -> providerRegistry
+                            .get(ExternalSource.MUSICBRAINZ, MediaType.ALBUM)
+                            .search(MediaType.ALBUM, query, locale, state.albumOffset(), fetchLimit)), executor);
+            CompletableFuture<ProviderResult> bookFuture = CompletableFuture.supplyAsync(
+                    () -> searchOptionalProvider(state.bookDone(), () -> providerRegistry
+                            .get(ExternalSource.GOOGLE_BOOKS, MediaType.BOOK)
+                            .search(MediaType.BOOK, query, locale, state.bookOffset(), fetchLimit)), executor);
+
+            try {
+                tmdb = tmdbFuture.join();
+            } catch (CompletionException exception) {
+                if (exception.getCause() instanceof RuntimeException cause) throw cause;
+                throw exception;
+            }
+            ProviderResult albumResult = albumFuture.join();
+            ProviderResult bookResult = bookFuture.join();
+            albums = albumResult.items();
+            books = bookResult.items();
+            albumFailed = albumResult.failed();
+            bookFailed = bookResult.failed();
         }
 
         InterleavedPage interleaved = interleave(tmdb, albums, books, state.nextSource(), limit);
@@ -200,6 +209,17 @@ public class MediaSearchService {
         return new MediaSearchPageResponse(
                 mediaSearchItemAssembler.fromExternal(interleaved.items(), viewerId), nextCursor);
     }
+
+    private ProviderResult searchOptionalProvider(boolean done, java.util.function.Supplier<List<ExternalMedia>> search) {
+        if (done) return new ProviderResult(List.of(), false);
+        try {
+            return new ProviderResult(search.get(), false);
+        } catch (ExternalMediaException exception) {
+            return new ProviderResult(List.of(), true);
+        }
+    }
+
+    private record ProviderResult(List<ExternalMedia> items, boolean failed) {}
 
     private MediaSearchPageResponse searchByRating(
             String query,
