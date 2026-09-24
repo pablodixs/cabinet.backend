@@ -13,6 +13,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,14 +37,20 @@ class PublicListControllerTest {
 
     @Test
     void searchesPublicListsWithoutAuthentication() throws Exception {
+        JsonNode richDescription = new ObjectMapper().readTree(
+                "{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Filmes atravessados por paisagens.\",\"marks\":[\"bold\"]}]}]}"
+        );
         PublicListSearchResponse response = new PublicListSearchResponse(
                 UUID.randomUUID(),
                 "Cinema de estrada",
                 "Filmes atravessados por paisagens.",
                 true,
                 null,
+                null,
                 List.of(),
                 12,
+                null,
+                null,
                 8,
                 Instant.parse("2026-07-15T12:00:00Z"),
                 new PublicMediaListResponse.AuthorResponse(
@@ -50,7 +58,9 @@ class PublicListControllerTest {
                         "maria",
                         "Maria",
                         null
-                )
+                ),
+                List.of(),
+                richDescription
         );
         when(mediaListService.searchPublic("cinema", 0, 20))
                 .thenReturn(new PageResponse<>(List.of(response), 0, 20, 1, 1));
@@ -61,6 +71,7 @@ class PublicListControllerTest {
                 .andExpect(jsonPath("$.items[0].itemCount").value(12))
                 .andExpect(jsonPath("$.items[0].likeCount").value(8))
                 .andExpect(jsonPath("$.items[0].owner.username").value("maria"))
+                .andExpect(jsonPath("$.items[0].richDescription.blocks[0].children[0].marks[0]").value("bold"))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         verify(mediaListService).searchPublic("cinema", 0, 20);

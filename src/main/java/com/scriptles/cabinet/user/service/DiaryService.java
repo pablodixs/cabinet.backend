@@ -39,6 +39,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -125,7 +126,8 @@ public class DiaryService {
         return DiaryEntryResponse.from(
                 activity,
                 findReference(media.getId()),
-                resolveArtwork(userId, List.of(media)).get(media.getId()).coverUrl()
+                resolveArtwork(userId, List.of(media)).get(media.getId()).coverUrl(),
+                request.richContent()
         );
     }
 
@@ -237,7 +239,8 @@ public class DiaryService {
         return DiaryEntryResponse.from(
                 activity,
                 findReference(media.getId()),
-                resolveArtwork(userId, List.of(media)).get(media.getId()).coverUrl()
+                resolveArtwork(userId, List.of(media)).get(media.getId()).coverUrl(),
+                request.richContent()
         );
     }
 
@@ -261,10 +264,20 @@ public class DiaryService {
                 userId,
                 entries.getContent().stream().map(UserMediaActivity::getMedia).toList()
         );
+        List<UUID> activityIds = entries.getContent().stream().map(UserMediaActivity::getId).toList();
+        List<Visibility> reviewVisibilities = includePrivate
+                ? List.of(Visibility.PUBLIC, Visibility.FOLLOWERS, Visibility.PRIVATE)
+                : includeFollowers ? List.of(Visibility.PUBLIC, Visibility.FOLLOWERS) : List.of(Visibility.PUBLIC);
+        Map<UUID, JsonNode> richContentByActivityId = activityIds.isEmpty() ? Map.of()
+                : reviewRepository.findDiaryRichContent(activityIds, reviewVisibilities).stream().collect(Collectors.toMap(
+                        review -> review.getActivity().getId(),
+                        review -> RichTextDocument.parse(review.getRichContent())
+                ));
         return PageResponse.from(entries.map(entry -> DiaryEntryResponse.from(
                 entry,
                 references.get(entry.getMedia().getId()),
-                artworks.get(entry.getMedia().getId()).coverUrl()
+                artworks.get(entry.getMedia().getId()).coverUrl(),
+                richContentByActivityId.get(entry.getId())
         )));
     }
 

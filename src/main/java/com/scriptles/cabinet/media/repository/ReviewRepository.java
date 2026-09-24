@@ -53,6 +53,24 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     Optional<Review> findByActivityId(UUID activityId);
 
+    @Query("select review from Review review join fetch review.activity activity "
+            + "where activity.id in :activityIds and review.richContent is not null "
+            + "and review.visibility in :visibilities")
+    List<Review> findDiaryRichContent(
+            @Param("activityIds") Collection<UUID> activityIds,
+            @Param("visibilities") Collection<Visibility> visibilities
+    );
+
+    @Query("select review from Review review join fetch review.user join fetch review.media "
+            + "where review.user.id in :userIds and review.media.id in :mediaIds "
+            + "and review.authorProfile is null and review.richContent is not null "
+            + "and review.visibility in :visibilities")
+    List<Review> findRichContentForFeed(
+            @Param("userIds") Collection<UUID> userIds,
+            @Param("mediaIds") Collection<UUID> mediaIds,
+            @Param("visibilities") Collection<Visibility> visibilities
+    );
+
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
     @Query("""
             select review from Review review

@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
 
 public record DiaryEntryResponse(
         UUID id,
@@ -29,19 +30,29 @@ public record DiaryEntryResponse(
         String review,
         boolean containsSpoilers,
         Visibility visibility,
-        List<String> tags
+        List<String> tags,
+        JsonNode richContent
 ) {
     public static DiaryEntryResponse from(
             UserMediaActivity activity,
             ExternalReference externalReference
     ) {
-        return from(activity, externalReference, activity.getMedia().getCoverUrl());
+        return from(activity, externalReference, activity.getMedia().getCoverUrl(), null);
     }
 
     public static DiaryEntryResponse from(
             UserMediaActivity activity,
             ExternalReference externalReference,
             String coverUrl
+    ) {
+        return from(activity, externalReference, coverUrl, null);
+    }
+
+    public static DiaryEntryResponse from(
+            UserMediaActivity activity,
+            ExternalReference externalReference,
+            String coverUrl,
+            JsonNode richContent
     ) {
         Media media = activity.getMedia();
         return new DiaryEntryResponse(
@@ -60,7 +71,8 @@ public record DiaryEntryResponse(
                 activity.getReviewContent(),
                 Boolean.TRUE.equals(activity.getContainsSpoilers()),
                 activity.getVisibility(),
-                List.copyOf(activity.getTags())
+                List.copyOf(activity.getTags()),
+                richContent
         );
     }
 }

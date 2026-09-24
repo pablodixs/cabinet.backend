@@ -133,7 +133,7 @@ HQ reviews are owned by the HQ, without a personal user author. `GET /v1/hq-cons
 | `DELETE /v1/me/likes/{mediaId}` | User | Unlike media; returns `204`. |
 | `GET /v1/me/review-likes/{reviewId}` | User | Current review-like state/count. |
 
-Reviews, list descriptions and HQ bios may include an optional `richContent`/`richDescription`/`richBio` document (`version: 1`) with paragraph and quote blocks, bold and italic marks. HTTP(S) links are accepted only in HQ reviews and bios; plain `content`/`description`/`bio` remains the matching text projection for older clients.
+Reviews, list descriptions and HQ bios may include an optional `richContent`/`richDescription`/`richBio` document (`version: 1`) with paragraph and quote blocks, bold and italic marks. HTTP(S) links are accepted only in HQ reviews and bios; plain `content`/`description`/`bio` remains the matching text projection for older clients. The public `/v1/lists/popular` and `/v1/lists/search` responses include `richDescription` when a list has a formatted description. Review previews in activity feed responses and diary entry responses include optional `richContent` when a linked review has formatted content.
 | `PUT /v1/me/review-likes/{reviewId}` | User | Like an accessible review. |
 | `DELETE /v1/me/review-likes/{reviewId}` | User | Unlike and return updated state. |
 

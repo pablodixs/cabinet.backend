@@ -2,6 +2,8 @@ package com.scriptles.cabinet.lists.dto.response;
 
 import com.scriptles.cabinet.lists.entity.MediaList;
 import com.scriptles.cabinet.user.enums.AccountTier;
+import com.scriptles.cabinet.common.api.RichTextDocument;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,7 +23,8 @@ public record PublicListSearchResponse(
         long likeCount,
         Instant updatedAt,
         PublicMediaListResponse.AuthorResponse owner,
-        List<String> tags
+        List<String> tags,
+        JsonNode richDescription
 ) {
     public PublicListSearchResponse(
             UUID id,
@@ -36,7 +39,7 @@ public record PublicListSearchResponse(
             PublicMediaListResponse.AuthorResponse owner
     ) {
         this(id, name, description, ordered, coverUrl, null, previewItems,
-                itemCount, null, null, likeCount, updatedAt, owner, List.of());
+                itemCount, null, null, likeCount, updatedAt, owner, List.of(), null);
     }
 
     public PublicListSearchResponse(
@@ -56,7 +59,7 @@ public record PublicListSearchResponse(
     ) {
         this(id, name, description, ordered, coverUrl, backdropUrl,
                 previewItems, itemCount, consumedItemCount, consumedPercentage,
-                likeCount, updatedAt, owner, List.of());
+                likeCount, updatedAt, owner, List.of(), null);
     }
 
     public static PublicListSearchResponse from(
@@ -98,7 +101,8 @@ public record PublicListSearchResponse(
                         list.getOwner().getAvatarUlr(),
                         list.getOwner().getAccountTier() == AccountTier.PRO
                 ),
-                list.getTags().stream().map(tag -> tag.getName()).toList()
+                list.getTags().stream().map(tag -> tag.getName()).toList(),
+                list.getRichDescription() == null ? null : RichTextDocument.parse(list.getRichDescription())
         );
     }
 }

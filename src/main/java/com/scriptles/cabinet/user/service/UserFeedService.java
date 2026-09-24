@@ -1,7 +1,10 @@
 package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.Review;
+import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.dto.response.FeedActivityResponse;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserFeedActivity;
@@ -13,6 +16,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -27,6 +31,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserFeedService {
     private final UserFeedActivityRepository repository;
+    private final ReviewRepository reviewRepository;
 
     @Transactional
     public void record(User user, Media media, FeedActionType action, Instant occurredAt,
@@ -87,20 +92,31 @@ public class UserFeedService {
                 default -> { }
             }
         }
+        for (Review review : reviewRepository.findRichContentForFeed(userIds, mediaIds, visibilities)) {
+            CardDetails card = details.get(key(review.getUser().getId(), review.getMedia().getId()));
+            if (card != null && review.getContent() != null && review.getContent().equals(card.review)) {
+                card.richContent = RichTextDocument.parse(review.getRichContent());
+            }
+        }
         return PageResponse.from(page.map(activity -> {
             CardDetails card = details.getOrDefault(key(activity), new CardDetails());
-            return FeedActivityResponse.from(activity, card.rating, card.review,
+            return FeedActivityResponse.from(activity, card.rating, card.review, card.richContent,
                     card.containsSpoilers, card.liked, card.reviewed);
         }));
     }
 
     private static String key(UserFeedActivity activity) {
-        return activity.getUser().getId() + ":" + activity.getMedia().getId();
+        return key(activity.getUser().getId(), activity.getMedia().getId());
+    }
+
+    private static String key(UUID userId, UUID mediaId) {
+        return userId + ":" + mediaId;
     }
 
     private static class CardDetails {
         BigDecimal rating;
         String review;
+        JsonNode richContent;
         boolean containsSpoilers;
         boolean liked;
         boolean reviewed;

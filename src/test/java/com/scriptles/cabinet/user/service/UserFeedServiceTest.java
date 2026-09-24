@@ -1,11 +1,14 @@
 package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.media.entity.Media;
+import com.scriptles.cabinet.media.entity.Review;
+import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserFeedActivity;
 import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserFeedActivityRepository;
+import org.springframework.data.domain.PageImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -17,14 +20,17 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserFeedServiceTest {
     @Mock UserFeedActivityRepository repository;
+    @Mock ReviewRepository reviewRepository;
     @InjectMocks UserFeedService service;
 
     @Test
@@ -82,5 +88,39 @@ class UserFeedServiceTest {
         service.remove(userId, mediaId, FeedActionType.LIKED);
 
         verify(repository).deleteByUserIdAndMediaIdAndActionType(userId, mediaId, FeedActionType.LIKED);
+    }
+
+    @Test
+    void returnsRichContentForAReviewInTheFeed() throws Exception {
+        UUID viewerId = UUID.randomUUID();
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        Media media = new Media();
+        media.setId(UUID.randomUUID());
+        media.setTitle("Film");
+        UserFeedActivity activity = new UserFeedActivity();
+        activity.setId(UUID.randomUUID());
+        activity.setUser(user);
+        activity.setMedia(media);
+        activity.setActionType(FeedActionType.REVIEWED);
+        activity.setVisibility(Visibility.PUBLIC);
+        activity.setReview("A good film");
+
+        Review review = new Review();
+        review.setUser(user);
+        review.setMedia(media);
+        review.setContent("A good film");
+        review.setVisibility(Visibility.PUBLIC);
+        review.setRichContent("{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"children\":[{\"text\":\"A good film\",\"marks\":[\"bold\"]}]}]}");
+        when(repository.findFeed(any(), any(Boolean.class), any(Boolean.class), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(activity)));
+        when(repository.findCardDetails(any(), any(), any(), any())).thenReturn(List.of(activity));
+        when(reviewRepository.findRichContentForFeed(any(), any(), any())).thenReturn(List.of(review));
+
+        var response = service.find(viewerId, false, true, 0, 20);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().get(0).richContent().path("blocks").get(0)
+                .path("children").get(0).path("marks").get(0).asText()).isEqualTo("bold");
     }
 }

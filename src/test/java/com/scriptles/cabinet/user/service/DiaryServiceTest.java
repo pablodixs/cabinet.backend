@@ -27,6 +27,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -98,6 +101,79 @@ class DiaryServiceTest {
         assertThat(reviewCaptor.getValue().getRatingEntity()).isNull();
         assertThat(reviewCaptor.getValue().getActivity()).isNotNull();
         verify(userMediaService).markCompleted(user, movie, false);
+    }
+
+    @Test
+    void returnsFormattedReviewContentWithTheCreatedDiaryEntry() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        User user = user(userId);
+        Media movie = media(mediaId, MediaType.MOVIE);
+        JsonNode richContent = new ObjectMapper().readTree(
+                "{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Uma ótima sessão.\",\"marks\":[\"bold\"]}]}]}"
+        );
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(movie));
+        when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
+        when(activityRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            UserMediaActivity activity = invocation.getArgument(0);
+            activity.setId(UUID.randomUUID());
+            return activity;
+        });
+        when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(List.of(mediaId)))
+                .thenReturn(List.of());
+
+        var response = service.create(userId, new CreateDiaryEntryRequest(
+                mediaId,
+                LocalDate.of(2026, 7, 19),
+                false,
+                null,
+                "Uma ótima sessão.",
+                false,
+                Visibility.PUBLIC,
+                Set.of(),
+                null,
+                richContent
+        ));
+
+        assertThat(response.richContent()).isEqualTo(richContent);
+    }
+
+    @Test
+    void returnsStoredRichContentWhenLoadingDiaryEntries() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        UUID entryId = UUID.randomUUID();
+        User user = user(userId);
+        Media movie = media(mediaId, MediaType.MOVIE);
+        UserMediaActivity activity = new UserMediaActivity();
+        activity.setId(entryId);
+        activity.setUser(user);
+        activity.setMedia(movie);
+        activity.setType(ProfileActivityType.LOGGED);
+        activity.setOccurredOn(LocalDate.of(2026, 7, 19));
+        activity.setReviewContent("Uma ótima sessão.");
+        JsonNode richContent = new ObjectMapper().readTree(
+                "{\"version\":1,\"blocks\":[{\"type\":\"paragraph\",\"children\":[{\"text\":\"Uma ótima sessão.\",\"marks\":[\"bold\"]}]}]}"
+        );
+        Review review = new Review();
+        review.setActivity(activity);
+        review.setRichContent(richContent.toString());
+        review.setVisibility(Visibility.PUBLIC);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(activityRepository.findDiaryEntries(any(), any(), any(), any(Boolean.class), any(), any()))
+                .thenReturn(new PageImpl<>(List.of(activity)));
+        when(externalReferenceRepository.findAllByMediaIdInAndPrimaryReferenceTrue(List.of(mediaId)))
+                .thenReturn(List.of());
+        when(reviewRepository.findDiaryRichContent(List.of(entryId), List.of(
+                Visibility.PUBLIC, Visibility.FOLLOWERS, Visibility.PRIVATE
+        ))).thenReturn(List.of(review));
+
+        var response = service.findMine(userId, 0, 20);
+
+        assertThat(response.items()).hasSize(1);
+        assertThat(response.items().get(0).richContent()).isEqualTo(richContent);
     }
 
     @Test
