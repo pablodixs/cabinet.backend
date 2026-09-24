@@ -14,6 +14,8 @@ import java.util.UUID;
 public interface PersonRepository extends JpaRepository<Person, UUID> {
     Optional<Person> findByExternalSourceAndExternalId(ExternalSource externalSource, String externalId);
 
+    List<Person> findAllByExternalSourceAndExternalIdIn(ExternalSource externalSource, List<String> externalIds);
+
     Optional<Person> findFirstByExternalSourceAndNameIgnoreCase(ExternalSource externalSource, String name);
 
     List<Person> findAllByNameIgnoreCase(String name);

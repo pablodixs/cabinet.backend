@@ -9,6 +9,8 @@ import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
+import com.scriptles.cabinet.media.service.MediaCommunityCacheInvalidator;
+import com.scriptles.cabinet.media.service.MediaLikeService;
 import com.scriptles.cabinet.user.dto.request.CreateDiaryEntryRequest;
 import com.scriptles.cabinet.user.dto.request.UpdateDiaryEntryRequest;
 import com.scriptles.cabinet.user.entity.User;
@@ -48,6 +50,8 @@ class DiaryServiceTest {
     @Mock ReviewLikeRepository reviewLikeRepository;
     @Mock ExternalReferenceRepository externalReferenceRepository;
     @Mock MediaConsumptionPolicy mediaConsumptionPolicy;
+    @Mock MediaCommunityCacheInvalidator communityCacheInvalidator;
+    @Mock MediaLikeService mediaLikeService;
     @Mock UserMediaService userMediaService;
     @Mock EpisodeTrackingService episodeTrackingService;
     @Mock UserTagService userTagService;

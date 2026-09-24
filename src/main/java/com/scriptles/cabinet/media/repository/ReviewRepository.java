@@ -16,8 +16,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ReviewRepository extends JpaRepository<Review, UUID> {
+    Optional<Review> findByAuthorProfileIdAndMediaId(UUID authorProfileId, UUID mediaId);
+    org.springframework.data.domain.Page<Review> findAllByAuthorProfileIdAndContentIsNotNullOrderByPublishedAtDesc(
+            UUID authorProfileId, org.springframework.data.domain.Pageable pageable);
     @EntityGraph(attributePaths = {"user", "media", "rating", "activity"})
-    @Query("select r from Review r where r.user.id = :userId and r.media.id = :mediaId")
+    @Query("select r from Review r where r.user.id = :userId and r.media.id = :mediaId and r.authorProfile is null")
     Optional<Review> findByUserIdAndMediaId(@Param("userId") UUID userId, @Param("mediaId") UUID mediaId);
 
     Optional<Review> findByRatingId(UUID ratingId);
@@ -54,6 +57,7 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     @Query("""
             select review from Review review
             where review.user.id = :userId
+              and review.authorProfile is null
               and review.content is not null
               and trim(review.content) <> ''
             order by coalesce(review.updatedAt, review.publishedAt, review.createdAt) desc,

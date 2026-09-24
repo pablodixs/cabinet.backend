@@ -3,11 +3,11 @@ package com.scriptles.cabinet.user.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.media.repository.ReportRankingProjection;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.user.dto.response.ConsumptionReportItem;
@@ -30,14 +30,15 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -128,12 +129,13 @@ public class ConsumptionReportService {
                 .flatMap(event -> java.util.stream.Stream.of(event.mediaId(), event.sourceMediaId()))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<UUID, Media> mediaById = mediaIds.isEmpty() ? Map.of() : mediaRepository
-                .findAllWithGenresByIdIn(mediaIds)
-                .stream().collect(Collectors.toMap(Media::getId, Function.identity()));
-        Map<UUID, List<MediaCredit>> creditsByMedia = mediaById.isEmpty() ? Map.of() : mediaCreditRepository
-                .findAllByMediaIdInOrderByPositionAsc(mediaById.keySet())
-                .stream().collect(Collectors.groupingBy(credit -> credit.getMedia().getId()));
+        Map<UUID, Media> mediaById = new LinkedHashMap<>();
+        List<UUID> reportMediaIds = List.copyOf(mediaIds);
+        for (int start = 0; start < reportMediaIds.size(); start += 100) {
+            mediaRepository.findAllWithGenresByIdIn(
+                    reportMediaIds.subList(start, Math.min(start + 100, reportMediaIds.size())))
+                    .forEach(media -> mediaById.put(media.getId(), media));
+        }
         List<ReportEvent> hydratedEvents = events.stream()
                 .map(event -> mediaById.containsKey(event.mediaId())
                         ? event.withMedia(mediaById.get(event.mediaId()), mediaById.get(event.sourceMediaId())) : null)
@@ -152,9 +154,9 @@ public class ConsumptionReportService {
 
         return new ConsumptionReportResponse(
                 period, year, month, requestedType, periodEvents.size(), availablePeriods,
-                rankPeople(periodEvents, creditsByMedia, CreditRole.DIRECTOR,
+                rankPeople(periodEvents, CreditRole.DIRECTOR,
                         Set.of(MediaType.MOVIE, MediaType.SERIES)),
-                rankPeople(periodEvents, creditsByMedia, CreditRole.ARTIST,
+                rankPeople(periodEvents, CreditRole.ARTIST,
                         Set.of(MediaType.ALBUM)),
                 rankStrings(periodEvents, this::genresFor),
                 rankStrings(periodEvents, this::countryFor),
@@ -226,46 +228,36 @@ public class ConsumptionReportService {
 
     private ConsumptionReportSection rankPeople(
             List<ReportEvent> events,
-            Map<UUID, List<MediaCredit>> creditsByMedia,
             CreditRole role,
             Set<MediaType> eligibleTypes
     ) {
         List<ReportEvent> eligible = events.stream()
                 .filter(event -> eligibleTypes.contains(event.media().getType())).toList();
-        Map<String, Aggregate> aggregates = new LinkedHashMap<>();
-        long attributed = eligible.stream()
-                .filter(event -> !creditsFor(event, creditsByMedia, role).isEmpty())
-                .count();
-        eligible.forEach(event -> creditsFor(event, creditsByMedia, role).stream()
-                .filter(credit -> credit.getPerson() != null)
-                .forEach(credit -> add(aggregates,
-                        credit.getPerson().getId().toString(),
-                        credit.getPerson().getName(),
-                        credit.getPerson().getId(),
-                        credit.getPerson().getImageUrl(), event.date())));
-        return section(aggregates, eligible.size(), attributed, RANKING_LIMIT);
-    }
-
-    private List<MediaCredit> creditsFor(
-            ReportEvent event, Map<UUID, List<MediaCredit>> creditsByMedia, CreditRole role
-    ) {
-        List<MediaCredit> sourceCredits = event.sourceMedia() == null
-                ? List.of()
-                : creditsByMedia.getOrDefault(event.sourceMedia().getId(), List.of()).stream()
-                        .filter(credit -> credit.getRole() == role && credit.getPerson() != null)
-                        .toList();
-        List<MediaCredit> selected = sourceCredits.isEmpty()
-                ? creditsByMedia.getOrDefault(event.media().getId(), List.of()).stream()
-                .filter(credit -> credit.getRole() == role && credit.getPerson() != null)
-                .toList()
-                : sourceCredits;
-        return selected.stream()
-                .collect(Collectors.toMap(
-                        credit -> credit.getPerson().getId(),
-                        Function.identity(),
-                        (first, ignored) -> first,
-                        LinkedHashMap::new))
-                .values().stream().toList();
+        if (eligible.isEmpty()) {
+            return new ConsumptionReportSection(List.of(), 0, 0);
+        }
+        String eventsJson = IntStream.range(0, eligible.size())
+                .mapToObj(index -> {
+                    ReportEvent event = eligible.get(index);
+                    return "{\"event_id\":" + index
+                            + ",\"media_id\":\"" + event.media().getId() + "\""
+                            + ",\"source_media_id\":" + (event.sourceMedia() == null
+                            ? "null" : "\"" + event.sourceMedia().getId() + "\"")
+                            + ",\"event_date\":\"" + event.date() + "\"}";
+                })
+                .collect(Collectors.joining(",", "[", "]"));
+        List<ReportRankingProjection> ranking = mediaCreditRepository.rankReportPeople(
+                eventsJson, role.name(), RANKING_LIMIT);
+        if (ranking.isEmpty()) {
+            return new ConsumptionReportSection(List.of(), eligible.size(), 0);
+        }
+        ReportRankingProjection totals = ranking.getFirst();
+        List<ConsumptionReportItem> items = ranking.stream()
+                .filter(row -> row.getPersonId() != null)
+                .map(row -> new ConsumptionReportItem(row.getPersonId().toString(), row.getPersonName(),
+                        row.getPersonId(), row.getPersonImageUrl(), row.getEventCount()))
+                .toList();
+        return new ConsumptionReportSection(items, totals.getEligibleEventCount(), totals.getAttributedEventCount());
     }
 
     private Collection<String> genresFor(ReportEvent event) {

@@ -1,14 +1,12 @@
 package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaCredit;
-import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.CreditRole;
-import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
+import com.scriptles.cabinet.media.repository.ReportRankingProjection;
 import com.scriptles.cabinet.media.repository.SeriesEpisodeRepository;
 import com.scriptles.cabinet.user.dto.response.ConsumptionReportResponse;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
@@ -29,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,8 +44,7 @@ class ConsumptionReportServiceTest {
         movie.getGenres().add("Drama");
         movie.setCountryCode("BR");
         movie.setOriginalLanguage("pt");
-        Person director = person("Walter Salles");
-        MediaCredit credit = credit(movie, director, CreditRole.DIRECTOR);
+        UUID directorId = UUID.randomUUID();
         UserMediaActivity first = activity(movie, LocalDate.of(2024, 1, 3), ProfileActivityType.COMPLETED);
         UserMediaActivity second = activity(movie, LocalDate.of(2024, 1, 4), ProfileActivityType.REWATCHED);
 
@@ -56,9 +52,15 @@ class ConsumptionReportServiceTest {
                 .thenReturn(List.of(first, second));
         when(episodeWatchRepository.findAllConsumptionWatches(any())).thenReturn(List.of());
         when(mediaRepository.findAllWithGenresByIdIn(anyCollection())).thenReturn(List.of(movie));
-        when(mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(anyCollection()))
-                .thenReturn(List.of(credit));
-
+        ReportRankingProjection ranking = org.mockito.Mockito.mock(ReportRankingProjection.class);
+        when(ranking.getPersonId()).thenReturn(directorId);
+        when(ranking.getPersonName()).thenReturn("Walter Salles");
+        when(ranking.getPersonImageUrl()).thenReturn(null);
+        when(ranking.getEventCount()).thenReturn(2L);
+        when(ranking.getEligibleEventCount()).thenReturn(2L);
+        when(ranking.getAttributedEventCount()).thenReturn(2L);
+        when(mediaCreditRepository.rankReportPeople(any(), org.mockito.ArgumentMatchers.eq(CreditRole.DIRECTOR.name()),
+                org.mockito.ArgumentMatchers.eq(5))).thenReturn(List.of(ranking));
         ConsumptionReportResponse response = service().find(
                 UUID.randomUUID(), ConsumptionReportPeriod.MONTH, 2024, 1, MediaType.MOVIE);
 
@@ -107,19 +109,4 @@ class ConsumptionReportServiceTest {
         return activity;
     }
 
-    private Person person(String name) {
-        Person person = new Person();
-        person.setId(UUID.randomUUID());
-        person.setName(name);
-        person.setExternalSource(ExternalSource.TMDB);
-        return person;
-    }
-
-    private MediaCredit credit(Media media, Person person, CreditRole role) {
-        MediaCredit credit = new MediaCredit();
-        credit.setMedia(media);
-        credit.setPerson(person);
-        credit.setRole(role);
-        return credit;
-    }
 }

@@ -3,10 +3,11 @@ package com.scriptles.cabinet.user.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.MediaRelation;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.media.repository.CreditScoringProjection;
+import io.micrometer.core.instrument.MeterRegistry;
 import com.scriptles.cabinet.media.repository.MediaRelationRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
@@ -21,6 +22,7 @@ import com.scriptles.cabinet.user.enums.RecommendationSource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +44,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RecommendationService {
+    private static final int CREDIT_QUERY_BATCH_SIZE = 100;
     private static final UUID EMPTY_UUID = new UUID(0L, 0L);
     private static final int MAX_SEEDS_PER_TYPE = 50;
     private static final int MAX_TRENDING_CANDIDATES = 200;
@@ -55,6 +58,12 @@ public class RecommendationService {
     private final RatingRepository ratingRepository;
     private final MediaSearchItemAssembler mediaSearchItemAssembler;
     private final MediaRankingService mediaRankingService;
+    private MeterRegistry meterRegistry;
+
+    @Autowired(required = false)
+    void setMeterRegistry(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     public RecommendationResponse recommendations(UUID userId, MediaType type, int limit, String locale) {
         validateType(type);
@@ -94,18 +103,18 @@ public class RecommendationService {
                     userId, type, limit, profile.interactedMediaIds(), locale));
         }
 
-        List<Media> candidates = mediaRepository.findAllWithGenresByIdIn(candidateIds).stream()
+        List<Media> candidates = loadMedia(candidateIds).stream()
                 .filter(media -> types.contains(media.getType().name()))
                 .toList();
-        Map<UUID, List<MediaCredit>> creditsByMedia = mediaCreditRepository
-                .findAllByMediaIdInOrderByPositionAsc(candidateIds).stream()
-                .collect(Collectors.groupingBy(credit -> credit.getMedia().getId(), LinkedHashMap::new,
+        Set<UUID> relevantPeople = profile.nodes().keySet().stream()
+                .filter(key -> key.type() == InterestTargetType.PERSON)
+                .map(key -> UUID.fromString(key.targetId()))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<CreditScoringProjection> scoringCredits = loadScoringCredits(candidateIds, relevantPeople);
+        Map<UUID, List<CreditScoringProjection>> creditsByMedia = scoringCredits.stream()
+                .collect(Collectors.groupingBy(CreditScoringProjection::getMediaId, LinkedHashMap::new,
                         Collectors.toList()));
-        Map<UUID, RatingSummary> ratings = ratingRepository
-                .summarizeRatings(candidateIds, com.scriptles.cabinet.user.enums.Visibility.PUBLIC).stream()
-                .collect(Collectors.toMap(RatingRepository.MediaRatingProjection::getMediaId,
-                        projection -> new RatingSummary(
-                                projection.getAverageRating(), projection.getRatingCount())));
+        Map<UUID, RatingSummary> ratings = loadRatings(candidateIds);
 
         List<ScoredCandidate> scored = candidates.stream()
                 .map(media -> score(media, creditsByMedia.getOrDefault(media.getId(), List.of()),
@@ -127,9 +136,54 @@ public class RecommendationService {
         return new RecommendationResponse(List.copyOf(items));
     }
 
+    private List<CreditScoringProjection> loadScoringCredits(Set<UUID> mediaIds, Set<UUID> personIds) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("cabinet.recommendations.candidates").increment(mediaIds.size());
+        }
+        if (mediaIds.isEmpty() || personIds.isEmpty()) return List.of();
+        List<CreditScoringProjection> loaded = new ArrayList<>();
+        List<UUID> media = List.copyOf(mediaIds);
+        List<UUID> people = List.copyOf(personIds);
+        for (int start = 0; start < media.size(); start += CREDIT_QUERY_BATCH_SIZE) {
+            List<UUID> batch = media.subList(start, Math.min(start + CREDIT_QUERY_BATCH_SIZE, media.size()));
+            for (int peopleStart = 0; peopleStart < people.size(); peopleStart += CREDIT_QUERY_BATCH_SIZE) {
+                loaded.addAll(mediaCreditRepository.findScoringCredits(
+                        batch, people.subList(peopleStart,
+                                Math.min(peopleStart + CREDIT_QUERY_BATCH_SIZE, people.size()))));
+            }
+        }
+        if (meterRegistry != null) {
+            meterRegistry.counter("cabinet.recommendations.credits_loaded").increment(loaded.size());
+        }
+        return loaded;
+    }
+
+    private List<Media> loadMedia(Set<UUID> mediaIds) {
+        List<UUID> ids = List.copyOf(mediaIds);
+        List<Media> loaded = new ArrayList<>(ids.size());
+        for (int start = 0; start < ids.size(); start += CREDIT_QUERY_BATCH_SIZE) {
+            loaded.addAll(mediaRepository.findAllWithGenresByIdIn(
+                    ids.subList(start, Math.min(start + CREDIT_QUERY_BATCH_SIZE, ids.size()))));
+        }
+        return loaded;
+    }
+
+    private Map<UUID, RatingSummary> loadRatings(Set<UUID> mediaIds) {
+        List<UUID> ids = List.copyOf(mediaIds);
+        Map<UUID, RatingSummary> loaded = new LinkedHashMap<>();
+        for (int start = 0; start < ids.size(); start += CREDIT_QUERY_BATCH_SIZE) {
+            ratingRepository.summarizeRatings(
+                    ids.subList(start, Math.min(start + CREDIT_QUERY_BATCH_SIZE, ids.size())),
+                    com.scriptles.cabinet.user.enums.Visibility.PUBLIC)
+                    .forEach(projection -> loaded.put(projection.getMediaId(), new RatingSummary(
+                            projection.getAverageRating(), projection.getRatingCount())));
+        }
+        return loaded;
+    }
+
     private ScoredCandidate score(
             Media media,
-            List<MediaCredit> credits,
+            List<CreditScoringProjection> credits,
             InterestGraphService.InterestProfile profile,
             List<RelatedSeed> relations,
             RatingSummary rating
@@ -153,14 +207,14 @@ public class RecommendationService {
                 .mapToDouble(credit -> policy.role(credit.getRole(), credit.getPosition())).sum();
         if (roleTotal > 0) {
             credits.forEach(credit -> {
-                String personId = credit.getPerson().getId().toString();
+                String personId = credit.getPersonId().toString();
                 InterestGraphService.InterestNode node = profile.nodes().get(
                         new InterestGraphService.InterestKey(InterestTargetType.PERSON, personId));
                 if (node != null) {
                     double value = node.effectiveScore()
                             * policy.role(credit.getRole(), credit.getPosition()) / roleTotal;
                     contributions.add(new Contribution(new RecommendationReasonResponse(
-                            RecommendationReasonType.PERSON, personId, credit.getPerson().getName()), value));
+                            RecommendationReasonType.PERSON, personId, credit.getPersonName()), value));
                 }
             });
         }

@@ -7,6 +7,7 @@ import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.user.service.InterestProfileCache;
 import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.enums.Visibility;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class MediaLikeService {
     private final UserRepository userRepository;
     private final MediaRepository mediaRepository;
     private final UserFeedService userFeedService;
+    private final InterestProfileCache interestProfileCache;
 
     @Transactional(readOnly = true)
     public MediaLikeResponse find(UUID userId, UUID mediaId) {
@@ -33,6 +35,7 @@ public class MediaLikeService {
     @Transactional
     @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public MediaLikeResponse like(UUID userId, UUID mediaId) {
+        interestProfileCache.invalidate(userId);
         if (mediaLikeRepository.existsByUserIdAndMediaId(userId, mediaId)) {
             return new MediaLikeResponse(true);
         }
@@ -53,6 +56,7 @@ public class MediaLikeService {
     @Transactional
     @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void unlike(UUID userId, UUID mediaId) {
+        interestProfileCache.invalidate(userId);
         mediaLikeRepository.deleteByUserIdAndMediaId(userId, mediaId);
         userFeedService.remove(userId, mediaId, FeedActionType.LIKED);
     }

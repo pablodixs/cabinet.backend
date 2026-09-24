@@ -8,9 +8,16 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.external.ExternalMedia;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.media.repository.CreditHeadlineProjection;
+import com.scriptles.cabinet.media.repository.CreditDetailsProjection;
+import com.scriptles.cabinet.catalog.service.RollingCatalogMetrics;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 
@@ -35,6 +42,13 @@ public class MediaCreditService {
 
     private final PersonIdentityService personIdentityService;
     private final MediaCreditRepository mediaCreditRepository;
+    private final RollingCatalogMetrics rollingCatalogMetrics;
+    private MeterRegistry meterRegistry;
+
+    @Autowired(required = false)
+    void setMeterRegistry(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     @Transactional
     public void save(Media media, List<ExternalMedia.ExternalCredit> externalCredits) {
@@ -63,14 +77,19 @@ public class MediaCreditService {
         Set<IdentityKey> enrichmentKeys = enrichIdentities
                 ? enrichmentKeys(externalCredits)
                 : Set.of();
+        PersonIdentityService.ExternalPeopleSnapshot preloaded =
+                personIdentityService.preloadExternalPeople(externalCredits);
         Set<CreditKey> savedCredits = new LinkedHashSet<>();
+        Set<UUID> resolvedPeople = new LinkedHashSet<>();
         List<MediaCredit> credits = new ArrayList<>();
         for (ExternalMedia.ExternalCredit external : externalCredits) {
             if (!valid(external)) {
                 continue;
             }
             IdentityKey identityKey = identityKey(external);
-            Person person = personIdentityService.resolve(external, enrichmentKeys.contains(identityKey));
+            Person person = personIdentityService.resolve(
+                    external, enrichmentKeys.contains(identityKey), preloaded);
+            resolvedPeople.add(person.getId());
             CreditKey key = new CreditKey(person.getId(), external.role(), normalizeText(external.characterName()));
             if (!savedCredits.add(key)) {
                 continue;
@@ -87,6 +106,28 @@ public class MediaCreditService {
             credits.add(credit);
         }
         mediaCreditRepository.saveAll(credits);
+        recordImportMetrics(credits.size(), resolvedPeople.size());
+    }
+
+    private void recordImportMetrics(int credits, int people) {
+        Runnable record = () -> {
+            rollingCatalogMetrics.creditsPersisted(credits);
+            rollingCatalogMetrics.peopleResolved(people);
+            if (meterRegistry != null) {
+                meterRegistry.counter("cabinet.catalog.credits.persisted").increment(credits);
+                meterRegistry.counter("cabinet.catalog.people.resolved").increment(people);
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    record.run();
+                }
+            });
+        } else {
+            record.run();
+        }
     }
 
     @Transactional
@@ -102,12 +143,15 @@ public class MediaCreditService {
                 .toList();
         Set<IdentityKey> enrichmentKeys = enrichmentKeys(
                 snapshots.stream().map(StoredCredit::external).toList());
+        PersonIdentityService.ExternalPeopleSnapshot preloaded = personIdentityService
+                .preloadExternalPeople(snapshots.stream().map(StoredCredit::external).toList());
         Map<UUID, Person> resolvedPeople = new LinkedHashMap<>();
         for (StoredCredit snapshot : snapshots) {
             ExternalMedia.ExternalCredit external = snapshot.external();
             resolvedPeople.put(
                     snapshot.creditId(),
-                    personIdentityService.resolve(external, enrichmentKeys.contains(identityKey(external)))
+                    personIdentityService.resolve(
+                            external, enrichmentKeys.contains(identityKey(external)), preloaded)
             );
         }
 
@@ -147,7 +191,7 @@ public class MediaCreditService {
     }
 
     public Page<CreditView> findByRole(UUID mediaId, CreditRole role, int page, int limit) {
-        return mediaCreditRepository.findAllByMediaIdAndRoleOrderByPositionAscIdAsc(
+        return mediaCreditRepository.findCreditDetailsByRole(
                 mediaId,
                 role,
                 PageRequest.of(page, limit)
@@ -170,21 +214,23 @@ public class MediaCreditService {
             return Map.of();
         }
 
-        Map<UUID, List<CreditView>> creditsByMedia = new LinkedHashMap<>();
-        mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(mediaById.keySet()).stream()
-                .sorted(Comparator
-                        .comparing((MediaCredit credit) -> credit.getRole().ordinal())
-                        .thenComparing(MediaCredit::getPosition, Comparator.nullsLast(Integer::compareTo)))
-                .forEach(credit -> creditsByMedia
-                        .computeIfAbsent(credit.getMedia().getId(), ignored -> new ArrayList<>())
-                        .add(toView(credit)));
+        Map<UUID, List<CreditHeadlineProjection>> creditsByMedia = new LinkedHashMap<>();
+        List<UUID> mediaIds = List.copyOf(mediaById.keySet());
+        List<CreditRole> headlineRoles = List.of(
+                CreditRole.AUTHOR, CreditRole.CREATOR, CreditRole.DIRECTOR, CreditRole.ARTIST);
+        for (int start = 0; start < mediaIds.size(); start += 100) {
+            mediaCreditRepository.findHeadlines(
+                    mediaIds.subList(start, Math.min(start + 100, mediaIds.size())), headlineRoles)
+                    .forEach(credit -> creditsByMedia.computeIfAbsent(
+                            credit.getMediaId(), ignored -> new ArrayList<>()).add(credit));
+        }
 
         Map<UUID, CreditSummary> summaries = new LinkedHashMap<>();
         mediaById.forEach((mediaId, media) -> {
-            List<CreditView> credits = List.copyOf(creditsByMedia.getOrDefault(mediaId, List.of()));
+            List<CreditHeadlineProjection> credits = creditsByMedia.getOrDefault(mediaId, List.of());
             String director = namesForRole(credits, CreditRole.DIRECTOR);
             String creator = namesForRole(credits, creatorRole(media.getType()));
-            summaries.put(mediaId, new CreditSummary(creator, director, credits));
+            summaries.put(mediaId, new CreditSummary(creator, director, List.of()));
         });
         return Map.copyOf(summaries);
     }
@@ -201,6 +247,12 @@ public class MediaCreditService {
                 credit.getSource() != null ? credit.getSource() : person.getExternalSource(),
                 credit.getExternalId() != null ? credit.getExternalId() : person.getExternalId()
         );
+    }
+
+    private CreditView toView(CreditDetailsProjection credit) {
+        return new CreditView(
+                credit.getPersonId(), credit.getName(), credit.getRole(), credit.getCharacterName(),
+                credit.getPosition(), credit.getImageUrl(), credit.getSource(), credit.getExternalId());
     }
 
     private ExternalMedia.ExternalCredit toExternalCredit(MediaCredit credit) {
@@ -276,6 +328,16 @@ public class MediaCreditService {
         String names = credits.stream()
                 .filter(credit -> credit.role() == role)
                 .map(CreditView::name)
+                .distinct()
+                .collect(Collectors.joining(", "));
+        return names.isBlank() ? null : names;
+    }
+
+    private String namesForRole(Collection<CreditHeadlineProjection> credits, CreditRole role) {
+        if (role == null) return null;
+        String names = credits.stream()
+                .filter(credit -> credit.getRole() == role)
+                .map(CreditHeadlineProjection::getPersonName)
                 .distinct()
                 .collect(Collectors.joining(", "));
         return names.isBlank() ? null : names;

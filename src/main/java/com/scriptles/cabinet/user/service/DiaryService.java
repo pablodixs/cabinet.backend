@@ -1,12 +1,15 @@
 package com.scriptles.cabinet.user.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Rating;
 import com.scriptles.cabinet.media.entity.Review;
+import com.scriptles.cabinet.media.dto.response.ArtworkOptionResponse;
+import com.scriptles.cabinet.media.service.UserMediaArtworkService;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
@@ -15,6 +18,8 @@ import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.media.repository.ReviewLikeRepository;
 import com.scriptles.cabinet.media.repository.ReviewRepository;
 import com.scriptles.cabinet.media.service.MediaConsumptionPolicy;
+import com.scriptles.cabinet.media.service.MediaCommunityCacheInvalidator;
+import com.scriptles.cabinet.media.service.MediaLikeService;
 import com.scriptles.cabinet.media.service.UserArtworkResolver;
 import com.scriptles.cabinet.media.validation.RatingValue;
 import com.scriptles.cabinet.user.dto.request.CreateDiaryEntryRequest;
@@ -64,12 +69,15 @@ public class DiaryService {
     private final ReviewLikeRepository reviewLikeRepository;
     private final ExternalReferenceRepository externalReferenceRepository;
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
+    private final MediaCommunityCacheInvalidator communityCacheInvalidator;
+    private final MediaLikeService mediaLikeService;
     private final UserMediaService userMediaService;
     private final EpisodeTrackingService episodeTrackingService;
     private final SocialAccessPolicy socialAccessPolicy;
     private final UserArtworkResolver userArtworkResolver;
     private final UserTagService userTagService;
     private final UserFeedService userFeedService;
+    private final UserMediaArtworkService userMediaArtworkService;
 
     @Transactional
     public DiaryEntryResponse create(UUID userId, CreateDiaryEntryRequest request) {
@@ -81,6 +89,7 @@ public class DiaryService {
 
         Rating rating = upsertCanonicalRating(user, media, request.rating(), request.visibility());
         String reviewContent = normalizeReview(request.review());
+        if (request.richContent() != null) validateRichContent(reviewContent, request.richContent());
 
         UserMediaActivity activity = new UserMediaActivity();
         activity.setUser(user);
@@ -102,13 +111,17 @@ public class DiaryService {
 
         if (reviewContent != null) {
             upsertCanonicalReview(user, media, rating, activity, reviewContent,
-                    activity.getContainsSpoilers(), request.visibility());
+                    activity.getContainsSpoilers(), request.visibility(), request.backdropKey(), request.richContent() == null ? null : request.richContent().toString());
+        }
+        if (media.getType() != MediaType.EPISODE) {
+            mediaLikeService.like(userId, media.getId());
         }
         if (media.getType() == MediaType.EPISODE) {
             episodeTrackingService.markWatched(userId, media.getId(), false);
         } else {
             userMediaService.markCompleted(user, media, false);
         }
+        communityCacheInvalidator.evict(media);
         return DiaryEntryResponse.from(
                 activity,
                 findReference(media.getId()),
@@ -190,6 +203,9 @@ public class DiaryService {
         mediaConsumptionPolicy.ensureReleased(media);
         Rating rating = upsertCanonicalRating(user, media, request.rating(), request.visibility());
         String reviewContent = normalizeReview(request.review());
+        if (request.richContent() != null) validateRichContent(reviewContent, request.richContent());
+        boolean createsReview = reviewContent != null
+                && reviewRepository.findByUserIdAndMediaId(userId, media.getId()).isEmpty();
 
         activity.setType(request.reconsumption()
                 ? reconsumedType(activity.getType())
@@ -206,7 +222,7 @@ public class DiaryService {
         Review review = reviewRepository.findByActivityId(entryId).orElse(null);
         if (reviewContent != null) {
             upsertCanonicalReview(user, media, rating, activity, reviewContent,
-                    activity.getContainsSpoilers(), request.visibility());
+                    activity.getContainsSpoilers(), request.visibility(), request.backdropKey(), request.richContent() == null ? null : request.richContent().toString());
         } else if (review != null) {
             reviewLikeRepository.deleteByReviewId(review.getId());
             reviewLikeRepository.flush();
@@ -214,6 +230,10 @@ public class DiaryService {
             reviewRepository.flush();
             userFeedService.remove(userId, media.getId(), FeedActionType.REVIEWED);
         }
+        if (createsReview && media.getType() != MediaType.EPISODE) {
+            mediaLikeService.like(userId, media.getId());
+        }
+        communityCacheInvalidator.evict(media);
         return DiaryEntryResponse.from(
                 activity,
                 findReference(media.getId()),
@@ -291,7 +311,9 @@ public class DiaryService {
             UserMediaActivity activity,
             String content,
             boolean containsSpoilers,
-            Visibility visibility
+            Visibility visibility,
+            String backdropKey,
+            String richContent
     ) {
         Review review = reviewRepository.findByUserIdAndMediaId(user.getId(), media.getId())
                 .orElseGet(() -> {
@@ -311,6 +333,17 @@ public class DiaryService {
         review.setRatingEntity(rating);
         review.setActivity(activity);
         review.setContent(content);
+        review.setRichContent(richContent);
+        String requestedBackdropKey = backdropKey == null ? null : backdropKey.trim();
+        if (requestedBackdropKey == null || requestedBackdropKey.isEmpty()) {
+            review.setBackdropKey(null);
+            review.setBackdropUrl(null);
+        } else if (!Objects.equals(review.getBackdropKey(), requestedBackdropKey)) {
+            ArtworkOptionResponse selected = userMediaArtworkService.selectReviewBackdrop(
+                    user.getId(), media.getId(), requestedBackdropKey);
+            review.setBackdropKey(selected.key());
+            review.setBackdropUrl(selected.url());
+        }
         review.setContainsSpoilers(containsSpoilers);
         review.setVisibility(visibility);
         reviewRepository.save(review);
@@ -318,6 +351,12 @@ public class DiaryService {
                 .atStartOfDay(ZoneId.of("America/Sao_Paulo")).toInstant();
         userFeedService.record(user, media, FeedActionType.REVIEWED, occurredAt, visibility,
                 review.getRating(), content, containsSpoilers);
+    }
+
+    private void validateRichContent(String plain, tools.jackson.databind.JsonNode rich) {
+        String extracted = RichTextDocument.validateAndExtractText(rich, false);
+        if (!Objects.equals(plain, extracted)) throw new ApiException(HttpStatus.BAD_REQUEST,
+                "RICH_TEXT_MISMATCH", "O texto simples deve corresponder ao documento formatado");
     }
 
     private void validate(CreateDiaryEntryRequest request) {

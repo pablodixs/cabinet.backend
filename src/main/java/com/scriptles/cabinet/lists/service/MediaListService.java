@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.lists.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
@@ -35,6 +36,8 @@ import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import com.scriptles.cabinet.user.service.UserTagService;
+import com.scriptles.cabinet.profile.repository.HQMemberRepository;
+import com.scriptles.cabinet.profile.enums.HQMemberRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -68,6 +71,7 @@ public class MediaListService {
     private final UserMediaArtworkService userMediaArtworkService;
     private final SocialAccessPolicy socialAccessPolicy;
     private final UserTagService userTagService;
+    private final HQMemberRepository hqMemberRepository;
 
     @Transactional(readOnly = true)
     public List<MediaListResponse> findMine(UUID userId) {
@@ -419,6 +423,12 @@ public class MediaListService {
         list.setOwner(owner);
         list.setName(request.name().trim());
         list.setDescription(normalizeOptional(request.description()));
+        if (request.richDescription() != null) {
+            String text = RichTextDocument.validateAndExtractText(request.richDescription(), false);
+            if (text.length() > 2000) throw new ApiException(HttpStatus.BAD_REQUEST,"LIST_DESCRIPTION_TOO_LONG","A descrição deve ter no máximo 2000 caracteres");
+            if (request.description() != null && !text.equals(request.description())) throw new ApiException(HttpStatus.BAD_REQUEST,"RICH_TEXT_MISMATCH","A descrição deve corresponder ao documento formatado");
+            list.setDescription(normalizeOptional(text)); list.setRichDescription(request.richDescription().toString());
+        }
         list.setVisibility(request.visibility() == null ? Visibility.PUBLIC : request.visibility());
         list.setOrdered(request.ordered() == null || request.ordered());
         applyCover(owner, list, request.coverUrl());
@@ -456,6 +466,7 @@ public class MediaListService {
         duplicate.setOwner(owner);
         duplicate.setName(request.name().trim());
         duplicate.setDescription(source.getDescription());
+        duplicate.setRichDescription(source.getRichDescription());
         duplicate.setVisibility(Visibility.PRIVATE);
         duplicate.setOrdered(source.isOrdered());
         duplicate.setCoverUrl(source.getCoverUrl());
@@ -506,6 +517,14 @@ public class MediaListService {
         MediaList list = findOwnedList(userId, listId);
         list.setName(request.name().trim());
         list.setDescription(normalizeOptional(request.description()));
+        if (request.richDescription() != null) {
+            String text = RichTextDocument.validateAndExtractText(request.richDescription(), false);
+            if (text.length() > 2000) throw new ApiException(HttpStatus.BAD_REQUEST,"LIST_DESCRIPTION_TOO_LONG","A descrição deve ter no máximo 2000 caracteres");
+            if (request.description() != null && !text.equals(request.description())) throw new ApiException(HttpStatus.BAD_REQUEST,"RICH_TEXT_MISMATCH","A descrição deve corresponder ao documento formatado");
+            list.setDescription(normalizeOptional(text)); list.setRichDescription(request.richDescription().toString());
+        } else {
+            list.setRichDescription(null);
+        }
         list.setVisibility(request.visibility());
         list.setOrdered(request.ordered());
         applyCover(list.getOwner(), list, request.coverUrl());
@@ -767,8 +786,19 @@ public class MediaListService {
     }
 
     private MediaList findOwnedList(UUID userId, UUID listId) {
-        return mediaListRepository.findByIdAndOwnerId(listId, userId)
-                .orElseThrow(() -> listNotFound());
+        MediaList list = mediaListRepository.findWithOwnerById(listId)
+                .orElseThrow(this::listNotFound);
+        if (list.getOwner().getId().equals(userId)) return list;
+        if (list.getHqProfile() != null) {
+            boolean canManage = hqMemberRepository.findByHqProfileIdAndAccountId(
+                            list.getHqProfile().getId(), userId)
+                    .map(member -> member.getRole() == HQMemberRole.OWNER
+                            || member.getRole() == HQMemberRole.ADMIN
+                            || member.getRole() == HQMemberRole.EDITOR)
+                    .orElse(false);
+            if (canManage) return list;
+        }
+        throw listNotFound();
     }
 
     private Map<UUID, UserArtworkResolver.ResolvedArtwork> resolveArtwork(

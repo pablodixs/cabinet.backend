@@ -114,11 +114,14 @@ Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EP
 | `GET /v1/media/{mediaId}/reviews/recent` | Public | Curated short recent set. |
 | `GET /v1/me/reviews/{mediaId}` | User | User's review or `204`. |
 | `PUT /v1/me/reviews/{mediaId}` | User | Upsert rating/text/spoiler/visibility and optional `activityId`. |
+| `PUT /v1/hq/{profileId}/reviews/{mediaId}` | HQ owner/admin | Publish a public review as the HQ profile; accepts `content` and `richContent`. |
 | `DELETE /v1/me/reviews/{mediaId}` | User | Delete review; returns `204`. |
 | `GET /v1/me/likes/{mediaId}` | User | Current media-like state/count. |
 | `PUT /v1/me/likes/{mediaId}` | User | Like media. |
 | `DELETE /v1/me/likes/{mediaId}` | User | Unlike media; returns `204`. |
 | `GET /v1/me/review-likes/{reviewId}` | User | Current review-like state/count. |
+
+Reviews, list descriptions and HQ bios may include an optional `richContent`/`richDescription`/`richBio` document (`version: 1`) with paragraph and quote blocks, bold and italic marks. HTTP(S) links are accepted only in HQ reviews and bios; plain `content`/`description`/`bio` remains the matching text projection for older clients.
 | `PUT /v1/me/review-likes/{reviewId}` | User | Like an accessible review. |
 | `DELETE /v1/me/review-likes/{reviewId}` | User | Unlike and return updated state. |
 

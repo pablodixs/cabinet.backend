@@ -27,6 +27,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
+import com.scriptles.cabinet.user.service.InterestProfileCache;
 import com.scriptles.cabinet.user.service.UserFeedService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -56,6 +57,7 @@ public class LetterboxdImportApplier {
     private final MediaListItemRepository listItemRepository;
     private final ObjectMapper objectMapper;
     private final UserFeedService userFeedService;
+    private final InterestProfileCache interestProfileCache;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public LetterboxdImportItemState apply(UUID itemId) {
@@ -194,6 +196,7 @@ public class LetterboxdImportApplier {
         item.setSelectedMedia(media);
         item.setErrorMessage(null);
         itemRepository.save(item);
+        interestProfileCache.invalidate(user.getId());
         return item.getState();
     }
 

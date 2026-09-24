@@ -40,6 +40,8 @@ public interface CatalogJobRepository extends JpaRepository<CatalogJob, UUID> {
 
     long countByStatus(String status);
 
+    long countByStatusAndCompletedAtAfter(String status, Instant completedAfter);
+
     long countByOperationIdAndStatusIn(UUID operationId, List<String> statuses);
 
     List<CatalogJob> findByOperationIdOrderByCreatedAtAsc(UUID operationId);

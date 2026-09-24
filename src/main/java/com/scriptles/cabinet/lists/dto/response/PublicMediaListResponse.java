@@ -7,6 +7,8 @@ import com.scriptles.cabinet.user.enums.AccountTier;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 
 public record PublicMediaListResponse(
         UUID id,
@@ -23,8 +25,15 @@ public record PublicMediaListResponse(
         int mediaPosition,
         Instant updatedAt,
         AuthorResponse owner,
-        List<String> tags
+        List<String> tags,
+        JsonNode richDescription
 ) {
+    public PublicMediaListResponse(UUID id, String name, String description, boolean ordered,
+            String coverUrl, String backdropUrl, List<MediaListPreviewResponse> previewItems,
+            long itemCount, Long consumedItemCount, Integer consumedPercentage, long likeCount,
+            int mediaPosition, Instant updatedAt, AuthorResponse owner, List<String> tags) {
+        this(id,name,description,ordered,coverUrl,backdropUrl,previewItems,itemCount,consumedItemCount,consumedPercentage,likeCount,mediaPosition,updatedAt,owner,tags,null);
+    }
     public PublicMediaListResponse(
             UUID id,
             String name,
@@ -40,7 +49,7 @@ public record PublicMediaListResponse(
     ) {
         this(id, name, description, ordered, coverUrl, null, previewItems,
                 itemCount, null, null, likeCount, mediaPosition, updatedAt, owner,
-                List.of());
+                List.of(), null);
     }
 
     public PublicMediaListResponse(
@@ -61,7 +70,7 @@ public record PublicMediaListResponse(
     ) {
         this(id, name, description, ordered, coverUrl, backdropUrl,
                 previewItems, itemCount, consumedItemCount, consumedPercentage,
-                likeCount, mediaPosition, updatedAt, owner, List.of());
+                likeCount, mediaPosition, updatedAt, owner, List.of(), null);
     }
 
     public static PublicMediaListResponse from(
@@ -106,7 +115,8 @@ public record PublicMediaListResponse(
                         list.getOwner().getAvatarUlr(),
                         list.getOwner().getAccountTier() == AccountTier.PRO
                 ),
-                list.getTags().stream().map(tag -> tag.getName()).toList()
+                list.getTags().stream().map(tag -> tag.getName()).toList(),
+                list.getRichDescription() == null ? null : RichTextDocument.parse(list.getRichDescription())
         );
     }
 

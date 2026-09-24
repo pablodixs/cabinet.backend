@@ -40,6 +40,7 @@ public class CatalogJobWorker {
     private final ThreadPoolTaskExecutor executor;
     private final Duration lockTimeout;
     private final MeterRegistry meterRegistry;
+    private final RollingCatalogMetrics rollingCatalogMetrics;
 
     public CatalogJobWorker(CatalogJobRepository jobs,
             CatalogJobClaimService claimService,
@@ -51,6 +52,7 @@ public class CatalogJobWorker {
             TmdbCatalogIndexService indexService,
             @Qualifier("catalogJobTaskExecutor") ThreadPoolTaskExecutor executor,
             MeterRegistry meterRegistry,
+            RollingCatalogMetrics rollingCatalogMetrics,
             @Value("${catalog.jobs.lock-timeout:15m}") Duration lockTimeout) {
         this.jobs = jobs;
         this.claimService = claimService;
@@ -62,6 +64,7 @@ public class CatalogJobWorker {
         this.indexService = indexService;
         this.executor = executor;
         this.meterRegistry = meterRegistry;
+        this.rollingCatalogMetrics = rollingCatalogMetrics;
         this.lockTimeout = lockTimeout;
     }
 
@@ -117,8 +120,12 @@ public class CatalogJobWorker {
         TmdbCollectionSnapshot.Movie movie = manifestWriter.seed(job.getCollectionId(), job.getExternalId());
         MediaTarget target = new MediaTarget(null, ExternalSource.TMDB, movie.externalId(), MediaType.MOVIE, locale);
         var result = catalogImportFacade.materializeSeed(target, ExternalMedia.tmdbMovieSeed(movie));
-        int resolved = sourceMaterializationWriter.resolveAll(movie.externalId(), result.media().getId());
         boolean created = result.snapshot() != null;
+        int resolved = sourceMaterializationWriter.resolveAll(movie.externalId(), result.media().getId());
+        if (created) {
+            meterRegistry.counter("cabinet.catalog.media.materialized").increment();
+            rollingCatalogMetrics.mediaMaterialized();
+        }
         meterRegistry.counter(created ? "cabinet.catalog.collection_items.materialized"
                 : "cabinet.catalog.collection_items.reused", "provider", "TMDB").increment(resolved);
         return Map.of("processedItems", Math.max(1, resolved), "createdItems", created ? 1 : 0,

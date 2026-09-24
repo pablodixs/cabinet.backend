@@ -23,6 +23,7 @@ public class Profile {
     @Column(length = 500) private String avatarUrl;
     @Column(length = 500) private String backdropUrl;
     @Column(columnDefinition = "TEXT") private String bio;
+    @Column(name = "rich_bio", columnDefinition = "TEXT") private String richBio;
     @Column(nullable = false) private boolean verified;
     private Instant verifiedAt;
     @Column(nullable = false) private long followersCount;

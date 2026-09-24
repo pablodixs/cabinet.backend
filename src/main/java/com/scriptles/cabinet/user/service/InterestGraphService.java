@@ -3,10 +3,10 @@ package com.scriptles.cabinet.user.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.entity.Media;
-import com.scriptles.cabinet.media.entity.MediaCredit;
 import com.scriptles.cabinet.media.entity.Person;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.media.repository.CreditScoringProjection;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
@@ -24,6 +24,8 @@ import com.scriptles.cabinet.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class InterestGraphService {
+    private static final int CREDIT_QUERY_BATCH_SIZE = 100;
     private static final Set<MediaType> SUPPORTED_MEDIA_TYPES = EnumSet.of(
             MediaType.MOVIE, MediaType.SERIES, MediaType.ALBUM, MediaType.BOOK);
     private static final double EPSILON = 0.00001;
@@ -53,6 +56,13 @@ public class InterestGraphService {
     private final MediaRepository mediaRepository;
     private final MediaCreditRepository mediaCreditRepository;
     private final PersonRepository personRepository;
+    private final InterestProfileCache profileCache;
+    private MeterRegistry meterRegistry;
+
+    @Autowired(required = false)
+    void setMeterRegistry(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     @Transactional(readOnly = true)
     public PageResponse<InterestResponse> interests(
@@ -73,6 +83,7 @@ public class InterestGraphService {
 
     @Transactional
     public InterestResponse upsert(UUID userId, UpsertInterestPreferenceRequest request) {
+        profileCache.invalidate(userId);
         User user = userRepository.findById(userId).orElseThrow(() -> notFound(
                 "USER_NOT_FOUND", "Usuário não encontrado"));
         ValidTarget target = validateTarget(request.targetType(), request.targetId());
@@ -93,6 +104,7 @@ public class InterestGraphService {
 
     @Transactional
     public void delete(UUID userId, InterestTargetType targetType, String targetId) {
+        profileCache.invalidate(userId);
         ValidTarget target = parseTarget(targetType, targetId);
         findPreference(userId, target).ifPresent(preferenceRepository::delete);
         preferenceRepository.flush();
@@ -129,6 +141,8 @@ public class InterestGraphService {
 
     @Transactional(readOnly = true)
     public InterestProfile build(UUID userId) {
+        InterestProfile cached = profileCache.get(userId);
+        if (cached != null) return cached;
         Map<UUID, Double> rawSeeds = new LinkedHashMap<>();
         Set<UUID> interacted = new LinkedHashSet<>();
 
@@ -157,12 +171,10 @@ public class InterestGraphService {
         Set<UUID> seedIds = new LinkedHashSet<>(rawSeeds.keySet());
         preferences.stream().filter(preference -> preference.getTargetType() == InterestTargetType.MEDIA)
                 .map(preference -> preference.getMedia().getId()).forEach(seedIds::add);
-        Map<UUID, Media> mediaById = seedIds.isEmpty() ? Map.of() : mediaRepository
-                .findAllWithGenresByIdIn(seedIds).stream()
-                .collect(Collectors.toMap(Media::getId, media -> media));
-        Map<UUID, List<MediaCredit>> creditsByMedia = seedIds.isEmpty() ? Map.of() : mediaCreditRepository
-                .findAllByMediaIdInOrderByPositionAsc(seedIds).stream()
-                .collect(Collectors.groupingBy(credit -> credit.getMedia().getId(), LinkedHashMap::new,
+        Map<UUID, Media> mediaById = loadMedia(seedIds);
+        List<CreditScoringProjection> loadedCredits = loadPrincipalCredits(seedIds);
+        Map<UUID, List<CreditScoringProjection>> creditsByMedia = loadedCredits.stream()
+                .collect(Collectors.groupingBy(CreditScoringProjection::getMediaId, LinkedHashMap::new,
                         Collectors.toList()));
 
         Map<InterestKey, MutableNode> inferred = new LinkedHashMap<>();
@@ -194,13 +206,13 @@ public class InterestGraphService {
                         new InterestKey(InterestTargetType.GENRE, genre.key()), genre.label(), contribution));
             }
 
-            List<MediaCredit> credits = creditsByMedia.getOrDefault(mediaId, List.of());
+            List<CreditScoringProjection> credits = creditsByMedia.getOrDefault(mediaId, List.of());
             double roleTotal = credits.stream()
                     .mapToDouble(credit -> policy.role(credit.getRole(), credit.getPosition())).sum();
             if (roleTotal > 0) {
                 credits.forEach(credit -> add(inferred,
-                        new InterestKey(InterestTargetType.PERSON, credit.getPerson().getId().toString()),
-                        credit.getPerson().getName(), seed * InterestScoringPolicy.PERSON_SHARE
+                        new InterestKey(InterestTargetType.PERSON, credit.getPersonId().toString()),
+                        credit.getPersonName(), seed * InterestScoringPolicy.PERSON_SHARE
                                 * policy.role(credit.getRole(), credit.getPosition()) / roleTotal));
             }
         });
@@ -219,7 +231,36 @@ public class InterestGraphService {
                     interestKey, label(preference), 0.0, policy.explicit(preference.getPreference()),
                     preference.getPreference()));
         });
-        return new InterestProfile(Map.copyOf(nodes), Set.copyOf(interacted));
+        InterestProfile profile = new InterestProfile(Map.copyOf(nodes), Set.copyOf(interacted));
+        profileCache.put(userId, profile);
+        if (meterRegistry != null) {
+            meterRegistry.counter("cabinet.interest_graph.media").increment(seedIds.size());
+            meterRegistry.counter("cabinet.interest_graph.credits_loaded").increment(loadedCredits.size());
+        }
+        return profile;
+    }
+
+    private List<CreditScoringProjection> loadPrincipalCredits(Set<UUID> mediaIds) {
+        if (mediaIds.isEmpty()) return List.of();
+        List<UUID> ids = List.copyOf(mediaIds);
+        List<CreditScoringProjection> loaded = new java.util.ArrayList<>();
+        for (int start = 0; start < ids.size(); start += CREDIT_QUERY_BATCH_SIZE) {
+            loaded.addAll(mediaCreditRepository.findPrincipalScoringCredits(
+                    ids.subList(start, Math.min(start + CREDIT_QUERY_BATCH_SIZE, ids.size()))));
+        }
+        return loaded;
+    }
+
+    private Map<UUID, Media> loadMedia(Set<UUID> mediaIds) {
+        if (mediaIds.isEmpty()) return Map.of();
+        List<UUID> ids = List.copyOf(mediaIds);
+        Map<UUID, Media> loaded = new LinkedHashMap<>();
+        for (int start = 0; start < ids.size(); start += CREDIT_QUERY_BATCH_SIZE) {
+            mediaRepository.findAllWithGenresByIdIn(
+                    ids.subList(start, Math.min(start + CREDIT_QUERY_BATCH_SIZE, ids.size())))
+                    .forEach(media -> loaded.put(media.getId(), media));
+        }
+        return loaded;
     }
 
     public Set<MediaType> supportedMediaTypes() {

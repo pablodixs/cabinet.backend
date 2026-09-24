@@ -62,6 +62,7 @@ public class UserMediaService {
     private final ApplicationEventPublisher eventPublisher;
     private final UserArtworkResolver userArtworkResolver;
     private final UserFeedService userFeedService;
+    private final InterestProfileCache interestProfileCache;
 
     @Transactional(readOnly = true)
     public PageResponse<LibraryMediaResponse> findLibrary(
@@ -151,6 +152,7 @@ public class UserMediaService {
     @Transactional
     @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public LibraryEntryResponse upsert(UUID userId, UUID mediaId, UserMediaStatus status) {
+        interestProfileCache.invalidate(userId);
         User user = findUser(userId);
         Media media = findMedia(mediaId);
         UserMedia entry = userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
@@ -172,6 +174,7 @@ public class UserMediaService {
     @Transactional
     @CacheEvict(cacheNames = "mediaCommunity", key = "#mediaId")
     public void delete(UUID userId, UUID mediaId) {
+        interestProfileCache.invalidate(userId);
         userMediaRepository.findByUserIdAndMediaId(userId, mediaId)
                 .ifPresent(userMediaRepository::delete);
         userFeedService.remove(userId, mediaId, FeedActionType.ADDED_TO_WATCHLIST);
@@ -184,6 +187,7 @@ public class UserMediaService {
 
     @Transactional
     public UserMedia markCompleted(User user, Media media, boolean recordCompletionActivity) {
+        interestProfileCache.invalidate(user.getId());
         mediaConsumptionPolicy.ensureReleased(media);
         UserMedia entry = userMediaRepository.findByUserIdAndMediaId(user.getId(), media.getId())
                 .orElseGet(() -> newEntry(user, media));

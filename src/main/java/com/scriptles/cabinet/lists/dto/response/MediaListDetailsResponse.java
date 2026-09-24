@@ -7,11 +7,14 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 
 public record MediaListDetailsResponse(
         UUID id,
         String name,
         String description,
+        JsonNode richDescription,
         Visibility visibility,
         boolean ordered,
         String coverUrl,
@@ -30,6 +33,7 @@ public record MediaListDetailsResponse(
                 list.getId(),
                 list.getName(),
                 list.getDescription(),
+                list.getRichDescription() == null ? null : RichTextDocument.parse(list.getRichDescription()),
                 list.getVisibility(),
                 list.isOrdered(),
                 list.getOwner().getAccountTier() == AccountTier.PRO

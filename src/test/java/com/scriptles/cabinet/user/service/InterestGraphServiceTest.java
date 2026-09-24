@@ -9,6 +9,7 @@ import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.media.repository.CreditScoringProjection;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
@@ -50,6 +51,7 @@ class InterestGraphServiceTest {
     @Mock MediaRepository mediaRepository;
     @Mock MediaCreditRepository mediaCreditRepository;
     @Mock PersonRepository personRepository;
+    @Mock InterestProfileCache profileCache;
 
     @Spy InterestScoringPolicy policy = new InterestScoringPolicy();
 
@@ -72,10 +74,11 @@ class InterestGraphServiceTest {
         director.setId(UUID.randomUUID());
         director.setName("Andrei Tarkovsky");
         director.setExternalSource(ExternalSource.MANUAL);
-        MediaCredit credit = new MediaCredit();
-        credit.setMedia(media);
-        credit.setPerson(director);
-        credit.setRole(CreditRole.DIRECTOR);
+        CreditScoringProjection credit = org.mockito.Mockito.mock(CreditScoringProjection.class);
+        when(credit.getMediaId()).thenReturn(media.getId());
+        when(credit.getPersonId()).thenReturn(director.getId());
+        when(credit.getPersonName()).thenReturn(director.getName());
+        when(credit.getRole()).thenReturn(CreditRole.DIRECTOR);
 
         UserInterestPreference explicit = new UserInterestPreference();
         explicit.setTargetType(InterestTargetType.GENRE);
@@ -87,8 +90,10 @@ class InterestGraphServiceTest {
         when(mediaLikeRepository.findAllByUserId(userId)).thenReturn(List.of(like));
         when(userMediaRepository.findAllByUserId(userId)).thenReturn(List.of(library));
         when(preferenceRepository.findAllByUserId(userId)).thenReturn(List.of(explicit));
-        when(mediaRepository.findAllWithGenresByIdIn(Set.of(media.getId()))).thenReturn(List.of(media));
-        when(mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(Set.of(media.getId())))
+        when(mediaRepository.findAllWithGenresByIdIn(
+                org.mockito.ArgumentMatchers.anyCollection())).thenReturn(List.of(media));
+        when(mediaCreditRepository.findPrincipalScoringCredits(
+                org.mockito.ArgumentMatchers.anyCollection()))
                 .thenReturn(List.of(credit));
 
         var profile = service.build(userId);

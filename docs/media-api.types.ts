@@ -600,11 +600,20 @@ export interface ReviewLikerResponse {
   avatarUrl: string | null;
 }
 
+export interface RichTextDocument {
+  version: 1;
+  blocks: Array<{
+    type: "paragraph" | "quote";
+    children: Array<{ text: string; marks: Array<"bold" | "italic">; link?: string | null }>;
+  }>;
+}
+
 export interface ReviewResponse {
   id: string;
   mediaId: string;
   rating: number | null;
   content: string | null;
+  richContent: RichTextDocument | null;
   containsSpoilers: boolean;
   visibility: ReviewVisibility;
   createdAt: string;
@@ -617,6 +626,8 @@ export interface ReviewResponse {
     username: string;
     displayName: string;
     avatarUrl: string | null;
+    pro?: boolean;
+    hq?: boolean;
   };
   activityId: string | null;
   likedByAuthor: boolean;
@@ -692,6 +703,7 @@ export interface PublicListSummary {
   id: string;
   name: string;
   description: string | null;
+  richDescription: RichTextDocument | null;
   ordered: boolean;
   coverUrl: string | null;
   previewItems: MediaListPreview[];

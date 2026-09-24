@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.util.Set;
+import tools.jackson.databind.JsonNode;
 
 public record CreateMediaListRequest(
         @NotBlank(message = "Informe um nome para a lista")
@@ -22,7 +23,8 @@ public record CreateMediaListRequest(
         String coverUrl,
 
         @Size(max = 30)
-        Set<@NotBlank @Size(max = 100) String> tags
+        Set<@NotBlank @Size(max = 100) String> tags,
+        JsonNode richDescription
 ) {
     public CreateMediaListRequest(
             String name,
@@ -31,8 +33,10 @@ public record CreateMediaListRequest(
             Boolean ordered,
             String coverUrl
     ) {
-        this(name, description, visibility, ordered, coverUrl, Set.of());
+        this(name, description, visibility, ordered, coverUrl, Set.of(), null);
     }
+
+    public CreateMediaListRequest(String name, String description, Visibility visibility, Boolean ordered, String coverUrl, Set<@NotBlank @Size(max = 100) String> tags) { this(name,description,visibility,ordered,coverUrl,tags,null); }
 
     public CreateMediaListRequest {
         tags = tags == null ? Set.of() : tags;

@@ -7,6 +7,8 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 
 public record MediaListResponse(
         UUID id,
@@ -20,8 +22,14 @@ public record MediaListResponse(
         long itemCount,
         Instant createdAt,
         Instant updatedAt,
-        List<String> tags
+        List<String> tags,
+        JsonNode richDescription
 ) {
+    public MediaListResponse(UUID id, String name, String description, Visibility visibility,
+            boolean ordered, String coverUrl, String backdropUrl, List<MediaListPreviewResponse> previewItems,
+            long itemCount, Instant createdAt, Instant updatedAt, List<String> tags) {
+        this(id,name,description,visibility,ordered,coverUrl,backdropUrl,previewItems,itemCount,createdAt,updatedAt,tags,null);
+    }
     public MediaListResponse(
             UUID id,
             String name,
@@ -35,7 +43,7 @@ public record MediaListResponse(
             Instant updatedAt
     ) {
         this(id, name, description, visibility, ordered, coverUrl, null,
-                previewItems, itemCount, createdAt, updatedAt, List.of());
+                previewItems, itemCount, createdAt, updatedAt, List.of(), null);
     }
 
     public MediaListResponse(
@@ -52,7 +60,7 @@ public record MediaListResponse(
             Instant updatedAt
     ) {
         this(id, name, description, visibility, ordered, coverUrl, backdropUrl,
-                previewItems, itemCount, createdAt, updatedAt, List.of());
+                previewItems, itemCount, createdAt, updatedAt, List.of(), null);
     }
 
     public static MediaListResponse from(MediaList list, long itemCount) {
@@ -78,7 +86,8 @@ public record MediaListResponse(
                 itemCount,
                 list.getCreatedAt(),
                 list.getUpdatedAt(),
-                list.getTags().stream().map(tag -> tag.getName()).toList()
+                list.getTags().stream().map(tag -> tag.getName()).toList(),
+                list.getRichDescription() == null ? null : RichTextDocument.parse(list.getRichDescription())
         );
     }
 }

@@ -17,6 +17,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
 import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.user.service.InterestProfileCache;
 import com.scriptles.cabinet.user.enums.FeedActionType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -41,6 +42,7 @@ public class RatingService {
     private final MediaConsumptionPolicy mediaConsumptionPolicy;
     private final MediaCommunityCacheInvalidator communityCacheInvalidator;
     private final UserFeedService userFeedService;
+    private final InterestProfileCache interestProfileCache;
 
     @Transactional(readOnly = true)
     public Optional<RatingResponse> find(UUID userId, UUID mediaId) {
@@ -67,6 +69,7 @@ public class RatingService {
             BigDecimal value
     ) {
         UUID mediaId = media.getId();
+        interestProfileCache.invalidate(userId);
         if (media.getType() == MediaType.EPISODE) validateEpisodeDate(mediaId);
         mediaConsumptionPolicy.ensureReleased(media);
 
@@ -102,6 +105,7 @@ public class RatingService {
 
     @Transactional
     public void delete(UUID userId, UUID mediaId) {
+        interestProfileCache.invalidate(userId);
         ratingRepository.findByUserIdAndMediaId(userId, mediaId).ifPresent(rating -> {
             var review = reviewRepository.findByRatingId(rating.getId()).orElse(null);
             if (review != null) {

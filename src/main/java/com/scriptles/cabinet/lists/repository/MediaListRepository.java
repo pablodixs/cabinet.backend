@@ -17,6 +17,10 @@ import java.util.UUID;
 public interface MediaListRepository extends JpaRepository<MediaList, UUID> {
     List<MediaList> findAllByOwnerIdOrderByUpdatedAtDesc(UUID ownerId);
 
+    List<MediaList> findAllByHqProfileIdOrderByUpdatedAtDesc(UUID hqProfileId);
+
+    Optional<MediaList> findByIdAndHqProfileId(UUID id, UUID hqProfileId);
+
     Optional<MediaList> findByIdAndOwnerId(UUID id, UUID ownerId);
 
     Optional<MediaList> findByOwnerIdAndOriginSourceAndOriginKey(

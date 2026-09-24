@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
 import com.scriptles.cabinet.media.dto.response.ArtworkOptionResponse;
 import com.scriptles.cabinet.media.dto.response.ReviewBackdropSelectionResponse;
@@ -28,6 +29,9 @@ import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.UserMediaService;
 import com.scriptles.cabinet.user.service.UserFeedService;
+import com.scriptles.cabinet.profile.entity.Profile;
+import com.scriptles.cabinet.profile.repository.ProfileRepository;
+import com.scriptles.cabinet.profile.service.ProfileService;
 import com.scriptles.cabinet.user.enums.FeedActionType;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import lombok.RequiredArgsConstructor;
@@ -66,6 +70,9 @@ public class ReviewService {
     private final MediaCommunityCacheInvalidator communityCacheInvalidator;
     private final UserFeedService userFeedService;
     private final UserMediaArtworkService userMediaArtworkService;
+    private final ProfileRepository profileRepository;
+    private final ProfileService profileService;
+    private final MediaLikeService mediaLikeService;
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewResponse> findPublic(
@@ -232,8 +239,7 @@ public class ReviewService {
         Review saved = reviewRepository.saveAndFlush(review);
         return new ReviewBackdropSelectionResponse(
                 saved.getBackdropKey(),
-                saved.getBackdropUrl() != null
-                        ? saved.getBackdropUrl() : saved.getMedia().getBackdropUrl()
+                saved.getBackdropUrl()
         );
     }
 
@@ -259,12 +265,20 @@ public class ReviewService {
                 : RatingValue.normalize(request.rating());
         validateVisibility(request.visibility());
         String content = normalizeContent(request.content());
+        String richContent = request.richContent() == null ? null : request.richContent().toString();
+        if (request.richContent() != null) {
+            String richPlainText = RichTextDocument.validateAndExtractText(request.richContent(), false);
+            if (!richPlainText.equals(content)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "RICH_TEXT_MISMATCH", "O texto simples deve corresponder ao documento formatado");
+            }
+        }
 
         User user = findUser(userId);
         Media media = findMedia(mediaId);
         mediaConsumptionPolicy.ensureReleased(media);
         Review review = reviewRepository.findByUserIdAndMediaId(userId, mediaId)
                 .orElseGet(() -> newReview(user, media));
+        boolean isNewReview = review.getId() == null;
 
         Rating rating = review.getRatingEntity();
         if (requestedRating != null) {
@@ -277,6 +291,18 @@ public class ReviewService {
             review.setRatingEntity(rating);
         }
         review.setContent(content);
+        review.setRichContent(richContent);
+        String requestedBackdropKey = request.backdropKey() == null
+                ? null : request.backdropKey().trim();
+        if (requestedBackdropKey == null || requestedBackdropKey.isEmpty()) {
+            review.setBackdropKey(null);
+            review.setBackdropUrl(null);
+        } else if (!Objects.equals(review.getBackdropKey(), requestedBackdropKey)) {
+            ArtworkOptionResponse selected = userMediaArtworkService.selectReviewBackdrop(
+                    userId, mediaId, requestedBackdropKey);
+            review.setBackdropKey(selected.key());
+            review.setBackdropUrl(selected.url());
+        }
         review.setContainsSpoilers(Boolean.TRUE.equals(request.containsSpoilers()));
         review.setVisibility(request.visibility());
         UserMediaActivity previousActivity = review.getActivity();
@@ -312,10 +338,41 @@ public class ReviewService {
         if (media.getType() != MediaType.TRACK && media.getType() != MediaType.EPISODE) {
             userMediaService.markCompleted(user, media);
         }
-        if (requestedRating != null) {
-            communityCacheInvalidator.evict(media);
+        if (isNewReview && media.getType() != MediaType.EPISODE) {
+            mediaLikeService.like(userId, mediaId);
         }
+        communityCacheInvalidator.evict(media);
         return response(saved, userId);
+    }
+
+    @Transactional
+    public ReviewResponse upsertHQ(UUID userId, UUID profileId, UUID mediaId, UpsertReviewRequest request) {
+        profileService.ensureCanManageHQ(profileId, userId);
+        String content = normalizeContent(request.content());
+        String richContent = request.richContent() == null ? null : request.richContent().toString();
+        if (request.richContent() != null && !content.equals(RichTextDocument.validateAndExtractText(request.richContent(), true))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "RICH_TEXT_MISMATCH", "O texto simples deve corresponder ao documento formatado");
+        }
+        User user = findUser(userId);
+        Media media = findMedia(mediaId);
+        mediaConsumptionPolicy.ensureReleased(media);
+        Profile profile = profileRepository.findById(profileId).orElseThrow(() ->
+                new ApiException(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "Perfil HQ não encontrado"));
+        Review review = reviewRepository.findByAuthorProfileIdAndMediaId(profileId, mediaId).orElseGet(() -> {
+            Review created = new Review(); created.setUser(user); created.setAuthorProfile(profile); created.setMedia(media); return created;
+        });
+        review.setContent(content);
+        review.setRichContent(richContent);
+        review.setContainsSpoilers(Boolean.TRUE.equals(request.containsSpoilers()));
+        review.setVisibility(com.scriptles.cabinet.user.enums.Visibility.PUBLIC);
+        return response(reviewRepository.save(review), userId);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ReviewResponse> findHQ(UUID viewerId, UUID profileId, int page, int size) {
+        var result = reviewRepository.findAllByAuthorProfileIdAndContentIsNotNullOrderByPublishedAtDesc(
+                profileId, PageRequest.of(page, size));
+        return PageResponse.from(result.map(review -> response(review, viewerId)));
     }
 
     @Transactional

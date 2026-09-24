@@ -78,6 +78,8 @@ class ReviewServiceTest {
     private MediaCommunityCacheInvalidator communityCacheInvalidator;
     @Mock
     private UserFeedService userFeedService;
+    @Mock
+    private MediaLikeService mediaLikeService;
 
     @InjectMocks
     private ReviewService reviewService;

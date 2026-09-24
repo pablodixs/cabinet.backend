@@ -11,6 +11,7 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.enums.MediaRelationType;
 import com.scriptles.cabinet.media.repository.MediaCreditRepository;
+import com.scriptles.cabinet.media.repository.CreditScoringProjection;
 import com.scriptles.cabinet.media.repository.MediaRelationRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
@@ -22,11 +23,13 @@ import com.scriptles.cabinet.user.enums.RecommendationSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +38,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -79,10 +83,20 @@ class RecommendationServiceTest {
         when(mediaRepository.findInterestCandidates(any(), any(), any(), any(), any()))
                 .thenReturn(List.of(preferred, penalized));
         when(mediaRepository.findAllWithGenresByIdIn(any())).thenReturn(List.of(preferred, penalized));
-        when(mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(any())).thenReturn(List.of(credit));
+        CreditScoringProjection scoringCredit = org.mockito.Mockito.mock(CreditScoringProjection.class);
+        when(scoringCredit.getMediaId()).thenReturn(penalized.getId());
+        when(scoringCredit.getPersonId()).thenReturn(disliked.getId());
+        when(scoringCredit.getPersonName()).thenReturn(disliked.getName());
+        when(scoringCredit.getRole()).thenReturn(CreditRole.ACTOR);
+        when(scoringCredit.getPosition()).thenReturn(0);
+        when(mediaCreditRepository.findScoringCredits(any(), any())).thenReturn(List.of(scoringCredit));
         when(ratingRepository.summarizeRatings(any(), any())).thenReturn(List.of());
-        when(mediaSearchItemAssembler.fromImported(List.of(preferred), userId, "en-US"))
-                .thenReturn(List.of(response(preferred)));
+        when(mediaSearchItemAssembler.fromImported(any(), eq(userId), eq("en-US")))
+                .thenAnswer(invocation -> {
+                    @SuppressWarnings("unchecked")
+                    List<Media> requested = invocation.getArgument(0);
+                    return requested.stream().map(this::response).toList();
+                });
 
         var result = service.recommendations(userId, MediaType.MOVIE, 1, "en-US");
 
@@ -91,6 +105,9 @@ class RecommendationServiceTest {
         assertThat(result.items().getFirst().source()).isEqualTo(RecommendationSource.PERSONALIZED);
         assertThat(result.items().getFirst().reasons()).extracting(reason -> reason.targetType())
                 .containsExactly(RecommendationReasonType.GENRE);
+        ArgumentCaptor<Collection<UUID>> relevantPeople = ArgumentCaptor.forClass(Collection.class);
+        verify(mediaCreditRepository).findScoringCredits(anyCollection(), relevantPeople.capture());
+        assertThat(relevantPeople.getValue()).containsExactly(disliked.getId());
         verify(mediaRankingService, never()).trending(
                 any(), any(Integer.class), any(Integer.class), any());
     }
@@ -138,10 +155,8 @@ class RecommendationServiceTest {
         relation.setRelationType(MediaRelationType.ADAPTED_AS);
         when(mediaRelationRepository.findAllConnectedTo(Set.of(seed.getId())))
                 .thenReturn(List.of(relation));
-        when(mediaRepository.findAllWithGenresByIdIn(Set.of(adaptation.getId())))
+        when(mediaRepository.findAllWithGenresByIdIn(anyCollection()))
                 .thenReturn(List.of(adaptation));
-        when(mediaCreditRepository.findAllByMediaIdInOrderByPositionAsc(Set.of(adaptation.getId())))
-                .thenReturn(List.of());
         when(ratingRepository.summarizeRatings(any(), any())).thenReturn(List.of());
         when(mediaSearchItemAssembler.fromImported(List.of(adaptation), userId, "en-US"))
                 .thenReturn(List.of(response(adaptation)));

@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -37,6 +39,15 @@ public class PersonIdentityService {
 
     @Transactional
     public Person resolve(ExternalMedia.ExternalCredit external, boolean enrichIdentity) {
+        return resolve(external, enrichIdentity, ExternalPeopleSnapshot.empty());
+    }
+
+    @Transactional
+    public Person resolve(
+            ExternalMedia.ExternalCredit external,
+            boolean enrichIdentity,
+            ExternalPeopleSnapshot preloaded
+    ) {
         ExternalSource source = external.source();
         String externalId = blankToNull(external.externalId());
         String name = external.name().trim();
@@ -46,7 +57,11 @@ public class PersonIdentityService {
                 .orElse(null)
                 : null;
 
-        Person sourcePerson = findSourcePerson(source, externalId, name).orElse(null);
+        ExternalIdentity sourceIdentity = externalId == null ? null : new ExternalIdentity(source, externalId);
+        Optional<Person> sourceCandidate = sourceIdentity != null && preloaded.lookedUp().contains(sourceIdentity)
+                ? Optional.ofNullable(preloaded.people().get(sourceIdentity))
+                : findSourcePerson(source, externalId, name);
+        Person sourcePerson = sourceCandidate.orElse(null);
         if (sourcePerson != null && wikidataId != null) {
             List<String> storedWikidataIds = wikidataIds(sourcePerson);
             if (!storedWikidataIds.isEmpty() && !storedWikidataIds.contains(wikidataId)) {
@@ -60,6 +75,8 @@ public class PersonIdentityService {
         Person person;
         if (sourcePerson != null && wikidataPerson != null && !samePerson(sourcePerson, wikidataPerson)) {
             person = merge(sourcePerson, wikidataPerson);
+            preloaded.canonicalize(sourcePerson, person);
+            preloaded.canonicalize(wikidataPerson, person);
         } else if (sourcePerson != null) {
             person = sourcePerson;
         } else if (wikidataPerson != null) {
@@ -81,13 +98,49 @@ public class PersonIdentityService {
         person = personRepository.save(person);
 
         if (externalId != null) {
-            person = linkReference(person, source, externalId);
+            person = preloaded.lookedUp().contains(sourceIdentity)
+                    ? linkReference(person, source, externalId, preloaded)
+                    : linkReference(person, source, externalId);
         }
         if (wikidataId != null) {
             person = linkReference(person, ExternalSource.WIKIDATA, wikidataId);
             person = mergeVerifiedNameCandidates(person, name, wikidataId);
         }
-        return personRepository.save(person);
+        person = personRepository.save(person);
+        if (sourceIdentity != null) {
+            preloaded.people().put(sourceIdentity, person);
+            preloaded.lookedUp().add(sourceIdentity);
+        }
+        return person;
+    }
+
+    public ExternalPeopleSnapshot preloadExternalPeople(
+            List<ExternalMedia.ExternalCredit> externalCredits
+    ) {
+        Map<ExternalIdentity, Person> people = new LinkedHashMap<>();
+        Map<ExternalIdentity, PersonExternalReference> references = new LinkedHashMap<>();
+        Set<ExternalIdentity> lookedUp = new LinkedHashSet<>();
+        for (ExternalSource source : externalCredits.stream()
+                .filter(external -> external != null && external.source() != null)
+                .map(ExternalMedia.ExternalCredit::source).distinct().toList()) {
+            List<String> ids = externalCredits.stream()
+                    .filter(external -> external != null && external.source() == source)
+                    .map(external -> blankToNull(external.externalId()))
+                    .filter(id -> id != null)
+                    .distinct().toList();
+            ids.forEach(id -> lookedUp.add(new ExternalIdentity(source, id)));
+            for (int start = 0; start < ids.size(); start += 100) {
+                List<String> batch = ids.subList(start, Math.min(start + 100, ids.size()));
+                referenceRepository.findAllBySourceAndExternalIdIn(source, batch).forEach(reference -> {
+                    ExternalIdentity identity = new ExternalIdentity(source, reference.getExternalId());
+                    references.put(identity, reference);
+                    people.put(identity, reference.getPerson());
+                });
+                personRepository.findAllByExternalSourceAndExternalIdIn(source, batch).forEach(person ->
+                        people.putIfAbsent(new ExternalIdentity(source, person.getExternalId()), person));
+            }
+        }
+        return new ExternalPeopleSnapshot(people, lookedUp, references);
     }
 
     private Optional<Person> findSourcePerson(ExternalSource source, String externalId, String name) {
@@ -187,6 +240,40 @@ public class PersonIdentityService {
         reference.setExternalId(externalId);
         reference.setExternalUrl(externalUrl(source, externalId));
         referenceRepository.save(reference);
+        return person;
+    }
+
+    private Person linkReference(
+            Person person,
+            ExternalSource source,
+            String externalId,
+            ExternalPeopleSnapshot snapshot
+    ) {
+        ExternalIdentity identity = new ExternalIdentity(source, externalId);
+        PersonExternalReference existing = snapshot.references().get(identity);
+        if (existing != null) {
+            Person referencedPerson = existing.getPerson();
+            Person canonical = samePerson(person, referencedPerson)
+                    ? person
+                    : merge(person, referencedPerson);
+            snapshot.canonicalize(person, canonical);
+            snapshot.canonicalize(referencedPerson, canonical);
+            existing.setPerson(canonical);
+            if (!hasText(existing.getExternalUrl())) {
+                existing.setExternalUrl(externalUrl(source, externalId));
+                referenceRepository.save(existing);
+            }
+            snapshot.people().put(identity, canonical);
+            return canonical;
+        }
+
+        PersonExternalReference reference = new PersonExternalReference();
+        reference.setPerson(person);
+        reference.setSource(source);
+        reference.setExternalId(externalId);
+        reference.setExternalUrl(externalUrl(source, externalId));
+        snapshot.references().put(identity, referenceRepository.save(reference));
+        snapshot.people().put(identity, person);
         return person;
     }
 
@@ -299,7 +386,27 @@ public class PersonIdentityService {
         return hasText(value) ? value.trim() : null;
     }
 
-    private record ExternalIdentity(ExternalSource source, String externalId) {
+    public record ExternalIdentity(ExternalSource source, String externalId) {
+    }
+
+    public record ExternalPeopleSnapshot(
+            Map<ExternalIdentity, Person> people,
+            Set<ExternalIdentity> lookedUp,
+        Map<ExternalIdentity, PersonExternalReference> references
+    ) {
+        public void canonicalize(Person previous, Person canonical) {
+            if (previous == null || canonical == null || sameIdentity(previous, canonical)) return;
+            people.replaceAll((identity, candidate) -> sameIdentity(candidate, previous) ? canonical : candidate);
+        }
+
+        private static boolean sameIdentity(Person first, Person second) {
+            return first != null && second != null && first.getId() != null
+                    && first.getId().equals(second.getId());
+        }
+
+        static ExternalPeopleSnapshot empty() {
+            return new ExternalPeopleSnapshot(new LinkedHashMap<>(), new LinkedHashSet<>(), new LinkedHashMap<>());
+        }
     }
 
     private record CreditMergeKey(UUID mediaId, CreditRole role, String characterName) {

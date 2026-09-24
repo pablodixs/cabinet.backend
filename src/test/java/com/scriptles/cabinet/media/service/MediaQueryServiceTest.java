@@ -537,10 +537,7 @@ class MediaQueryServiceTest {
             assertThat(user.avatarUrl()).isEqualTo("https://example.com/bia.jpg");
         });
         assertThat(community.childRatings()).isNull();
-        assertThat(response.credits()).singleElement().satisfies(credit -> {
-            assertThat(credit.personId()).isEqualTo(personId);
-            assertThat(credit.role()).isEqualTo(CreditRole.DIRECTOR);
-        });
+        assertThat(response.creator()).isEqualTo("David Fincher");
         assertThat(response.imported()).isTrue();
     }
 

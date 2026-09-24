@@ -3,6 +3,7 @@ package com.scriptles.cabinet.media.entity;
 import com.scriptles.cabinet.user.entity.User;
 import com.scriptles.cabinet.user.entity.UserMediaActivity;
 import com.scriptles.cabinet.user.enums.Visibility;
+import com.scriptles.cabinet.profile.entity.Profile;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -16,10 +17,6 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "reviews", uniqueConstraints = {
-        @UniqueConstraint(
-                name = "uk_reviews_user_media",
-                columnNames = {"user_id", "media_id"}
-        ),
         @UniqueConstraint(
                 name = "uk_reviews_activity",
                 columnNames = {"activity_id"}
@@ -43,6 +40,10 @@ public class Review {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "author_profile_id")
+    private Profile authorProfile;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "media_id", nullable = false)
     private Media media;
@@ -57,6 +58,9 @@ public class Review {
 
     @Column(columnDefinition = "TEXT")
     private String content;
+
+    @Column(name = "rich_content", columnDefinition = "TEXT")
+    private String richContent;
 
     @Column(name = "backdrop_key", length = 500)
     private String backdropKey;

@@ -11,6 +11,7 @@ import com.scriptles.cabinet.media.repository.MediaCreditRepository;
 import com.scriptles.cabinet.media.repository.PersonExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.PersonRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
+import com.scriptles.cabinet.catalog.service.RollingCatalogMetrics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,7 +57,8 @@ class MediaCreditServiceTest {
                 mediaCreditRepository,
                 identityEnricher
         );
-        mediaCreditService = new MediaCreditService(personIdentityService, mediaCreditRepository);
+        mediaCreditService = new MediaCreditService(
+                personIdentityService, mediaCreditRepository, new RollingCatalogMetrics());
         artistService = new ArtistService(
                 personRepository, mediaCreditRepository, new RatingSummaryService(ratingRepository));
     }
@@ -84,13 +86,7 @@ class MediaCreditServiceTest {
         assertThat(mediaCreditRepository.count()).isEqualTo(2);
         assertThat(summary.creator()).isEqualTo("David Fincher");
         assertThat(summary.director()).isEqualTo("David Fincher");
-        assertThat(summary.credits()).extracting(MediaCreditService.CreditView::role)
-                .containsExactly(CreditRole.DIRECTOR, CreditRole.PRODUCER);
-        assertThat(summary.credits()).allSatisfy(credit -> {
-            assertThat(credit.personId()).isNotNull();
-            assertThat(credit.externalId()).isEqualTo("7467");
-            assertThat(credit.source()).isEqualTo(ExternalSource.TMDB);
-        });
+        assertThat(summary.credits()).isEmpty();
     }
 
     @Test

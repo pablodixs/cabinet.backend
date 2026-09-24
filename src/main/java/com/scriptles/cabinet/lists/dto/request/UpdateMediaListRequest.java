@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.UUID;
 import java.util.Set;
+import tools.jackson.databind.JsonNode;
 
 public record UpdateMediaListRequest(
         @NotBlank(message = "Informe um nome para a lista")
@@ -31,7 +32,8 @@ public record UpdateMediaListRequest(
         String backdropKey,
 
         @Size(max = 30)
-        Set<@NotBlank @Size(max = 100) String> tags
+        Set<@NotBlank @Size(max = 100) String> tags,
+        JsonNode richDescription
 ) {
     public UpdateMediaListRequest(
             String name,
@@ -41,7 +43,7 @@ public record UpdateMediaListRequest(
             String coverUrl
     ) {
         this(name, description, visibility, ordered, coverUrl, null, null,
-                Set.of());
+                Set.of(), null);
     }
 
     public UpdateMediaListRequest(
@@ -54,8 +56,10 @@ public record UpdateMediaListRequest(
             String backdropKey
     ) {
         this(name, description, visibility, ordered, coverUrl,
-                backdropMediaId, backdropKey, Set.of());
+                backdropMediaId, backdropKey, Set.of(), null);
     }
+
+    public UpdateMediaListRequest(String name, String description, Visibility visibility, Boolean ordered, String coverUrl, UUID backdropMediaId, String backdropKey, Set<@NotBlank @Size(max = 100) String> tags) { this(name,description,visibility,ordered,coverUrl,backdropMediaId,backdropKey,tags,null); }
 
     public UpdateMediaListRequest {
         tags = tags == null ? Set.of() : tags;

@@ -30,11 +30,18 @@ public class MediaList {
     )
     private User owner;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "hq_profile_id")
+    private com.scriptles.cabinet.profile.entity.HQProfile hqProfile;
+
     @Column(nullable = false, length = 120)
     private String name;
 
     @Column(columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "rich_description", columnDefinition = "TEXT")
+    private String richDescription;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

@@ -220,7 +220,6 @@ class MediaQueryControllerTest {
                 null,
                 java.util.Map.of(),
                 List.of(),
-                List.of(),
                 true,
                 null,
                 requestedLocale,

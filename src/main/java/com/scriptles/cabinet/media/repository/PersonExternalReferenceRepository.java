@@ -18,6 +18,12 @@ public interface PersonExternalReferenceRepository
             String externalId
     );
 
+    @EntityGraph(attributePaths = "person")
+    List<PersonExternalReference> findAllBySourceAndExternalIdIn(
+            ExternalSource source,
+            List<String> externalIds
+    );
+
     List<PersonExternalReference> findAllByPersonId(UUID personId);
 
     Optional<PersonExternalReference> findFirstByPersonIdAndSource(
