@@ -7,6 +7,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Choose whether to deploy or inspect recent backend logs
+        type: choice
+        options:
+          - deploy
+          - logs
+        default: deploy
+        required: true
 
 concurrency:
   group: cabinet-production
@@ -17,6 +26,7 @@ permissions:
 
 jobs:
   test-and-deploy:
+    if: github.event_name == 'push' || inputs.operation == 'deploy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -33,8 +43,23 @@ jobs:
       - name: Run tests
         run: sh ./mvnw --batch-mode --no-transfer-progress test
 
-      - name: Package source
-        run: tar --exclude=.git --exclude=target --exclude='.local' -czf /tmp/cabinet-source.tar.gz .
+      - name: Package application artifact
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          bundle="$(mktemp -d)"
+          trap 'rm -rf "$bundle" /tmp/cabinet-source.tar.gz' EXIT
+          sh ./mvnw --batch-mode --no-transfer-progress -DskipTests package
+          artifact="$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' -print -quit)"
+          test -n "$artifact"
+          cp "$artifact" "$bundle/app.jar"
+          {
+            printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
+            printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+          } > "$bundle/.cabinet-runtime.env"
+          tar -C "$bundle" -czf /tmp/cabinet-source.tar.gz .
 
       - name: Configure SSH
         env:
@@ -53,4 +78,25 @@ jobs:
         run: cat /tmp/cabinet-source.tar.gz | ssh -i ~/.ssh/cabinet_deploy "$VPS_USER@$VPS_HOST"
 
       - name: Verify public endpoint
-        run: curl --fail --retry 8 --retry-delay 3 --retry-all-errors https://cabinet.healtie.app/actuator/health
+        run: curl --fail --retry 8 --retry-delay 3 --retry-all-errors https://cabinet.healtie.app/v1/auth/csrf
+
+  view-logs:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'logs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure restricted SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/cabinet_deploy
+          chmod 600 ~/.ssh/cabinet_deploy
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Show recent Cabinet stack traces
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: ssh -i ~/.ssh/cabinet_deploy "$VPS_USER@$VPS_HOST" logs
