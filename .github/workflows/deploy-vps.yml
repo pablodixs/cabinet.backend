@@ -47,6 +47,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           bundle="$(mktemp -d)"
@@ -58,6 +61,9 @@ jobs:
           {
             printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
             printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"
+            printf 'OMDB_API_KEY=%s\n' "$OMDB_API_KEY"
+            printf 'TMDB_API_KEY=%s\n' "$TMDB_API_KEY"
+            printf 'TMDB_ACCESS_TOKEN=%s\n' "$TMDB_ACCESS_TOKEN"
           } > "$bundle/.cabinet-runtime.env"
           tar -C "$bundle" -czf /tmp/cabinet-source.tar.gz .
 
