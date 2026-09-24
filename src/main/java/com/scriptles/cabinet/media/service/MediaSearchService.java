@@ -17,6 +17,8 @@ import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.Visibility;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
@@ -38,6 +40,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -57,6 +60,7 @@ public class MediaSearchService {
     private final UserArtworkResolver userArtworkResolver;
     private final CatalogLocaleResolver localeResolver;
     private final MediaTranslationResolver translationResolver;
+    private final MeterRegistry meterRegistry;
 
     @Transactional(readOnly = true)
     public MediaSearchPageResponse search(
@@ -107,10 +111,9 @@ public class MediaSearchService {
         String normalizedQuery = query.trim();
         String requestedLocale = localeResolver.normalize(locale);
 
-        if (sort == MediaSearchSort.RATING) {
-            return searchByRating(normalizedQuery, type, cursor, limit, viewerId, requestedLocale);
-        }
-        return searchByRelevance(normalizedQuery, type, cursor, limit, viewerId, requestedLocale);
+        return timed("api", () -> sort == MediaSearchSort.RATING
+                ? timed("rating", () -> searchByRating(normalizedQuery, type, cursor, limit, viewerId, requestedLocale))
+                : searchByRelevance(normalizedQuery, type, cursor, limit, viewerId, requestedLocale));
     }
 
     private MediaSearchPageResponse searchByRelevance(
@@ -127,14 +130,16 @@ public class MediaSearchService {
 
         SingleCursor state = decodeSingleCursor(cursor);
         ExternalMediaProvider provider = providerRegistry.get(defaultSource(type), type);
-        List<ExternalMedia> fetched = provider.search(type, query, locale, state.offset(), limit + 1);
+        List<ExternalMedia> fetched = timed(defaultSource(type).name().toLowerCase(java.util.Locale.ROOT),
+                () -> provider.search(type, query, locale, state.offset(), limit + 1));
         List<ExternalMedia> page = fetched.stream().limit(limit).toList();
         int consumed = page.size();
         String nextCursor = fetched.size() > consumed
                 ? encode("s:%d".formatted(state.offset() + consumed))
                 : null;
 
-        return new MediaSearchPageResponse(mediaSearchItemAssembler.fromExternal(page, viewerId), nextCursor);
+        return new MediaSearchPageResponse(timed("enrichment",
+                () -> mediaSearchItemAssembler.fromExternal(page, viewerId)), nextCursor);
     }
 
     private MediaSearchPageResponse searchAllByRelevance(
@@ -156,16 +161,17 @@ public class MediaSearchService {
         // waits for the slowest catalog instead of the sum of all three latencies.
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             CompletableFuture<List<ExternalMedia>> tmdbFuture = CompletableFuture.supplyAsync(
-                    () -> state.tmdbDone() ? List.of() : providerRegistry.get(ExternalSource.TMDB, MediaType.MOVIE)
-                            .searchAll(query, locale, state.tmdbOffset(), fetchLimit), executor);
+                    () -> state.tmdbDone() ? List.of() : timed("tmdb", () -> providerRegistry
+                            .get(ExternalSource.TMDB, MediaType.MOVIE)
+                            .searchAll(query, locale, state.tmdbOffset(), fetchLimit)), executor);
             CompletableFuture<ProviderResult> albumFuture = CompletableFuture.supplyAsync(
-                    () -> searchOptionalProvider(state.albumDone(), () -> providerRegistry
+                    () -> searchOptionalProvider(state.albumDone(), () -> timed("musicbrainz", () -> providerRegistry
                             .get(ExternalSource.MUSICBRAINZ, MediaType.ALBUM)
-                            .search(MediaType.ALBUM, query, locale, state.albumOffset(), fetchLimit)), executor);
+                            .search(MediaType.ALBUM, query, locale, state.albumOffset(), fetchLimit))), executor);
             CompletableFuture<ProviderResult> bookFuture = CompletableFuture.supplyAsync(
-                    () -> searchOptionalProvider(state.bookDone(), () -> providerRegistry
+                    () -> searchOptionalProvider(state.bookDone(), () -> timed("google_books", () -> providerRegistry
                             .get(ExternalSource.GOOGLE_BOOKS, MediaType.BOOK)
-                            .search(MediaType.BOOK, query, locale, state.bookOffset(), fetchLimit)), executor);
+                            .search(MediaType.BOOK, query, locale, state.bookOffset(), fetchLimit))), executor);
 
             try {
                 tmdb = tmdbFuture.join();
@@ -207,7 +213,16 @@ public class MediaSearchService {
         ));
 
         return new MediaSearchPageResponse(
-                mediaSearchItemAssembler.fromExternal(interleaved.items(), viewerId), nextCursor);
+                timed("enrichment", () -> mediaSearchItemAssembler.fromExternal(interleaved.items(), viewerId)), nextCursor);
+    }
+
+    private <T> T timed(String stage, Supplier<T> action) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            return action.get();
+        } finally {
+            sample.stop(Timer.builder("cabinet.search.duration").tag("stage", stage).register(meterRegistry));
+        }
     }
 
     private ProviderResult searchOptionalProvider(boolean done, java.util.function.Supplier<List<ExternalMedia>> search) {

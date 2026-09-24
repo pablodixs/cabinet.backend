@@ -15,6 +15,7 @@ import com.scriptles.cabinet.media.translation.CatalogLocaleResolver;
 import com.scriptles.cabinet.media.translation.MediaTranslationResolver;
 import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaArtworkPreferenceRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,9 +54,11 @@ class MediaSearchServiceTest {
     @Mock
     private MediaTranslationResolver translationResolver;
     private MediaSearchService mediaSearchService;
+    private SimpleMeterRegistry meters;
 
     @BeforeEach
     void setUp() {
+        meters = new SimpleMeterRegistry();
         org.mockito.Mockito.lenient().when(translationResolver.resolveAll(
                 org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.anyString()
@@ -76,7 +79,8 @@ class MediaSearchServiceTest {
                 ),
                 artworkResolver,
                 new CatalogLocaleResolver(),
-                translationResolver
+                translationResolver,
+                meters
         );
     }
 
@@ -180,6 +184,10 @@ class MediaSearchServiceTest {
         mediaSearchService.search("nome", null, MediaSearchSort.RELEVANCE, null, 2);
 
         assertThat(started.getCount()).isZero();
+        assertThat(meters.get("cabinet.search.duration").tag("stage", "api").timer().count()).isEqualTo(1);
+        assertThat(meters.get("cabinet.search.duration").tag("stage", "tmdb").timer().count()).isEqualTo(1);
+        assertThat(meters.get("cabinet.search.duration").tag("stage", "musicbrainz").timer().count()).isEqualTo(1);
+        assertThat(meters.get("cabinet.search.duration").tag("stage", "google_books").timer().count()).isEqualTo(1);
     }
 
     private List<ExternalMedia> awaitOtherProviders(CountDownLatch started) throws InterruptedException {

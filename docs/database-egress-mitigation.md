@@ -24,7 +24,11 @@ WHERE query ILIKE '%media_credits%';
 SELECT stats_reset FROM pg_stat_statements_info;
 ```
 
-Use daily deltas rather than comparing cumulative totals from different reset windows. Compare periods with similar request volume and track recommendation candidates and loaded-credit counters alongside the SQL totals. The admin-only `/v1/admin/database-efficiency` view reports query rows/calls/time when the application database role can read `pg_stat_statements`.
+Use daily deltas rather than comparing cumulative totals from different reset windows. Compare periods with similar request volume and track recommendation candidates and loaded-credit counters alongside the SQL totals. The admin-only `/v1/admin/database-efficiency` view reports the ten highest-cost queries across the current database by rows, calls, total execution time, and average execution time when the application role can read `pg_stat_statements`. It also reports the statistics reset time. SQL text is limited to 240 characters and should remain admin-only.
+
+The same view reports Micrometer search timings for the service as a whole, TMDB, MusicBrainz, Google Books, result enrichment, and rating searches. Values are cumulative since the process started; a restart resets them. External provider calls overlap, so their averages must not be added together. Hikari active, idle, and pending connection gauges help identify pool contention. PostgreSQL query statistics measure database execution, while the search timers measure application and external-provider latency. For a production incident, compare both views over the same period.
+
+If `pg_stat_statements` is unavailable to the application role, the endpoint still returns search and pool metrics and marks PostgreSQL statistics unavailable. Check the Supabase Query Performance report or grant only the database monitoring privilege required by the deployment; do not expose the admin endpoint publicly.
 
 In Supabase Usage, compare **Database Egress**, **Shared Pooler Egress**, **Storage Egress**, and **Cached Egress** on matching date ranges. The application cannot read those account-level usage totals, so they remain a dashboard check.
 
