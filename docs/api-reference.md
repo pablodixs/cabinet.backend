@@ -114,7 +114,19 @@ Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EP
 | `GET /v1/media/{mediaId}/reviews/recent` | Public | Curated short recent set. |
 | `GET /v1/me/reviews/{mediaId}` | User | User's review or `204`. |
 | `PUT /v1/me/reviews/{mediaId}` | User | Upsert rating/text/spoiler/visibility and optional `activityId`. |
-| `PUT /v1/hq/{profileId}/reviews/{mediaId}` | HQ owner/admin | Publish a public review as the HQ profile; accepts `content` and `richContent`. |
+| `PUT /v1/hq/{profileId}/reviews/{mediaId}` | Platform admin | Legacy review route; accepts `content` and `richContent`. |
+
+### Independent HQ access
+
+HQ operators sign in with the organization's handle, their HQ email and password through `POST /v1/hq-console/login`. This creates an HQ session, separate from member authentication. `GET /v1/hq-console/me` returns the active operator; `POST /v1/hq-console/logout` ends the session. Operators change their own password with `PUT /v1/hq-console/password`. The web dashboard is `/hq/painel`.
+
+An HQ owner or administrator may edit the profile with `PUT /v1/hq-console/profile` and upload a JPEG or PNG backdrop with `POST /v1/hq-console/backdrop`. Owners manage independent operator logins through `GET`, `POST` and `DELETE /v1/hq-console/operators`. Owners, administrators and editors publish updates through `POST /v1/hq-console/posts`. Platform administrators create the first HQ operator when creating a HQ, or provision existing HQs with `POST /v1/moderation/hq/{profileId}/operators`.
+
+Legacy personal-account HQ memberships no longer grant access to the HQ console or profile editing. Claim approval does not grant access to a member account; a platform administrator provisions an HQ operator login after verification.
+
+HQ lists are owned by the HQ itself. `GET` and `POST /v1/hq-console/lists` list and create them; `PUT` and `DELETE /v1/hq-console/lists/{listId}` edit or delete them. Owners and administrators can assign an HQ operator with the `EDITOR` role to one list through `PUT /v1/hq-console/lists/{listId}/editors/{operatorId}` and revoke that assignment with `DELETE` at the same path. An assigned editor can edit that list and add or remove works through `/v1/hq-console/lists/{listId}/items`. Public lists are available at `GET /v1/profiles/{handle}/hq-lists`.
+
+HQ reviews are owned by the HQ, without a personal user author. `GET /v1/hq-console/reviews` lists them, `PUT /v1/hq-console/reviews/{mediaId}` creates or updates one, and `DELETE` removes one. Public HQ reviews are available at `GET /v1/profiles/{handle}/hq-reviews`. Optional HQ ratings live in `hq_reviews`, outside the member rating aggregate.
 | `DELETE /v1/me/reviews/{mediaId}` | User | Delete review; returns `204`. |
 | `GET /v1/me/likes/{mediaId}` | User | Current media-like state/count. |
 | `PUT /v1/me/likes/{mediaId}` | User | Like media. |

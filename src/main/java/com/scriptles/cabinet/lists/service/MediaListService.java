@@ -36,8 +36,6 @@ import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import com.scriptles.cabinet.user.service.SocialAccessPolicy;
 import com.scriptles.cabinet.user.service.UserTagService;
-import com.scriptles.cabinet.profile.repository.HQMemberRepository;
-import com.scriptles.cabinet.profile.enums.HQMemberRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -71,7 +69,6 @@ public class MediaListService {
     private final UserMediaArtworkService userMediaArtworkService;
     private final SocialAccessPolicy socialAccessPolicy;
     private final UserTagService userTagService;
-    private final HQMemberRepository hqMemberRepository;
 
     @Transactional(readOnly = true)
     public List<MediaListResponse> findMine(UUID userId) {
@@ -788,16 +785,7 @@ public class MediaListService {
     private MediaList findOwnedList(UUID userId, UUID listId) {
         MediaList list = mediaListRepository.findWithOwnerById(listId)
                 .orElseThrow(this::listNotFound);
-        if (list.getOwner().getId().equals(userId)) return list;
-        if (list.getHqProfile() != null) {
-            boolean canManage = hqMemberRepository.findByHqProfileIdAndAccountId(
-                            list.getHqProfile().getId(), userId)
-                    .map(member -> member.getRole() == HQMemberRole.OWNER
-                            || member.getRole() == HQMemberRole.ADMIN
-                            || member.getRole() == HQMemberRole.EDITOR)
-                    .orElse(false);
-            if (canManage) return list;
-        }
+        if (list.getHqProfile() == null && list.getOwner().getId().equals(userId)) return list;
         throw listNotFound();
     }
 

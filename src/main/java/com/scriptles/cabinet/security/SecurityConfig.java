@@ -68,6 +68,7 @@ public class SecurityConfig {
                                 "/v1/auth/register",
                                 "/v1/auth/create",
                                 "/v1/auth/csrf",
+                                "/v1/hq-console/login",
                                 "/error"
                         ).permitAll()
 
@@ -118,6 +119,8 @@ public class SecurityConfig {
                                 ,"/v1/profiles/search"
                                 ,"/v1/profiles/*/posts"
                                 ,"/v1/profiles/*/catalog"
+                                ,"/v1/profiles/*/hq-lists"
+                                ,"/v1/profiles/*/hq-reviews"
                                 ,"/v1/media/*/organizations"
                         ).permitAll()
 
@@ -128,9 +131,12 @@ public class SecurityConfig {
                                 "/actuator/info"
                         ).permitAll()
 
+                        .requestMatchers("/v1/hq-console/**").hasRole("HQ")
+                        .requestMatchers("/v1/hq/**").hasRole("ADMIN")
+                        .requestMatchers("/v1/moderation/hq/**", "/v1/moderation/hq").hasRole("ADMIN")
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
 
-                        .anyRequest().authenticated()
+                        .anyRequest().hasRole("USER")
                 )
 
                 .exceptionHandling(exceptions -> exceptions
