@@ -220,8 +220,16 @@ public class CatalogJobLifecycleService {
     }
 
     private String safeMessage(Throwable failure) {
-        String message = failure.getMessage();
+        Throwable mostSpecific = failure;
+        for (Throwable cause = failure.getCause(); cause != null && cause != mostSpecific; cause = cause.getCause()) {
+            mostSpecific = cause;
+        }
+        String message = mostSpecific.getMessage();
+        if (message == null || message.isBlank()) message = failure.getMessage();
         if (message == null || message.isBlank()) message = "Job failed";
+        if (mostSpecific != failure && mostSpecific.getMessage() != null && !mostSpecific.getMessage().isBlank()) {
+            message = mostSpecific.getClass().getSimpleName() + ": " + message;
+        }
         message = SENSITIVE.matcher(message).replaceAll("$1=[redacted]");
         return message.length() > 1000 ? message.substring(0, 1000) : message;
     }
