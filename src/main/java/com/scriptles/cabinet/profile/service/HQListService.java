@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.profile.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
+import com.scriptles.cabinet.common.api.RichTextDocument;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.profile.entity.HQList;
 import com.scriptles.cabinet.profile.entity.HQListItem;
@@ -15,6 +16,7 @@ import com.scriptles.cabinet.security.AuthenticatedHQ;
 import com.scriptles.cabinet.user.enums.Visibility;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,10 +35,16 @@ public class HQListService {
     private final MediaRepository media;
 
     public record ListInput(@NotBlank @Size(max = 120) String name, @Size(max = 2000) String description,
-                            @NotNull Visibility visibility, boolean ordered, @Size(max = 500) String coverUrl) {}
+                            @Size(max = 100000) String richDescription, @NotNull Visibility visibility,
+                            boolean ordered, @Size(max = 500) String coverUrl) {
+        public ListInput(String name, String description, Visibility visibility, boolean ordered, String coverUrl) {
+            this(name, description, null, visibility, ordered, coverUrl);
+        }
+    }
     public record ItemInput(@NotNull UUID mediaId, @Size(max = 2000) String notes) {}
+    public record ItemUpdateInput(@Size(max = 2000) String notes, @Min(0) Integer position) {}
     public record ItemView(UUID id, UUID mediaId, String title, String coverUrl, int position, String notes) {}
-    public record ListView(UUID id, String name, String description, Visibility visibility, boolean ordered,
+    public record ListView(UUID id, String name, String description, String richDescription, Visibility visibility, boolean ordered,
                            String coverUrl, Instant createdAt, Instant updatedAt, List<UUID> editorIds, List<ItemView> items) {}
 
     @Transactional(readOnly = true)
@@ -48,7 +56,7 @@ public class HQListService {
     public List<ListView> publicLists(String handle) {
         var hq = hqs.findByProfileHandleIgnoreCase(handle).orElseThrow(() -> error(HttpStatus.NOT_FOUND, "PROFILE_NOT_FOUND", "HQ não encontrada"));
         return lists.findByHqProfileIdAndVisibilityOrderByUpdatedAtDesc(hq.getId(), Visibility.PUBLIC).stream().map(this::view)
-                .map(list -> new ListView(list.id(), list.name(), list.description(), list.visibility(), list.ordered(),
+                .map(list -> new ListView(list.id(), list.name(), list.description(), list.richDescription(), list.visibility(), list.ordered(),
                         list.coverUrl(), list.createdAt(), list.updatedAt(), List.of(), list.items())).toList();
     }
 
@@ -64,7 +72,10 @@ public class HQListService {
 
     @Transactional
     public ListView update(AuthenticatedHQ actor, UUID listId, ListInput input) {
-        HQList list = owned(actor, listId); requireEditor(actor, list); validate(input); apply(list, input);
+        HQList list = owned(actor, listId); requireEditor(actor, list); validate(input);
+        String existingRichDescription = list.getRichDescription();
+        apply(list, input);
+        if (input.richDescription() == null) list.setRichDescription(existingRichDescription);
         return view(list);
     }
 
@@ -110,6 +121,22 @@ public class HQListService {
         return view(list);
     }
 
+    @Transactional
+    public ListView updateItem(AuthenticatedHQ actor, UUID listId, UUID itemId, ItemUpdateInput input) {
+        HQList list = owned(actor, listId); requireEditor(actor, list);
+        HQListItem selected = items.findByIdAndListId(itemId, listId)
+                .orElseThrow(() -> error(HttpStatus.NOT_FOUND, "ITEM_NOT_FOUND", "Item não encontrado"));
+        if (input.notes() != null) selected.setNotes(input.notes());
+        if (input.position() != null) {
+            List<HQListItem> ordered = new java.util.ArrayList<>(items.findByListIdOrderByPositionAsc(listId));
+            ordered.remove(selected);
+            int target = Math.min(input.position(), ordered.size());
+            ordered.add(target, selected);
+            for (int index = 0; index < ordered.size(); index++) ordered.get(index).setPosition(index);
+        }
+        return view(list);
+    }
+
     private HQList owned(AuthenticatedHQ actor, UUID listId) {
         return lists.findByIdAndHqProfileId(listId, actor.hqId()).orElseThrow(() -> error(HttpStatus.NOT_FOUND, "LIST_NOT_FOUND", "Lista não encontrada"));
     }
@@ -124,15 +151,18 @@ public class HQListService {
     }
     private void validate(ListInput input) {
         if (input.visibility() != Visibility.PUBLIC && input.visibility() != Visibility.PRIVATE) throw error(HttpStatus.BAD_REQUEST, "INVALID_VISIBILITY", "Use visibilidade pública ou privada");
+        if (input.richDescription() != null && !input.richDescription().isBlank()) {
+            RichTextDocument.validateAndExtractText(input.richDescription(), true);
+        }
     }
     private void apply(HQList list, ListInput input) {
-        list.setName(input.name().trim()); list.setDescription(input.description()); list.setVisibility(input.visibility());
+        list.setName(input.name().trim()); list.setDescription(input.description()); list.setRichDescription(input.richDescription()); list.setVisibility(input.visibility());
         list.setOrdered(input.ordered()); list.setCoverUrl(input.coverUrl());
     }
     private ListView view(HQList list) {
         var content = items.findByListIdOrderByPositionAsc(list.getId()).stream()
                 .map(item -> new ItemView(item.getId(), item.getMedia().getId(), item.getMedia().getTitle(), item.getMedia().getCoverUrl(), item.getPosition(), item.getNotes())).toList();
-        return new ListView(list.getId(), list.getName(), list.getDescription(), list.getVisibility(), list.isOrdered(),
+        return new ListView(list.getId(), list.getName(), list.getDescription(), list.getRichDescription(), list.getVisibility(), list.isOrdered(),
                 list.getCoverUrl(), list.getCreatedAt(), list.getUpdatedAt(), list.getEditors().stream().map(HQOperator::getId).toList(), content);
     }
     private ApiException error(HttpStatus status, String code, String message) { return new ApiException(status, code, message); }

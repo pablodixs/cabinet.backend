@@ -204,7 +204,7 @@ class NotificationServiceTest {
         assertThat(captor.getValue().getLetterboxdImportJob()).isSameAs(job);
         NotificationResponse response = NotificationResponse.from(captor.getValue());
         assertThat(response.subject()).isEqualTo(new NotificationResponse.SubjectResponse(
-                "LETTERBOXD_IMPORT", job.getId(), "Importação do Letterboxd"));
+                "LETTERBOXD_IMPORT", job.getId(), "Importação do Letterboxd", null));
         assertThat(response.href()).isEqualTo("/importacoes/letterboxd/" + job.getId());
         verify(eventPublisher).publishEvent(new NotificationChangedEvent(recipient.getId()));
     }

@@ -55,27 +55,38 @@ public record NotificationResponse(
 
     private static SubjectResponse subject(Notification notification) {
         if (notification.getMediaList() != null) {
-            return new SubjectResponse("LIST", notification.getMediaList().getId(), notification.getMediaList().getName());
+            return new SubjectResponse("LIST", notification.getMediaList().getId(), notification.getMediaList().getName(), null);
         }
         if (notification.getReview() != null) {
-            return new SubjectResponse("REVIEW", notification.getReview().getId(), notification.getReview().getMedia().getTitle());
+            return new SubjectResponse("REVIEW", notification.getReview().getId(), notification.getReview().getMedia().getTitle(),
+                    notification.getReview().getMedia().getTypeValue());
         }
         if (notification.getReport() != null) {
-            return new SubjectResponse("REPORT", notification.getReport().getId(), notification.getReport().getMediaTitle());
+            var reportMedia = notification.getReport().getMedia();
+            return new SubjectResponse("REPORT", reportMedia == null ? notification.getReport().getId() : reportMedia.getId(),
+                    notification.getReport().getMediaTitle(), reportMedia == null ? null : reportMedia.getTypeValue());
         }
         if (notification.getSeriesEpisode() != null) {
             return new SubjectResponse(
                     "EPISODE",
                     notification.getSeriesEpisode().getEpisodeMedia().getId(),
-                    notification.getSeriesEpisode().getSeason().getSeries().getTitle()
+                    notification.getSeriesEpisode().getSeason().getSeries().getTitle(), "SERIES"
             );
         }
         if (notification.getLetterboxdImportJob() != null) {
             return new SubjectResponse(
                     "LETTERBOXD_IMPORT",
                     notification.getLetterboxdImportJob().getId(),
-                    "Importação do Letterboxd"
+                    "Importação do Letterboxd", null
             );
+        }
+        if (notification.getType() == NotificationType.FOLLOWED && notification.getActor() != null) {
+            return new SubjectResponse("PROFILE", notification.getActor().getId(),
+                    notification.getActor().getUsername(), null);
+        }
+        if (notification.getMedia() != null) {
+            return new SubjectResponse("MEDIA", notification.getMedia().getId(), notification.getMedia().getTitle(),
+                    notification.getMedia().getTypeValue());
         }
         return null;
     }
@@ -99,6 +110,10 @@ public record NotificationResponse(
         if (notification.getLetterboxdImportJob() != null) {
             return "/importacoes/letterboxd/" + notification.getLetterboxdImportJob().getId();
         }
+        if (notification.getMedia() != null) return "/media/" + notification.getMedia().getId();
+        if (notification.getType() == NotificationType.FOLLOWED && notification.getActor() != null) {
+            return "/usuarios/" + notification.getActor().getUsername();
+        }
         return "/notificacoes";
     }
 
@@ -111,6 +126,6 @@ public record NotificationResponse(
     ) {
     }
 
-    public record SubjectResponse(String kind, UUID id, String title) {
+    public record SubjectResponse(String kind, UUID id, String title, String mediaType) {
     }
 }

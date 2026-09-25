@@ -69,6 +69,8 @@ public class StatusService {
     private String seriesZone;
     @Value("${app.notifications.episode-cron}")
     private String episodeNotificationsCron;
+    @Value("${app.notifications.media-release-cron:0 5 8 * * *}")
+    private String mediaReleaseNotificationsCron = "0 5 8 * * *";
     @Value("${app.notifications.retention-cron}")
     private String notificationRetentionCron;
     @Value("${app.letterboxd.cleanup-cron}")
@@ -288,7 +290,7 @@ public class StatusService {
     private StatusActivity activity(BackgroundJobRun run) {
         String category = switch (run.getJobKey()) {
             case TMDB_CATALOG_SYNC, COLLECTION_SYNC, SERIES_TRACKING_SYNC, SERIES_TRACKING_SCAN -> "SYNCHRONIZATIONS";
-            case EPISODE_NOTIFICATIONS, NOTIFICATION_RETENTION -> "CATALOG";
+            case EPISODE_NOTIFICATIONS, MEDIA_RELEASE_NOTIFICATIONS, NOTIFICATION_RETENTION -> "CATALOG";
             case LETTERBOXD_CLEANUP -> "IMPORTS";
         };
         String type = switch (run.getStatus()) {
@@ -303,6 +305,7 @@ public class StatusService {
             case SERIES_TRACKING_SYNC -> "Series tracking completed";
             case SERIES_TRACKING_SCAN -> "Tracked series refresh scheduled";
             case EPISODE_NOTIFICATIONS -> "Episode notifications updated";
+            case MEDIA_RELEASE_NOTIFICATIONS -> "Media release notifications created";
             case NOTIFICATION_RETENTION -> "Notification cleanup completed";
             case LETTERBOXD_CLEANUP -> "Letterboxd maintenance completed";
         };
@@ -314,6 +317,7 @@ public class StatusService {
             case SERIES_TRACKING_SYNC -> run.getProcessedCount() + " series checked";
             case SERIES_TRACKING_SCAN -> run.getProcessedCount() + " series scheduled for refresh";
             case EPISODE_NOTIFICATIONS -> run.getProcessedCount() + " episodes checked";
+            case MEDIA_RELEASE_NOTIFICATIONS -> run.getProcessedCount() + " planned media checked";
             case NOTIFICATION_RETENTION -> "Expired activity history was cleaned up";
             case LETTERBOXD_CLEANUP -> "Expired import details were removed";
         };
@@ -345,6 +349,8 @@ public class StatusService {
                 definition(JobKey.COLLECTION_SYNC, "Collections", collectionsCron, ZoneId.of(collectionsZone)),
                 definition(JobKey.SERIES_TRACKING_SCAN, "Series tracking", seriesCron, ZoneId.of(seriesZone)),
                 definition(JobKey.EPISODE_NOTIFICATIONS, "Episode notifications", episodeNotificationsCron,
+                        ZoneId.of("America/Sao_Paulo")),
+                definition(JobKey.MEDIA_RELEASE_NOTIFICATIONS, "Media release notifications", mediaReleaseNotificationsCron,
                         ZoneId.of("America/Sao_Paulo")),
                 definition(JobKey.NOTIFICATION_RETENTION, "Notification retention", notificationRetentionCron,
                         defaultZone),

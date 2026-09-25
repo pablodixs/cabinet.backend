@@ -46,6 +46,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class NotificationService {
     private final NotificationRepository notificationRepository;
+    private final NotificationDeliveryService deliveryService;
     private final BackgroundJobRunner jobRunner;
     private final BackgroundJobRetention backgroundJobRetention;
     private final MediaListLikeRepository mediaListLikeRepository;
@@ -55,6 +56,7 @@ public class NotificationService {
     private final SeriesEpisodeRepository seriesEpisodeRepository;
     private final UserMediaRepository userMediaRepository;
     private final UserEpisodeWatchRepository episodeWatchRepository;
+    private final com.scriptles.cabinet.notifications.repository.LocalReleaseReminderRepository localReleaseReminderRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<NotificationResponse> find(UUID recipientId, int page, int size) {
@@ -104,6 +106,7 @@ public class NotificationService {
         notification.setReadAt(null);
         notification.setActivityAt(Instant.now());
         notificationRepository.save(notification);
+        enqueue(notification);
         changed(recipient.getId());
     }
 
@@ -131,6 +134,7 @@ public class NotificationService {
         notification.setReadAt(null);
         notification.setActivityAt(Instant.now());
         notificationRepository.save(notification);
+        enqueue(notification);
         changed(recipient.getId());
     }
 
@@ -161,6 +165,7 @@ public class NotificationService {
             notification.setMediaList(comment.getMediaList());
             notification.setReview(comment.getReview());
             notificationRepository.save(notification);
+            enqueue(notification);
             changed(recipientType.user().getId());
         });
     }
@@ -183,6 +188,7 @@ public class NotificationService {
         notification.setActor(reviewer);
         notification.setReport(report);
         notificationRepository.save(notification);
+        enqueue(notification);
         changed(recipient.getId());
     }
 
@@ -217,6 +223,7 @@ public class NotificationService {
                     Notification notification = notification(entry.getUser(), NotificationType.EPISODE_RELEASED);
                     notification.setSeriesEpisode(episode);
                     notificationRepository.save(notification);
+                    enqueue(notification);
                     changed(recipientId);
                     notifications++;
                 }
@@ -224,6 +231,36 @@ public class NotificationService {
             return BackgroundJobTracker.JobRunResult.completed(episodes, notifications, episodes, 0,
                     "Episode release notifications checked");
         });
+    }
+
+    @Scheduled(cron = "${app.notifications.media-release-cron:0 5 8 * * *}",
+            zone = "${app.notifications.episode-zone}")
+    @Transactional
+    public void notifyMediaReleases() {
+        jobRunner.execute(JobKey.MEDIA_RELEASE_NOTIFICATIONS, () -> {
+            int created = 0;
+            for (UserMedia entry : userMediaRepository.findPlannedReleasingOn(CabinetTime.today())) {
+                User user = entry.getUser();
+                var media = entry.getMedia();
+                if (localReleaseReminderRepository.existsByUserIdAndMediaId(user.getId(), media.getId())
+                        || notificationRepository.existsByRecipientIdAndTypeAndMediaId(
+                        user.getId(), NotificationType.MEDIA_RELEASED, media.getId())) continue;
+                Notification notification = notification(user, NotificationType.MEDIA_RELEASED);
+                notification.setMedia(media);
+                notificationRepository.save(notification);
+                enqueue(notification);
+                changed(user.getId());
+                created++;
+            }
+            return BackgroundJobTracker.JobRunResult.completed(created, created, created, 0,
+                    "Media release notifications created");
+        });
+    }
+
+    @Transactional
+    public void setLocalReleaseReminder(UUID userId, UUID mediaId, boolean enabled) {
+        if (enabled) localReleaseReminderRepository.insertIfMissing(userId, mediaId);
+        else localReleaseReminderRepository.deleteByUserIdAndMediaId(userId, mediaId);
     }
 
     @Scheduled(cron = "${app.notifications.retention-cron}")
@@ -254,11 +291,36 @@ public class NotificationService {
         Notification notification = notification(recipient, type);
         notification.setLetterboxdImportJob(job);
         notificationRepository.save(notification);
+        enqueue(notification);
         changed(recipient.getId());
     }
 
     private void changed(UUID recipientId) {
         eventPublisher.publishEvent(new NotificationChangedEvent(recipientId));
+    }
+
+    private void enqueue(Notification notification) {
+        if (deliveryService != null) deliveryService.enqueue(notification);
+    }
+
+    @Transactional(readOnly = true)
+    public NotificationResponse get(UUID recipientId, UUID notificationId) {
+        return notificationRepository.findByIdAndRecipientId(notificationId, recipientId)
+                .map(NotificationResponse::from)
+                .orElseThrow(() -> new com.scriptles.cabinet.common.api.ApiException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND", "Notificação não encontrada"));
+    }
+
+    @Transactional
+    public void followed(User actor, User recipient) {
+        if (actor.getId().equals(recipient.getId())
+                || notificationRepository.existsByRecipientIdAndTypeAndActorId(
+                recipient.getId(), NotificationType.FOLLOWED, actor.getId())) return;
+        Notification notification = notification(recipient, NotificationType.FOLLOWED);
+        notification.setActor(actor);
+        notificationRepository.save(notification);
+        enqueue(notification);
+        changed(recipient.getId());
     }
 
     private record RecipientType(User user, NotificationType type) {

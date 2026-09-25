@@ -3,6 +3,7 @@ package com.scriptles.cabinet.user.service;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.CursorPageResponse;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
+import com.scriptles.cabinet.notifications.service.NotificationService;
 import com.scriptles.cabinet.user.dto.response.BlockedUserResponse;
 import com.scriptles.cabinet.user.dto.response.FollowActionResponse;
 import com.scriptles.cabinet.user.dto.response.SocialUserResponse;
@@ -42,6 +43,7 @@ public class SocialGraphService {
     private final UserFollowRepository followRepository;
     private final UserBlockRepository blockRepository;
     private final NotificationRepository notificationRepository;
+    private final NotificationService notificationService;
     private final SocialAccessPolicy accessPolicy;
     private final SocialCursorCodec cursorCodec;
 
@@ -69,11 +71,13 @@ public class SocialGraphService {
                 incrementCounters(follower, followed);
             }
             followRepository.saveAndFlush(follow);
+            if (publicProfile && notificationService != null) notificationService.followed(follower, followed);
         } else if (follow.getStatus() == FollowStatus.PENDING && publicProfile) {
             follow.setStatus(FollowStatus.ACCEPTED);
             follow.setAcceptedAt(Instant.now());
             incrementCounters(follower, followed);
             followRepository.saveAndFlush(follow);
+            if (notificationService != null) notificationService.followed(follower, followed);
         }
         return new FollowActionResponse(followedId, state(follow.getStatus()));
     }
@@ -107,6 +111,7 @@ public class SocialGraphService {
         follow.setAcceptedAt(Instant.now());
         incrementCounters(requester, followed);
         followRepository.saveAndFlush(follow);
+        if (notificationService != null) notificationService.followed(requester, followed);
         return new FollowActionResponse(requesterId, FollowState.FOLLOWING);
     }
 

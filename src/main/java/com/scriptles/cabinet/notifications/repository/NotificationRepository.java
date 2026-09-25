@@ -30,9 +30,15 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             "seriesEpisode.episodeMedia",
             "seriesEpisode.season",
             "seriesEpisode.season.series",
-            "letterboxdImportJob"
+            "letterboxdImportJob",
+            "media"
     })
     Page<Notification> findByRecipientIdOrderByActivityAtDescIdDesc(UUID recipientId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"actor", "mediaList", "review", "review.rating", "review.rating.media",
+            "comment", "report", "report.media", "seriesEpisode", "seriesEpisode.episodeMedia",
+            "seriesEpisode.season", "seriesEpisode.season.series", "letterboxdImportJob", "media"})
+    Optional<Notification> findByIdAndRecipientId(UUID id, UUID recipientId);
 
     long countByRecipientIdAndReadAtIsNull(UUID recipientId);
 
@@ -52,6 +58,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     boolean existsByRecipientIdAndTypeAndLetterboxdImportJobId(
             UUID recipientId, NotificationType type, UUID letterboxdImportJobId);
+
+    boolean existsByRecipientIdAndTypeAndActorId(UUID recipientId, NotificationType type, UUID actorId);
+    boolean existsByRecipientIdAndTypeAndMediaId(UUID recipientId, NotificationType type, UUID mediaId);
 
     List<Notification> findByCommentId(UUID commentId);
 

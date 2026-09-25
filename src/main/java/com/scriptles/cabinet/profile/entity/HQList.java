@@ -18,6 +18,7 @@ public class HQList {
     @ManyToOne(fetch = FetchType.LAZY, optional = false) @JoinColumn(name = "hq_profile_id", nullable = false) private HQProfile hqProfile;
     @Column(nullable = false, length = 120) private String name;
     @Column(columnDefinition = "TEXT") private String description;
+    @Column(columnDefinition = "TEXT") private String richDescription;
     @Enumerated(EnumType.STRING) @Column(nullable = false, length = 20) private Visibility visibility = Visibility.PUBLIC;
     @Column(nullable = false) private boolean ordered = true;
     @Column(length = 500) private String coverUrl;

@@ -44,7 +44,7 @@ This directory documents the backend as implemented in the current source tree. 
 | [Testing and development](testing.md) | Test strategy, commands, conventions, change checklist |
 | [Operations](operations.md) | Image build, runtime behavior, deployment checklist, troubleshooting |
 | [Media API details](media-api.md) | Detailed media search, import, relations, awards, and external info behavior |
-| [Notifications and iOS push](notifications-and-ios-push.md) | Existing inbox/SSE behavior and a proposed APNs design |
+| [Notifications and iOS push](notifications-and-ios-push.md) | Notification inbox/SSE, ready FCM backend infrastructure, and deferred iOS push activation |
 
 ## Source of truth
 

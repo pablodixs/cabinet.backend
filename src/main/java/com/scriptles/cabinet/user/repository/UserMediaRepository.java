@@ -21,6 +21,9 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface UserMediaRepository extends JpaRepository<UserMedia, UUID> {
+    @EntityGraph(attributePaths = {"user", "media"})
+    @Query("select entry from UserMedia entry where entry.status = com.scriptles.cabinet.user.enums.UserMediaStatus.PLANNED and entry.media.releaseDate = :date")
+    List<UserMedia> findPlannedReleasingOn(@Param("date") LocalDate date);
     Optional<UserMedia> findByUserIdAndMediaId(
             UUID userId,
             UUID mediaId

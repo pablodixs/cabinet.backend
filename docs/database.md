@@ -138,3 +138,7 @@ When changing sort order, cursor composition, visibility predicates, or activity
 6. Apply migrations to an empty representative database and an upgraded copy of production-like data.
 7. Inspect the schema after application startup for extra Hibernate changes.
 8. Verify critical query plans when adding a new public discovery/social query.
+
+## Push no iOS
+
+A migration V63 cria `push_installations`, `push_preferences`, `notification_deliveries` e `local_release_reminders`, além do vínculo de mídia nas notificações. A chave única de entrega é `(notification_id, installation_id)`; exclusões de conta, mídia ou notificação limpam seus registros relacionados. Entregas guardam status, tentativas, agenda, sucesso e último erro sem persistir respostas completas do FCM.

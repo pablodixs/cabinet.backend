@@ -105,3 +105,7 @@ Provider URLs can expire or change. The key is the durable selection identity; t
 6. Add client tests using a stub HTTP server; cover error, empty, pagination, and localization behavior.
 7. Update provider routing, import assumptions, [Media API details](media-api.md), and this matrix.
 8. Decide whether failures should fail the request, degrade enrichment, or become a persisted stale-while-revalidate section.
+
+## Firebase Cloud Messaging
+
+O módulo de notificações usa o Firebase Admin SDK para entregar push iOS. Configure `FIREBASE_MESSAGING_ENABLED`, `FIREBASE_PROJECT_ID` e Application Default Credentials (ou `GOOGLE_APPLICATION_CREDENTIALS`) no ambiente; a chave de serviço nunca deve entrar no repositório. O gateway envia alerta genérico com `notificationId` e `type`, sem preview/comentário. Tokens inválidos são desativados e falhas transitórias são tentadas novamente pela fila PostgreSQL. A dependência/capacidade iOS está preparada, mas o app não registra tokens nem recebe push enquanto a ativação estiver adiada; para ativar futuramente, incluir `GoogleService-Info.plist` no bundle e configurar a credencial APNs no projeto Firebase.

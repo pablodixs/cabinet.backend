@@ -137,13 +137,19 @@ app:
   notifications:
     episode-cron: ${EPISODE_NOTIFICATIONS_CRON:0 0 8 * * *}
     episode-zone: ${EPISODE_NOTIFICATIONS_ZONE:America/Sao_Paulo}
+    media-release-cron: ${MEDIA_RELEASE_NOTIFICATIONS_CRON:0 5 8 * * *}
     retention-cron: ${NOTIFICATION_RETENTION_CRON:0 20 3 * * *}
     sse:
       max-per-user: ${SSE_MAX_CONNECTIONS_PER_USER:3}
       max-total: ${SSE_MAX_TOTAL_CONNECTIONS:1000}
   letterboxd:
     cleanup-cron: ${LETTERBOXD_CLEANUP_CRON:0 17 * * * *}
-
+firebase:
+  messaging:
+    enabled: ${FIREBASE_MESSAGING_ENABLED:false}
+    project-id: ${FIREBASE_PROJECT_ID:}
+    credentials-file: ${GOOGLE_APPLICATION_CREDENTIALS:}
+    poll-delay: ${FIREBASE_MESSAGING_POLL_DELAY:1500}
 external:
   omdb:
     base-url: https://www.omdbapi.com

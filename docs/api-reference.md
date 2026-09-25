@@ -260,7 +260,14 @@ Targets are `GENRE`, `PERSON`, or `MEDIA`; explicit preferences are `POSITIVE` o
 | `GET /v1/me/notifications` | User | `page=0`, `size=20` (max 50). |
 | `GET /v1/me/notifications/unread-count` | User | Return `{ unreadCount }`. |
 | `PATCH /v1/me/notifications/read` | User | `{ ids }`, one to 100 UUIDs; returns `204`. |
+| `GET /v1/me/notifications/{id}` | User | Fetch one current notification owned by the session user. |
 | `GET /v1/me/notifications/stream` | User | `text/event-stream` refresh signal connection. |
+| `POST /v1/me/notifications/installations` | User | Register or refresh an iOS FCM token with `{ token }`; returns `204`. |
+| `DELETE /v1/me/notifications/installations` | User | Deactivate the caller's installation using `{ token }`; returns `204`. |
+| `GET /v1/me/notifications/preferences` | User | Return notification type preferences; unconfigured types default to enabled. |
+| `PUT /v1/me/notifications/preferences` | User | Update `{ preferences: [{ type, enabled }] }` for the caller. |
+| `PUT /v1/me/notifications/local-release-reminders/{mediaId}` | User | Suppress duplicate release push while the caller has a local reminder. |
+| `DELETE /v1/me/notifications/local-release-reminders/{mediaId}` | User | Remove local reminder suppression. |
 
 See [Notifications and iOS push](notifications-and-ios-push.md) for event formats and retention rules.
 
