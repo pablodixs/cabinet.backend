@@ -16,8 +16,10 @@ public interface AlbumReleaseVersionRepository extends JpaRepository<AlbumReleas
             "order by version.isPrimary desc, version.releaseDate asc nulls last")
     List<AlbumReleaseVersion> findAllForAlbum(UUID albumId);
 
+    List<AlbumReleaseVersion> findByAlbumIdOrderByIdAsc(UUID albumId, Pageable pageable);
+
     @Query("select version from AlbumReleaseVersion version " +
-            "where version.album.id = :albumId and (:cursorId is null or version.id > :cursorId) " +
+            "where version.album.id = :albumId and version.id > :cursorId " +
             "order by version.id asc")
     List<AlbumReleaseVersion> findPageForAlbumAfter(UUID albumId, UUID cursorId, Pageable pageable);
 

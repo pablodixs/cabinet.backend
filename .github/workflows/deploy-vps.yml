@@ -60,6 +60,8 @@ jobs:
           artifact="$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' -print -quit)"
           test -n "$artifact"
           cp "$artifact" "$bundle/app.jar"
+          mkdir -p "$bundle/ops"
+          cp ops/cabinet-receive-deploy.sh "$bundle/ops/cabinet-receive-deploy.sh"
           {
             printf 'SUPABASE_URL=%s\n' "$SUPABASE_URL"
             printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$SUPABASE_SERVICE_ROLE_KEY"

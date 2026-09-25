@@ -332,9 +332,10 @@ public class MediaQueryService {
         AlbumMediaPageCursorCodec.VersionPosition position = cursor == null || cursor.isBlank()
                 ? null
                 : albumMediaPageCursorCodec.decodeVersion(cursor);
-        List<com.scriptles.cabinet.media.entity.AlbumReleaseVersion> fetched = albumReleaseVersionRepository
-                .findPageForAlbumAfter(albumId, position == null ? null : position.id(),
-                        org.springframework.data.domain.PageRequest.of(0, limit + 1));
+        org.springframework.data.domain.Pageable pageRequest = org.springframework.data.domain.PageRequest.of(0, limit + 1);
+        List<com.scriptles.cabinet.media.entity.AlbumReleaseVersion> fetched = position == null
+                ? albumReleaseVersionRepository.findByAlbumIdOrderByIdAsc(albumId, pageRequest)
+                : albumReleaseVersionRepository.findPageForAlbumAfter(albumId, position.id(), pageRequest);
         if (position == null && fetched.isEmpty()) {
             externalReferenceRepository.findByMediaIdAndSource(albumId, ExternalSource.MUSICBRAINZ)
                     .ifPresent(reference -> catalogOutboxPublisher.publishAlbumReleaseVersionsSyncIfNeeded(

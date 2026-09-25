@@ -9,7 +9,9 @@ umask 077
 # No arbitrary shell command is ever evaluated.
 case "${SSH_ORIGINAL_COMMAND:-}" in
   logs)
-    exec journalctl --user --unit=cabinet.service --no-pager --output=short-iso -n 250
+    exec journalctl --user --unit=cabinet.service --since "24 hours ago" \
+      --grep='ERROR|Exception|Caused by|SQLSTATE|SQLState' --case-sensitive=no \
+      --no-pager --output=short-iso -n 150
     ;;
   "")
     ;;
@@ -20,6 +22,7 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
 esac
 
 root="$HOME/cabinet"
+self_script="$(readlink -f -- "${BASH_SOURCE[0]}")"
 incoming="$(mktemp -d "$root/incoming.XXXXXX")"
 release_id="$(date -u +%Y%m%d%H%M%S)-$$"
 release="$root/releases/$release_id"
@@ -91,6 +94,11 @@ if [[ "$ready" != true ]]; then
   systemctl --user restart cabinet.service || true
   echo "Cabinet failed its readiness check; the prior release was restored when available" >&2
   exit 1
+fi
+
+if [[ -f "$release/ops/cabinet-receive-deploy.sh" ]]; then
+  install -m 0700 "$release/ops/cabinet-receive-deploy.sh" "$self_script.new"
+  mv -f "$self_script.new" "$self_script"
 fi
 
 echo "Cabinet deployed successfully: $release_id"
