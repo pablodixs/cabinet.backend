@@ -72,6 +72,9 @@ public class SecurityConfig {
                                 "/error"
                         ).permitAll()
 
+                        .requestMatchers(HttpMethod.POST, "/v1/media/external/import")
+                        .hasAnyRole("USER", "MODERATOR", "ADMIN", "HQ")
+
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/v1/status",
