@@ -52,7 +52,7 @@ public class MediaSearchDocumentRepository {
                     CROSS JOIN query_input input
                     LEFT JOIN media_community_stats stats ON stats.media_id = document.media_id
                     WHERE document.locale IN (:locales)
-                      AND (:mediaType IS NULL OR document.media_type = :mediaType)
+                      AND (CAST(:mediaType AS text) IS NULL OR document.media_type = CAST(:mediaType AS text))
                       AND (
                           document.title_normalized LIKE unaccent('unaccent', lower(:prefixQuery)) || '%' ESCAPE E'\\\\'
                           OR document.original_title_normalized LIKE unaccent('unaccent', lower(:prefixQuery)) || '%' ESCAPE E'\\\\'
