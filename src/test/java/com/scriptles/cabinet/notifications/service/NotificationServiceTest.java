@@ -16,6 +16,7 @@ import com.scriptles.cabinet.notifications.dto.NotificationResponse;
 import com.scriptles.cabinet.notifications.enums.NotificationType;
 import com.scriptles.cabinet.notifications.event.NotificationChangedEvent;
 import com.scriptles.cabinet.notifications.repository.NotificationRepository;
+import com.scriptles.cabinet.notifications.service.NotificationDeliveryService;
 import com.scriptles.cabinet.status.BackgroundJobRunner;
 import com.scriptles.cabinet.status.BackgroundJobTracker.JobRunResult;
 import com.scriptles.cabinet.status.BackgroundJobRetention;
@@ -48,6 +49,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class NotificationServiceTest {
     @Mock NotificationRepository notificationRepository;
+    @Mock NotificationDeliveryService deliveryService;
     @Mock MediaListLikeRepository mediaListLikeRepository;
     @Mock ReviewLikeRepository reviewLikeRepository;
     @Mock ApplicationEventPublisher eventPublisher;
@@ -125,6 +127,27 @@ class NotificationServiceTest {
         notificationService.syncListLike(list, owner);
 
         verifyNoInteractions(notificationRepository, mediaListLikeRepository, eventPublisher);
+    }
+
+    @Test
+    void createsAndQueuesFollowNotificationOnlyOnce() {
+        User actor = user("follow-actor");
+        User recipient = user("follow-recipient");
+        when(notificationRepository.existsByRecipientIdAndTypeAndActorId(
+                recipient.getId(), NotificationType.FOLLOWED, actor.getId()))
+                .thenReturn(false, true);
+
+        notificationService.followed(actor, recipient);
+        notificationService.followed(actor, recipient);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        Notification notification = captor.getValue();
+        assertThat(notification.getType()).isEqualTo(NotificationType.FOLLOWED);
+        assertThat(notification.getActor()).isSameAs(actor);
+        assertThat(notification.getRecipient()).isSameAs(recipient);
+        verify(deliveryService).enqueue(notification);
+        verify(eventPublisher).publishEvent(new NotificationChangedEvent(recipient.getId()));
     }
 
     @Test
