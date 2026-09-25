@@ -49,7 +49,7 @@ When a series becomes `IN_PROGRESS`, `UserMediaService` publishes `SeriesTrackin
 
 Media imports commit core metadata and a `catalog_outbox` event together. The worker claims rows with `FOR UPDATE SKIP LOCKED`, persists tracks or seasons as soon as the primary provider responds, and finishes optional translation and Wikidata enrichment afterward. Claims left in `PROCESSING` by an interrupted process return to `RETRY` after the configured lock timeout.
 
-MusicBrainz album imports also write `ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED` in that same transaction. The catalog worker pages through Release Group releases after commit and upserts edition metadata in a separate short transaction. This work does not delay canonical album import, does not replace the Release Group identity, and does not create per-edition `Media(TRACK)` rows. It shares catalog outbox retries and stale-claim recovery.
+MusicBrainz album imports also write `ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED` in that same transaction. The catalog worker pages through Release Group releases after commit and upserts edition metadata in a separate short transaction. This work does not delay canonical album import, does not replace the Release Group identity, and does not create per-edition `Media(TRACK)` rows. The first request for an album's release-version page also queues this sync when no versions exist and no successful or active sync event is recorded, covering albums that were already in the catalog before this feature was introduced. The artwork picker uses the same paginated MusicBrainz release snapshots as edition sync, avoiding an individual Cover Art Archive request for every edition. The sync shares catalog outbox retries and stale-claim recovery.
 
 ### Domain outbox
 

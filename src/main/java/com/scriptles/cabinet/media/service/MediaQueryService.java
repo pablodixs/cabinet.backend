@@ -18,6 +18,7 @@ import com.scriptles.cabinet.catalog.entity.FranchiseMedia;
 import com.scriptles.cabinet.catalog.repository.CollectionItemRepository;
 import com.scriptles.cabinet.catalog.repository.FranchiseMediaRepository;
 import com.scriptles.cabinet.media.catalog.GenreCatalogService;
+import com.scriptles.cabinet.media.enrichment.CatalogOutboxPublisher;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.BookDetails;
 import com.scriptles.cabinet.media.entity.ExternalReference;
@@ -105,6 +106,7 @@ public class MediaQueryService {
     private final MediaTranslationResolver mediaTranslationResolver;
     private final MediaPublicVersionService mediaPublicVersionService;
     private final AlbumMediaPageCursorCodec albumMediaPageCursorCodec;
+    private final CatalogOutboxPublisher catalogOutboxPublisher;
     private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -333,6 +335,11 @@ public class MediaQueryService {
         List<com.scriptles.cabinet.media.entity.AlbumReleaseVersion> fetched = albumReleaseVersionRepository
                 .findPageForAlbumAfter(albumId, position == null ? null : position.id(),
                         org.springframework.data.domain.PageRequest.of(0, limit + 1));
+        if (position == null && fetched.isEmpty()) {
+            externalReferenceRepository.findByMediaIdAndSource(albumId, ExternalSource.MUSICBRAINZ)
+                    .ifPresent(reference -> catalogOutboxPublisher.publishAlbumReleaseVersionsSyncIfNeeded(
+                            albumId, reference.getExternalId(), "pt-BR"));
+        }
         boolean hasMore = fetched.size() > limit;
         List<com.scriptles.cabinet.media.entity.AlbumReleaseVersion> page = hasMore
                 ? fetched.subList(0, limit)

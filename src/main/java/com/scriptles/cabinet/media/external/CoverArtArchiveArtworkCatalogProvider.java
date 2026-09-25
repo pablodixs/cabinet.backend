@@ -21,10 +21,10 @@ public class CoverArtArchiveArtworkCatalogProvider implements MediaArtworkCatalo
     private static final int MAX_CACHE_ENTRIES = 2_000;
     private static final Duration HIT_TTL = Duration.ofHours(12);
     private static final Duration MISS_TTL = Duration.ofMinutes(15);
-    private static final int MAX_RELEASES = 8;
 
     private final RestClient.Builder restClientBuilder;
     private final ExternalApiProperties properties;
+    private final MusicBrainzClient musicBrainzClient;
     private final Map<String, CacheEntry> cache = Collections.synchronizedMap(
             new LinkedHashMap<>(128, 0.75f, true) {
                 @Override
@@ -47,40 +47,17 @@ public class CoverArtArchiveArtworkCatalogProvider implements MediaArtworkCatalo
 
         Map<String, ArtworkAsset> covers = new LinkedHashMap<>();
         try {
-            JsonNode releaseGroup = restClientBuilder.clone().baseUrl(properties.musicbrainz().baseUrl()).build().get()
-                    .uri(uriBuilder -> uriBuilder.path("/release-group/{id}")
-                            .queryParam("inc", "releases")
-                            .queryParam("fmt", "json")
-                            .build(externalId))
-                    .header("User-Agent", properties.musicbrainz().userAgent())
-                    .retrieve()
-                    .body(JsonNode.class);
-            List<JsonNode> releases = new ArrayList<>();
-            releaseGroup.path("releases").forEach(releases::add);
-            releases.sort(Comparator
-                    .comparing((JsonNode release) -> text(release, "date"), Comparator.nullsLast(Comparator.reverseOrder()))
-                    .thenComparing(release -> Objects.toString(text(release, "country"), ""))
-                    .thenComparing(release -> Objects.toString(text(release, "id"), "")));
-
-            int fetched = 0;
-            for (JsonNode release : releases) {
-                if (fetched >= MAX_RELEASES) break;
-                String releaseId = text(release, "id");
-                if (releaseId == null) continue;
-                fetched++;
-                try {
-                    JsonNode releaseArtwork = restClientBuilder.clone().baseUrl(BASE_URL).build().get()
-                            .uri("/release/{id}", releaseId)
-                            .header("User-Agent", properties.musicbrainz().userAgent())
-                            .retrieve()
-                            .body(JsonNode.class);
-                    addImages(covers, releaseArtwork, "release:" + releaseId, releaseLabel(release));
-                } catch (RestClientException ignored) {
-                    // An edition without artwork is expected; keep results from other editions.
-                }
+            for (MusicBrainzClient.AlbumReleaseVersionSnapshot release
+                    : musicBrainzClient.findAlbumReleaseVersions(externalId)) {
+                if (release.coverUrl() == null) continue;
+                String releaseId = release.musicBrainzReleaseId().toString();
+                String url = BASE_URL + "/release/" + releaseId + "/front";
+                covers.putIfAbsent(url, new ArtworkAsset(
+                        "release:" + releaseId + ":front", url, release.coverUrl(),
+                        null, null, null, releaseLabel(release)));
             }
-        } catch (RestClientException exception) {
-            // Individual editions are optional; release-group artwork may still be available.
+        } catch (ExternalMediaException ignored) {
+            // Keep release-group artwork available when MusicBrainz cannot return editions.
         }
         try {
             JsonNode groupArtwork = restClientBuilder.clone().baseUrl(BASE_URL).build().get()
@@ -123,6 +100,14 @@ public class CoverArtArchiveArtworkCatalogProvider implements MediaArtworkCatalo
         if (title != null) parts.add(title);
         if (year != null) parts.add(year);
         if (country != null) parts.add(country);
+        return parts.isEmpty() ? "Edição do álbum" : String.join(" · ", parts);
+    }
+
+    private String releaseLabel(MusicBrainzClient.AlbumReleaseVersionSnapshot release) {
+        List<String> parts = new ArrayList<>();
+        if (release.title() != null) parts.add(release.title());
+        if (release.releaseDate() != null) parts.add(Integer.toString(release.releaseDate().getYear()));
+        if (release.countryCode() != null) parts.add(release.countryCode());
         return parts.isEmpty() ? "Edição do álbum" : String.join(" · ", parts);
     }
 

@@ -6,6 +6,7 @@ import com.scriptles.cabinet.media.entity.AlbumDetails;
 import com.scriptles.cabinet.media.entity.AlbumTrack;
 import com.scriptles.cabinet.media.entity.ExternalReference;
 import com.scriptles.cabinet.media.catalog.GenreCatalogService;
+import com.scriptles.cabinet.media.enrichment.CatalogOutboxPublisher;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.MediaLike;
 import com.scriptles.cabinet.media.entity.MovieDetails;
@@ -83,6 +84,8 @@ class MediaQueryServiceTest {
     private AlbumTrackRepository albumTrackRepository;
     @Mock
     private AlbumReleaseVersionRepository albumReleaseVersionRepository;
+    @Mock
+    private CatalogOutboxPublisher catalogOutboxPublisher;
     @Mock
     private SeriesSeasonRepository seriesSeasonRepository;
     @Mock

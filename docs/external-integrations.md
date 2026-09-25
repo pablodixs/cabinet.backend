@@ -55,7 +55,7 @@ Import performs an authoritative detail fetch and persists:
 
 The unique external identity makes repeat import an update/backfill operation rather than a duplicate insert.
 
-For albums, MusicBrainz Release Group remains the canonical Cabinet album identity and continues to drive Cover Art Archive's release-group artwork. Release editions are fetched asynchronously from the MusicBrainz Release Group browse endpoint and stored as `AlbumReleaseVersion` metadata; this does not block import. Their release-specific cover URLs are optional metadata only. The canonical `AlbumTrack` list still comes from the selected representative release, and edition-specific tracklists are not persisted in this stage.
+For albums, MusicBrainz Release Group remains the canonical Cabinet album identity and continues to drive Cover Art Archive's release-group artwork. Release editions are fetched asynchronously from the MusicBrainz Release Group browse endpoint and stored as `AlbumReleaseVersion` metadata; this does not block import. The first release-version read queues a sync for older albums with no stored editions unless a sync is already active or has succeeded. The artwork picker uses the same paginated MusicBrainz release snapshots as edition sync, so it can offer every release with a front cover without making an individual Cover Art Archive request for each edition. The canonical `AlbumTrack` list still comes from the selected representative release, and edition-specific tracklists are not persisted in this stage.
 
 ## Availability and external ratings
 

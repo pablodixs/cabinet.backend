@@ -67,6 +67,22 @@ public class CatalogOutboxPublisher {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void publishAlbumReleaseVersionsSyncIfNeeded(
+            UUID mediaId,
+            String releaseGroupId,
+            String locale
+    ) {
+        if (repository.existsByAggregateIdAndEventTypeAndStatusIn(
+                mediaId,
+                CatalogEventType.ALBUM_RELEASE_VERSIONS_SYNC_REQUESTED,
+                EnumSet.of(CatalogOutboxStatus.PENDING, CatalogOutboxStatus.PROCESSING,
+                        CatalogOutboxStatus.RETRY, CatalogOutboxStatus.PROCESSED))) {
+            return;
+        }
+        publishAlbumReleaseVersionsSync(mediaId, releaseGroupId, locale);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void publishRefresh(
             UUID mediaId,
             ExternalSource source,
