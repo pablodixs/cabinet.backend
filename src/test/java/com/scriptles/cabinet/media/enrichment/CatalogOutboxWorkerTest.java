@@ -16,6 +16,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -57,7 +58,8 @@ class CatalogOutboxWorkerTest {
                 wikidataClient,
                 persistenceService,
                 executor,
-                Duration.ofMinutes(15)
+                Duration.ofMinutes(15),
+                new SimpleMeterRegistry()
         );
     }
 

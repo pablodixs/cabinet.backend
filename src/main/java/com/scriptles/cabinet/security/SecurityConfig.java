@@ -86,6 +86,8 @@ public class SecurityConfig {
                                 "/v1/media/*/awards",
                                 "/v1/media/*/more-by",
                                 "/v1/media/*/tracks",
+                                "/v1/media/*/tracks/cursor",
+                                "/v1/media/*/release-versions",
                                 "/v1/media/*/seasons/*/episodes",
                                 "/v1/media/*/lists",
                                 "/v1/media/*/lists/**",

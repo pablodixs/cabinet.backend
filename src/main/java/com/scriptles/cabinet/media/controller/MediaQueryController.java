@@ -3,6 +3,7 @@ package com.scriptles.cabinet.media.controller;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.common.http.HttpCacheValidators;
 import com.scriptles.cabinet.media.dto.response.AlbumTracksResponse;
+import com.scriptles.cabinet.common.api.CursorPageResponse;
 import com.scriptles.cabinet.media.dto.response.ExternalMediaDetailsResponse;
 import com.scriptles.cabinet.media.dto.response.MediaCommunityResponse;
 import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
@@ -13,6 +14,7 @@ import com.scriptles.cabinet.media.dto.response.MoreByResponse;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.AwardResult;
 import com.scriptles.cabinet.media.enums.CatalogStatus;
+import com.scriptles.cabinet.media.enums.MediaDetailLevel;
 import com.scriptles.cabinet.media.service.MediaExternalInfoService;
 import com.scriptles.cabinet.media.service.MediaQueryService;
 import com.scriptles.cabinet.media.service.MoreByService;
@@ -56,12 +58,14 @@ public class MediaQueryController {
             @PathVariable UUID mediaId,
             @RequestParam(required = false) String locale,
             @RequestHeader(name = "Accept-Language", required = false) String acceptLanguage,
-            @RequestHeader(name = "If-None-Match", required = false) String ifNoneMatch
+            @RequestHeader(name = "If-None-Match", required = false) String ifNoneMatch,
+            @RequestParam(defaultValue = "FULL") MediaDetailLevel detailLevel
     ) {
         String requestedLocale = catalogLocaleResolver.resolve(locale, acceptLanguage).tag();
         String publicVersion = mediaQueryService.currentPublicVersion(mediaId, requestedLocale);
         String etag = publicVersion == null ? null
-                : HttpCacheValidators.weakEtag("media:" + mediaId + ":" + requestedLocale, publicVersion);
+                : HttpCacheValidators.weakEtag(
+                        "media:" + mediaId + ":" + requestedLocale + ":" + detailLevel, publicVersion);
         if (HttpCacheValidators.matchesIfNoneMatch(ifNoneMatch, etag)) {
             ResponseEntity.BodyBuilder notModified = ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                     .header("ETag", etag)
@@ -71,9 +75,10 @@ public class MediaQueryController {
             return notModified.build();
         }
 
-        PublicMediaDetailsResponse response = publicVersion == null
+        PublicMediaDetailsResponse response = detailLevel == MediaDetailLevel.FULL
                 ? mediaQueryService.findDetails(mediaId, requestedLocale)
-                : mediaQueryService.findDetails(mediaId, requestedLocale, publicVersion);
+                : mediaQueryService.findDetails(
+                        mediaId, requestedLocale, publicVersion == null ? "missing" : publicVersion, detailLevel);
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .header("Content-Language", response.resolvedLocale());
         if (response.catalogStatus() == CatalogStatus.READY) {
@@ -103,6 +108,30 @@ public class MediaQueryController {
         return ResponseEntity.ok()
                 .header("Cache-Control", "private, no-store")
                 .body(mediaQueryService.findAlbumTracks(albumId, user == null ? null : user.id()));
+    }
+
+    @GetMapping("/{albumId}/tracks/cursor")
+    public ResponseEntity<CursorPageResponse<ExternalMediaDetailsResponse.TrackResponse>> findAlbumTrackPage(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID albumId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int limit
+    ) {
+        return ResponseEntity.ok()
+                .header("Cache-Control", "private, no-store")
+                .body(mediaQueryService.findAlbumTrackPage(albumId, user == null ? null : user.id(), cursor, limit));
+    }
+
+    @GetMapping("/{albumId}/release-versions")
+    public ResponseEntity<CursorPageResponse<ExternalMediaDetailsResponse.ReleaseVersionResponse>>
+    findAlbumReleaseVersionPage(
+            @PathVariable UUID albumId,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(40) int limit
+    ) {
+        return ResponseEntity.ok()
+                .header("Cache-Control", "public, max-age=60, s-maxage=300")
+                .body(mediaQueryService.findAlbumReleaseVersionPage(albumId, cursor, limit));
     }
 
     @GetMapping("/{mediaId}/me")

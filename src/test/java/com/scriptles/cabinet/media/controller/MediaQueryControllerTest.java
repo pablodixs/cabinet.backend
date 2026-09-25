@@ -12,6 +12,7 @@ import com.scriptles.cabinet.media.dto.response.SeasonEpisodesResponse;
 import com.scriptles.cabinet.media.dto.response.PublicMediaDetailsResponse;
 import com.scriptles.cabinet.media.enums.CatalogStatus;
 import com.scriptles.cabinet.media.enums.MediaType;
+import com.scriptles.cabinet.media.enums.MediaDetailLevel;
 import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.ExternalInfoSectionState;
 import com.scriptles.cabinet.media.enums.AwardSectionState;
@@ -20,6 +21,7 @@ import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MoreByState;
 import com.scriptles.cabinet.media.service.MediaExternalInfoService;
 import com.scriptles.cabinet.media.service.MediaQueryService;
+import com.scriptles.cabinet.common.api.CursorPageResponse;
 import com.scriptles.cabinet.media.service.MoreByService;
 import com.scriptles.cabinet.media.service.SeasonEpisodeService;
 import com.scriptles.cabinet.media.service.AwardQueryService;
@@ -133,6 +135,40 @@ class MediaQueryControllerTest {
     }
 
     @Test
+    void supportsSummaryDetailsAsAnAdditiveOptIn() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(mediaQueryService.currentPublicVersion(mediaId, "pt-BR")).thenReturn("v1");
+        when(mediaQueryService.findDetails(mediaId, "pt-BR", "v1", MediaDetailLevel.SUMMARY))
+                .thenReturn(details(mediaId, "pt-BR", "pt-BR", false,
+                        new ExternalMediaDetailsResponse.AlbumDetails("ALBUM", 2, null, List.of(), List.of())));
+
+        mockMvc.perform(get("/v1/media/{mediaId}", mediaId).param("detailLevel", "SUMMARY"))
+                .andExpect(status().isOk())
+                .andExpect(header().exists("ETag"))
+                .andExpect(jsonPath("$.id").value(mediaId.toString()))
+                .andExpect(jsonPath("$.details.tracks").isArray())
+                .andExpect(jsonPath("$.details.tracks").isEmpty())
+                .andExpect(jsonPath("$.details.releaseVersions").isArray())
+                .andExpect(jsonPath("$.details.releaseVersions").isEmpty());
+
+        verify(mediaQueryService).findDetails(mediaId, "pt-BR", "v1", MediaDetailLevel.SUMMARY);
+    }
+
+    @Test
+    void returnsCursorTrackPageEnvelopeWithoutCaching() throws Exception {
+        UUID albumId = UUID.randomUUID();
+        when(mediaQueryService.findAlbumTrackPage(albumId, null, null, 20))
+                .thenReturn(new CursorPageResponse<>(List.of(), "opaque-next", true));
+
+        mockMvc.perform(get("/v1/media/{albumId}/tracks/cursor", albumId))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.items").isArray())
+                .andExpect(jsonPath("$.nextCursor").value("opaque-next"))
+                .andExpect(jsonPath("$.hasMore").value(true));
+    }
+
+    @Test
     void explicitLocaleOverridesHeaderAndDoesNotVaryByHeader() throws Exception {
         UUID mediaId = UUID.randomUUID();
         when(mediaQueryService.findDetails(mediaId, "pt-BR"))
@@ -200,11 +236,32 @@ class MediaQueryControllerTest {
             boolean fallback,
             CatalogStatus catalogStatus
     ) {
+        return details(mediaId, requestedLocale, resolvedLocale, fallback, catalogStatus, null);
+    }
+
+    private PublicMediaDetailsResponse details(
+            UUID mediaId,
+            String requestedLocale,
+            String resolvedLocale,
+            boolean fallback,
+            Object typeDetails
+    ) {
+        return details(mediaId, requestedLocale, resolvedLocale, fallback, CatalogStatus.READY, typeDetails);
+    }
+
+    private PublicMediaDetailsResponse details(
+            UUID mediaId,
+            String requestedLocale,
+            String resolvedLocale,
+            boolean fallback,
+            CatalogStatus catalogStatus,
+            Object typeDetails
+    ) {
         return new PublicMediaDetailsResponse(
                 mediaId,
                 mediaId.toString(),
                 ExternalSource.MANUAL,
-                MediaType.MOVIE,
+                typeDetails instanceof ExternalMediaDetailsResponse.AlbumDetails ? MediaType.ALBUM : MediaType.MOVIE,
                 "Title",
                 "Title",
                 null,
@@ -221,7 +278,7 @@ class MediaQueryControllerTest {
                 java.util.Map.of(),
                 List.of(),
                 true,
-                null,
+                typeDetails,
                 requestedLocale,
                 resolvedLocale,
                 fallback,

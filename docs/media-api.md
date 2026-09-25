@@ -206,9 +206,20 @@ For media already imported into Cabinet, use the stored-media endpoint. It reads
 
 ```http
 GET /v1/media/{mediaId}
+GET /v1/media/{mediaId}?detailLevel=SUMMARY
 ```
 
-The response has the same shape as an external detail response. Frontend routes should prefer `/media/{mediaId}` whenever a search or community response includes the internal `id`.
+The response has the same shape as an external detail response. `detailLevel=FULL` remains the default for older clients. `SUMMARY` preserves the type-specific details shape but leaves album `tracks` and `releaseVersions` empty, allowing clients to load large collections only when needed. Frontend routes should prefer `/media/{mediaId}` whenever a search or community response includes the internal `id`.
+
+Album pages can request their persisted canonical tracklist by cursor:
+
+```http
+GET /v1/media/{albumId}/tracks/cursor?limit=40
+GET /v1/media/{albumId}/tracks/cursor?cursor={opaqueCursor}&limit=40
+GET /v1/media/{albumId}/release-versions?limit=20
+```
+
+Both cursor endpoints return `{ "items": [...], "nextCursor": "...", "hasMore": true }`, with `limit` from 1 to 40 (default 20). Track pages include community rating fields and may include viewer-specific rating/like fields, so they use `Cache-Control: private, no-store`. Release-version pages contain public MusicBrainz edition metadata. The existing unpaginated `/tracks` route remains available for older clients.
 
 ```http
 GET /v1/media/external/TMDB/MOVIE/550?language=en-US

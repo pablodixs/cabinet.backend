@@ -86,6 +86,8 @@ The internal UUID becomes the preferred identifier after import. Re-import is id
 
 For a MusicBrainz album, that external identity is its Release Group. The import transaction also writes a catalog-outbox request to synchronize the associated MusicBrainz Releases after commit; edition metadata is attached to the canonical album while the main import remains usable and its canonical tracklist stays unchanged.
 
+Public media details support an additive `detailLevel=SUMMARY` representation for collection-heavy album pages. It retains the existing DTO envelope while omitting embedded track and release-version rows; clients page canonical album tracks and MusicBrainz release versions through read-only cursor endpoints. The legacy full detail and unpaginated track contracts remain during client rollout.
+
 ### Local-first media search
 
 `GET /v1/media/search` searches persisted Cabinet media through localized PostgreSQL search documents first. The projection combines canonical and translated titles, creator credits, and alternative titles, using simple-language full-text search and trigram matching. If fewer than the requested number of local results match, the existing TMDB, MusicBrainz, and Google Books searches run as before and fill the remaining response slots. Persisted media and external previews retain their existing response distinction; search results alone never import a preview. Imports and metadata, translation, or credit changes update the local projection asynchronously through `domain_outbox_events`.

@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
+import com.scriptles.cabinet.common.api.CursorPageResponse;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.common.time.CabinetTime;
 import com.scriptles.cabinet.lists.repository.MediaListItemRepository;
@@ -24,6 +25,7 @@ import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.SeriesSeason;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.CreditRole;
+import com.scriptles.cabinet.media.enums.MediaDetailLevel;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
@@ -102,6 +104,7 @@ public class MediaQueryService {
     private final CatalogTranslationLoader catalogTranslationLoader;
     private final MediaTranslationResolver mediaTranslationResolver;
     private final MediaPublicVersionService mediaPublicVersionService;
+    private final AlbumMediaPageCursorCodec albumMediaPageCursorCodec;
     private CatalogMetadataRefreshScheduler metadataRefreshScheduler;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -125,6 +128,21 @@ public class MediaQueryService {
                     + "#result.catalogStatus() != T(com.scriptles.cabinet.media.enums.CatalogStatus).READY"
     )
     public PublicMediaDetailsResponse findDetails(UUID mediaId, String locale, String publicVersion) {
+        return findDetails(mediaId, locale, publicVersion, MediaDetailLevel.FULL);
+    }
+
+    @Cacheable(
+            cacheNames = "mediaDetails",
+            key = "#mediaId + ':' + #locale + ':' + #publicVersion + ':' + #detailLevel",
+            unless = "#result.translationFallback() || "
+                    + "#result.catalogStatus() != T(com.scriptles.cabinet.media.enums.CatalogStatus).READY"
+    )
+    public PublicMediaDetailsResponse findDetails(
+            UUID mediaId,
+            String locale,
+            String publicVersion,
+            MediaDetailLevel detailLevel
+    ) {
         if (metadataRefreshScheduler != null) {
             metadataRefreshScheduler.scheduleIfStale(mediaId);
         }
@@ -183,7 +201,7 @@ public class MediaQueryService {
                 externalReferences,
                 genres,
                 true,
-                details(media, creditSummary),
+                details(media, creditSummary, detailLevel),
                 requestedLocale,
                 translation.resolvedLocale(),
                 translation.fallback(),
@@ -273,6 +291,61 @@ public class MediaQueryService {
                 .toList());
     }
 
+    public CursorPageResponse<ExternalMediaDetailsResponse.TrackResponse> findAlbumTrackPage(
+            UUID albumId, UUID userId, String cursor, int limit) {
+        requireAlbum(albumId);
+        AlbumMediaPageCursorCodec.TrackPosition position = cursor == null || cursor.isBlank()
+                ? null
+                : albumMediaPageCursorCodec.decodeTrack(cursor);
+        List<AlbumTrack> fetched = albumTrackRepository.findAlbumPageAfter(
+                albumId,
+                position == null,
+                position != null && position.discNumber() == null,
+                position == null ? null : position.discNumber(),
+                position != null && position.trackNumber() == null,
+                position == null ? null : position.trackNumber(),
+                position == null ? new UUID(0, 0) : position.id(),
+                org.springframework.data.domain.PageRequest.of(0, limit + 1));
+        boolean hasMore = fetched.size() > limit;
+        List<AlbumTrack> page = hasMore ? fetched.subList(0, limit) : fetched;
+        List<UUID> trackIds = page.stream().map(track -> track.getTrackMedia().getId()).toList();
+        Map<UUID, RatingSummaryService.ItemStats> stats = ratingSummaryService.items(trackIds, userId);
+        java.util.Set<UUID> likedIds = userId == null || trackIds.isEmpty()
+                ? java.util.Set.of()
+                : java.util.Set.copyOf(mediaLikeRepository.findLikedMediaIds(userId, trackIds));
+        List<ExternalMediaDetailsResponse.TrackResponse> items = page.stream()
+                .map(track -> toTrackResponse(track,
+                        stats.getOrDefault(track.getTrackMedia().getId(), RatingSummaryService.ItemStats.empty()),
+                        likedIds.contains(track.getTrackMedia().getId())))
+                .toList();
+        String nextCursor = hasMore && !page.isEmpty()
+                ? albumMediaPageCursorCodec.encode(page.getLast())
+                : null;
+        return new CursorPageResponse<>(items, nextCursor, hasMore);
+    }
+
+    public CursorPageResponse<ExternalMediaDetailsResponse.ReleaseVersionResponse> findAlbumReleaseVersionPage(
+            UUID albumId, String cursor, int limit) {
+        requireAlbum(albumId);
+        AlbumMediaPageCursorCodec.VersionPosition position = cursor == null || cursor.isBlank()
+                ? null
+                : albumMediaPageCursorCodec.decodeVersion(cursor);
+        List<com.scriptles.cabinet.media.entity.AlbumReleaseVersion> fetched = albumReleaseVersionRepository
+                .findPageForAlbumAfter(albumId, position == null ? null : position.id(),
+                        org.springframework.data.domain.PageRequest.of(0, limit + 1));
+        boolean hasMore = fetched.size() > limit;
+        List<com.scriptles.cabinet.media.entity.AlbumReleaseVersion> page = hasMore
+                ? fetched.subList(0, limit)
+                : fetched;
+        List<ExternalMediaDetailsResponse.ReleaseVersionResponse> items = page.stream()
+                .map(this::toReleaseVersionResponse)
+                .toList();
+        String nextCursor = hasMore && !page.isEmpty()
+                ? albumMediaPageCursorCodec.encode(page.getLast())
+                : null;
+        return new CursorPageResponse<>(items, nextCursor, hasMore);
+    }
+
     public PageResponse<ExternalMediaDetailsResponse.CreditResponse> findCredits(
             UUID mediaId,
             CreditRole role,
@@ -286,7 +359,8 @@ public class MediaQueryService {
                 .map(this::toCreditResponse));
     }
 
-    private Object details(Media media, MediaCreditService.CreditSummary creditSummary) {
+    private Object details(Media media, MediaCreditService.CreditSummary creditSummary,
+                           MediaDetailLevel detailLevel) {
         return switch (media.getType()) {
             case MOVIE -> movieDetailsRepository.findById(media.getId())
                     .map(details -> new ExternalMediaDetailsResponse.MovieDetails(
@@ -305,17 +379,20 @@ public class MediaQueryService {
                     .orElseGet(() -> new ExternalMediaDetailsResponse.TrackDetails(null, null));
             case ALBUM -> albumDetailsRepository.findById(media.getId())
                     .map(details -> {
-                        List<AlbumTrack> tracks = albumTrackRepository
-                                .findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(media.getId());
+                        boolean includeExtendedData = detailLevel == MediaDetailLevel.FULL;
+                        List<AlbumTrack> tracks = includeExtendedData
+                                ? albumTrackRepository.findAllByAlbumIdOrderByDiscNumberAscTrackNumberAsc(media.getId())
+                                : List.of();
                         return new ExternalMediaDetailsResponse.AlbumDetails(
                                 details.getAlbumType() == null ? null : details.getAlbumType().name(),
                                 details.getNumberOfTracks(), details.getAnimatedCoverUrl(), tracks.stream()
                                 .map(track -> toTrackResponse(
                                         track, RatingSummaryService.ItemStats.empty(), false))
-                                .toList(), releaseVersions(media.getId()));
+                                .toList(), includeExtendedData ? releaseVersions(media.getId()) : List.of());
                     })
                     .orElseGet(() -> new ExternalMediaDetailsResponse.AlbumDetails(
-                            null, null, null, List.of(), releaseVersions(media.getId())));
+                            null, null, null, List.of(), detailLevel == MediaDetailLevel.FULL
+                            ? releaseVersions(media.getId()) : List.of()));
             case SERIES -> seriesDetailsRepository.findById(media.getId())
                     .map(details -> new ExternalMediaDetailsResponse.SeriesDetails(
                             details.getStatus() == null ? null : details.getStatus().name(),
@@ -342,21 +419,26 @@ public class MediaQueryService {
 
     private List<ExternalMediaDetailsResponse.ReleaseVersionResponse> releaseVersions(UUID albumMediaId) {
         return albumReleaseVersionRepository.findAllForAlbum(albumMediaId).stream()
-                .map(version -> new ExternalMediaDetailsResponse.ReleaseVersionResponse(
-                        version.getId(),
-                        version.getMusicBrainzReleaseId().toString(),
-                        version.getTitle(),
-                        version.getCountryCode(),
-                        version.getReleaseDate(),
-                        version.getFormat(),
-                        version.getStatus(),
-                        version.getBarcode(),
-                        version.getCatalogNumber(),
-                        version.getLabelName(),
-                        version.getCoverUrl(),
-                        version.getTrackCount(),
-                        version.isPrimary()))
+                .map(this::toReleaseVersionResponse)
                 .toList();
+    }
+
+    private ExternalMediaDetailsResponse.ReleaseVersionResponse toReleaseVersionResponse(
+            com.scriptles.cabinet.media.entity.AlbumReleaseVersion version) {
+        return new ExternalMediaDetailsResponse.ReleaseVersionResponse(
+                version.getId(), version.getMusicBrainzReleaseId().toString(), version.getTitle(),
+                version.getCountryCode(), version.getReleaseDate(), version.getFormat(), version.getStatus(),
+                version.getBarcode(), version.getCatalogNumber(), version.getLabelName(), version.getCoverUrl(),
+                version.getTrackCount(), version.isPrimary());
+    }
+
+    private Media requireAlbum(UUID albumId) {
+        Media album = mediaRepository.findById(albumId).orElseThrow(() -> new ApiException(
+                HttpStatus.NOT_FOUND, "MEDIA_NOT_FOUND", "Mídia não encontrada"));
+        if (album.getType() != MediaType.ALBUM) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MEDIA_NOT_ALBUM", "A mídia informada não é um álbum");
+        }
+        return album;
     }
 
     private ExternalMediaDetailsResponse.TrackResponse toTrackResponse(

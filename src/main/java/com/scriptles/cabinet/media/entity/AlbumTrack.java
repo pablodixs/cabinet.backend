@@ -8,7 +8,10 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "album_tracks", indexes = @Index(name = "idx_album_tracks_album_position", columnList = "album_media_id,disc_number,track_number"))
+@Table(name = "album_tracks", indexes = {
+        @Index(name = "idx_album_tracks_album_position", columnList = "album_media_id,disc_number,track_number"),
+        @Index(name = "idx_album_tracks_album_cursor", columnList = "album_media_id,disc_number,track_number,id")
+})
 @Getter
 @Setter
 @NoArgsConstructor

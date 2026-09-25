@@ -1,0 +1,245 @@
+openapi: 3.1.0
+info:
+  title: Cabinet media read contract
+  version: 1.0.0
+  description: Contract fragment for stored media details and album collection reads.
+servers:
+  - url: /
+paths:
+  /v1/media/{mediaId}:
+    get:
+      operationId: getMediaDetails
+      summary: Read stored public media details
+      parameters:
+        - $ref: '#/components/parameters/MediaId'
+        - name: locale
+          in: query
+          schema: { type: string, example: pt-BR }
+        - name: detailLevel
+          in: query
+          description: FULL preserves the legacy embedded collection; SUMMARY omits album collection rows.
+          schema:
+            type: string
+            enum: [FULL, SUMMARY]
+            default: FULL
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+      responses:
+        '200':
+          description: Stored public media representation. READY responses are cacheable by locale and representation.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+            Content-Language:
+              schema: { type: string }
+            ETag:
+              schema: { type: string }
+            Vary:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicMediaDetails'
+        '304':
+          description: The requested public representation has not changed.
+          headers:
+            ETag:
+              schema: { type: string }
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /v1/media/{albumId}/tracks/cursor:
+    get:
+      operationId: getAlbumTracksPage
+      summary: Read one page of canonical album tracks
+      description: Viewer-specific fields may be present when an authenticated session is supplied. Response is private and must not be cached.
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 40, default: 20 }
+      responses:
+        '200':
+          description: Cursor page of canonical tracks.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumTrackPage'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+  /v1/media/{albumId}/release-versions:
+    get:
+      operationId: getAlbumReleaseVersionsPage
+      summary: Read one page of MusicBrainz release-version metadata
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 40, default: 20 }
+      responses:
+        '200':
+          description: Public cursor page of editions attached to the canonical album.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumReleaseVersionPage'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '404':
+          $ref: '#/components/responses/ApiError'
+components:
+  parameters:
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AlbumId:
+      name: albumId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    ApiError:
+      description: Cabinet API error envelope.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+              fieldErrors:
+                type: object
+                additionalProperties: { type: string }
+  schemas:
+    PublicMediaDetails:
+      type: object
+      required: [id, externalId, source, type, title, originalTitle, externalReferences, genres, imported, requestedLocale, resolvedLocale, translationFallback, catalogStatus, collections, franchises]
+      properties:
+        id: { type: string, format: uuid }
+        externalId: { type: string }
+        source: { type: string }
+        type: { type: string, enum: [BOOK, MOVIE, SERIES, TRACK, ALBUM] }
+        title: { type: string }
+        originalTitle: { type: [string, 'null'] }
+        creator: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        tagline: { type: [string, 'null'] }
+        coverUrl: { type: [string, 'null'], format: uri }
+        backdropUrl: { type: [string, 'null'], format: uri }
+        logoUrl: { type: [string, 'null'], format: uri }
+        externalUrl: { type: [string, 'null'], format: uri }
+        releaseDate: { type: [string, 'null'], format: date }
+        originalLanguage: { type: [string, 'null'] }
+        countryCode: { type: [string, 'null'] }
+        wikidataId: { type: [string, 'null'] }
+        externalReferences: { type: object, additionalProperties: { type: string } }
+        genres:
+          type: array
+          items:
+            type: object
+            required: [id, name, source]
+            properties:
+              id: { type: [string, 'null'] }
+              name: { type: string }
+              source: { type: string }
+        imported: { type: boolean }
+        details:
+          description: Type-specific details. Album details retain their shape for FULL and SUMMARY.
+          oneOf:
+            - $ref: '#/components/schemas/AlbumDetails'
+            - type: object
+              additionalProperties: true
+        requestedLocale: { type: string }
+        resolvedLocale: { type: string }
+        translationFallback: { type: boolean }
+        catalogStatus: { type: string, enum: [CORE_READY, ENRICHING, READY, STALE, FAILED] }
+        collections: { type: array, items: { type: object, additionalProperties: true } }
+        franchises: { type: array, items: { type: object, additionalProperties: true } }
+    AlbumDetails:
+      type: object
+      required: [albumType, numberOfTracks, animatedCoverUrl, tracks, releaseVersions]
+      properties:
+        albumType: { type: [string, 'null'] }
+        numberOfTracks: { type: [integer, 'null'] }
+        animatedCoverUrl: { type: [string, 'null'], format: uri }
+        tracks:
+          type: array
+          items: { $ref: '#/components/schemas/AlbumTrack' }
+          description: Empty for detailLevel=SUMMARY; FULL embeds all tracks for compatibility.
+        releaseVersions:
+          type: array
+          items: { $ref: '#/components/schemas/AlbumReleaseVersion' }
+          description: Empty for detailLevel=SUMMARY; FULL embeds all synchronized versions for compatibility.
+    CursorPage:
+      type: object
+      required: [items, nextCursor, hasMore]
+      properties:
+        items: { type: array, items: {} }
+        nextCursor: { type: [string, 'null'] }
+        hasMore: { type: boolean }
+    AlbumTrackPage:
+      allOf:
+        - $ref: '#/components/schemas/CursorPage'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/AlbumTrack' }
+    AlbumReleaseVersionPage:
+      allOf:
+        - $ref: '#/components/schemas/CursorPage'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/AlbumReleaseVersion' }
+    AlbumTrack:
+      type: object
+      required: [id, externalId, title, discNumber, trackNumber, durationSeconds, explicit, averageRating, ratingCount, myRating, liked]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        externalId: { type: [string, 'null'] }
+        title: { type: string }
+        discNumber: { type: [integer, 'null'] }
+        trackNumber: { type: [integer, 'null'] }
+        durationSeconds: { type: [integer, 'null'] }
+        explicit: { type: [boolean, 'null'] }
+        averageRating: { type: [number, 'null'] }
+        ratingCount: { type: integer, format: int64 }
+        myRating: { type: [number, 'null'] }
+        liked: { type: boolean }
+    AlbumReleaseVersion:
+      type: object
+      required: [id, musicBrainzReleaseId, title, countryCode, releaseDate, format, status, barcode, catalogNumber, labelName, coverUrl, trackCount, primary]
+      properties:
+        id: { type: string, format: uuid }
+        musicBrainzReleaseId: { type: string, format: uuid }
+        title: { type: [string, 'null'] }
+        countryCode: { type: [string, 'null'] }
+        releaseDate: { type: [string, 'null'], format: date }
+        format: { type: [string, 'null'] }
+        status: { type: [string, 'null'] }
+        barcode: { type: [string, 'null'] }
+        catalogNumber: { type: [string, 'null'] }
+        labelName: { type: [string, 'null'] }
+        coverUrl: { type: [string, 'null'], format: uri }
+        trackCount: { type: [integer, 'null'] }
+        primary: { type: boolean }

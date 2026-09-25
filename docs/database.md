@@ -64,6 +64,7 @@ Do not rewrite applied migrations. Add a new versioned migration and update the 
 | `V58` | Add MusicBrainz album release-version metadata linked to canonical album media, with unique release IDs and album/barcode indexes. |
 | `V59` | Index metadata outbox events and album-release sync timestamps used to version public resource validators. |
 | `V60` | Add partial operational indexes for active/dead outbox counts. |
+| `V61` | Add stable keyset cursor indexes for canonical album tracks and release versions. |
 
 ## PostgreSQL-specific features
 

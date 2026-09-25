@@ -4,6 +4,7 @@ import com.scriptles.cabinet.media.entity.AlbumReleaseVersion;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +15,11 @@ public interface AlbumReleaseVersionRepository extends JpaRepository<AlbumReleas
     @Query("select version from AlbumReleaseVersion version where version.album.id = :albumId " +
             "order by version.isPrimary desc, version.releaseDate asc nulls last")
     List<AlbumReleaseVersion> findAllForAlbum(UUID albumId);
+
+    @Query("select version from AlbumReleaseVersion version " +
+            "where version.album.id = :albumId and (:cursorId is null or version.id > :cursorId) " +
+            "order by version.id asc")
+    List<AlbumReleaseVersion> findPageForAlbumAfter(UUID albumId, UUID cursorId, Pageable pageable);
 
     Optional<AlbumReleaseVersion> findByMusicBrainzReleaseId(UUID musicBrainzReleaseId);
 

@@ -1,6 +1,7 @@
 # API Reference
 
 This is the route inventory for the controllers in the repository. It focuses on discoverability and links related behavior to focused guides. The Java request/response records remain the exact field-level contract.
+The field-level OpenAPI fragment for stored-media and album collection reads is [media-read.yaml](openapi/media-read.yaml).
 
 ## Conventions
 
@@ -97,7 +98,10 @@ Supported catalog types are `BOOK`, `MOVIE`, `SERIES`, `TRACK`, `ALBUM`, and `EP
 
 | Method and path | Access | Query/body and behavior |
 | --- | --- | --- |
-| `GET /v1/media/{mediaId}` | Public | Stored public detail response. READY media returns public cache headers and a version-based `ETag`; send `If-None-Match` to receive `304 Not Modified`. The ETag changes with media, requested-locale translation, metadata events, and synchronized album-release versions. Accepts `locale` or `Accept-Language`. Imported album details include asynchronously synchronized MusicBrainz `releaseVersions` metadata alongside the canonical album tracklist. |
+| `GET /v1/media/{mediaId}` | Public | Stored public detail response. `detailLevel=FULL` is the compatibility default; `SUMMARY` keeps the album detail shape but returns empty `tracks` and `releaseVersions` arrays. READY media returns public cache headers and a version-based `ETag`; send `If-None-Match` to receive `304 Not Modified`. The ETag varies by detail level and changes with media, requested-locale translation, metadata events, and synchronized album-release versions. Accepts `locale` or `Accept-Language`. |
+| `GET /v1/media/{albumId}/tracks/cursor` | Public / viewer-aware | Opaque cursor page of canonical album tracks; `cursor` optional, `limit=20` (max 40). Includes per-track community values and optional viewer values. `private, no-store`. |
+| `GET /v1/media/{albumId}/release-versions` | Public | Opaque cursor page of MusicBrainz release-version metadata; `cursor` optional, `limit=20` (max 40). |
+| `GET /v1/media/{albumId}/tracks` | Public / viewer-aware | Legacy full track response retained for older clients; includes optional viewer values and is `private, no-store`. |
 | `GET /v1/media/{mediaId}/community` | Public | Public rating average and ten half-star buckets, plus community counts. |
 | `GET /v1/media/{mediaId}/me` | User | Current user's rating, likes, library state, review, and diary log count/date. Responses are `private, no-store`. |
 | `GET /v1/media/{mediaId}/activity` | User | Page friends' visible activity on this media; `page=0`, `size=10` (max 50). |

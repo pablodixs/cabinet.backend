@@ -16,6 +16,7 @@ import java.util.UUID;
         name = "uk_album_release_versions_musicbrainz_release",
         columnNames = "musicbrainz_release_id"), indexes = {
         @Index(name = "idx_album_release_versions_album", columnList = "album_media_id"),
+        @Index(name = "idx_album_release_versions_album_cursor", columnList = "album_media_id,id"),
         @Index(name = "idx_album_release_versions_barcode", columnList = "barcode")
 })
 @Getter
