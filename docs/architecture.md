@@ -135,9 +135,9 @@ The web application gives its server-side fetches matching 60-second media and 5
 
 ## Known architectural constraints
 
-- The executable has no Actuator dependency, so it exposes no standard health/readiness/metrics endpoints.
+- Spring Boot Actuator exposes the configured health, info, metrics, and cache endpoints. Detailed product operations remain in the admin status API.
 - Swagger paths are permitted by security but no OpenAPI library is declared.
-- Hibernate schema update and Flyway are enabled together in production configuration. This weakens migration-only schema reproducibility.
+- Flyway owns production schema changes and Hibernate uses `ddl-auto: validate`.
 - Provider caches in `PersonWorksCatalogService` and in-flight work maps are in-memory and reset at restart.
 - SSE is a refresh hint, not a durable event stream; REST and PostgreSQL remain the source of truth.
 - Background task queues are bounded but not durable. The Letterboxd scheduler recovers jobs in `MATCHING` or `IMPORTING` at startup; other queued work is recreated only by subsequent reads or scheduled scans.

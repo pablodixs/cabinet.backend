@@ -33,7 +33,9 @@ class AlbumTrackCursorRepositoryTest {
         expected.sort(Comparator
                 .comparing(AlbumTrack::getDiscNumber, Comparator.nullsLast(Integer::compareTo))
                 .thenComparing(AlbumTrack::getTrackNumber, Comparator.nullsLast(Integer::compareTo))
-                .thenComparing(AlbumTrack::getId));
+                // PostgreSQL/H2 UUID ordering is lexicographic; Java UUID.compareTo
+                // compares signed halves and can disagree for generated UUIDs.
+                .thenComparing(track -> track.getId().toString()));
         entityManager.clear();
 
         List<String> titles = new ArrayList<>();

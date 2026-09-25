@@ -42,6 +42,11 @@ class LetterboxdImportSchedulerTest {
         LetterboxdImportJob job = job(LetterboxdImportJobState.MATCHING);
         when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
         when(itemRepository.findAllByJobIdOrderByCreatedAtAsc(job.getId())).thenReturn(List.of());
+        when(jobRepository.transitionState(job.getId(), LetterboxdImportJobState.MATCHING,
+                LetterboxdImportJobState.READY, null, null, null)).thenAnswer(invocation -> {
+            job.setState(LetterboxdImportJobState.READY);
+            return 1;
+        });
 
         scheduler.requested(new LetterboxdImportRequestedEvent(
                 job.getId(), LetterboxdImportRequestedEvent.Action.MATCH));
@@ -55,6 +60,14 @@ class LetterboxdImportSchedulerTest {
         LetterboxdImportJob job = job(LetterboxdImportJobState.IMPORTING);
         when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
         when(itemRepository.findAllByJobIdOrderByCreatedAtAsc(job.getId())).thenReturn(List.of());
+        when(jobRepository.transitionState(org.mockito.ArgumentMatchers.eq(job.getId()),
+                org.mockito.ArgumentMatchers.eq(LetterboxdImportJobState.IMPORTING),
+                org.mockito.ArgumentMatchers.eq(LetterboxdImportJobState.COMPLETED),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.isNull())).thenAnswer(invocation -> {
+            job.setState(LetterboxdImportJobState.COMPLETED);
+            return 1;
+        });
 
         scheduler.requested(new LetterboxdImportRequestedEvent(
                 job.getId(), LetterboxdImportRequestedEvent.Action.APPLY));

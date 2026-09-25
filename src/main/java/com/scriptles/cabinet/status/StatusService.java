@@ -9,7 +9,7 @@ import com.scriptles.cabinet.user.importer.LetterboxdImportJobState;
 import com.scriptles.cabinet.media.service.SearchOperationalState;
 import com.scriptles.cabinet.common.outbox.DomainOutboxRepository;
 import com.scriptles.cabinet.common.outbox.DomainOutboxStatus;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.support.CronExpression;
@@ -30,7 +30,6 @@ import java.util.Map;
 import static com.scriptles.cabinet.status.StatusResponse.*;
 
 @Service
-@RequiredArgsConstructor
 public class StatusService {
     private static final Duration FAILURE_WINDOW = Duration.ofHours(24);
     private static final int ACTIVITY_LIMIT = 15;
@@ -42,6 +41,19 @@ public class StatusService {
     private final LetterboxdImportJobRepository importRepository;
     private final SearchOperationalState searchOperationalState;
     private final DomainOutboxRepository domainOutboxRepository;
+
+    @Autowired
+    public StatusService(BackgroundJobRunRepository runRepository, CatalogOutboxRepository outboxRepository,
+                         CatalogJobRepository catalogJobs, LetterboxdImportJobRepository importRepository,
+                         SearchOperationalState searchOperationalState,
+                         DomainOutboxRepository domainOutboxRepository) {
+        this.runRepository = runRepository;
+        this.outboxRepository = outboxRepository;
+        this.catalogJobs = catalogJobs;
+        this.importRepository = importRepository;
+        this.searchOperationalState = searchOperationalState;
+        this.domainOutboxRepository = domainOutboxRepository;
+    }
 
     @Value("${catalog.tmdb-changes.cron}")
     private String tmdbCron;

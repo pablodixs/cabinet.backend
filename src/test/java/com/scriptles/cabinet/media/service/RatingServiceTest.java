@@ -1,6 +1,7 @@
 package com.scriptles.cabinet.media.service;
 
 import com.scriptles.cabinet.common.api.ApiException;
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.media.dto.request.UpsertRatingRequest;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Rating;
@@ -41,6 +42,7 @@ class RatingServiceTest {
     @Mock MediaCommunityCacheInvalidator communityCacheInvalidator;
     @Mock UserFeedService userFeedService;
     @Mock InterestProfileCache interestProfileCache;
+    @Mock DomainOutboxPublisher domainOutboxPublisher;
     @InjectMocks RatingService service;
 
     @Test
@@ -51,7 +53,11 @@ class RatingServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(track));
         when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
-        when(ratingRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ratingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            Rating rating = invocation.getArgument(0);
+            if (rating.getId() == null) rating.setId(UUID.randomUUID());
+            return rating;
+        });
 
         var response = service.upsert(userId, mediaId, new UpsertRatingRequest(new BigDecimal("4.5")));
 
@@ -70,7 +76,11 @@ class RatingServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(album));
         when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
-        when(ratingRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ratingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            Rating rating = invocation.getArgument(0);
+            if (rating.getId() == null) rating.setId(UUID.randomUUID());
+            return rating;
+        });
 
         var response = service.upsert(userId, mediaId,
                 new UpsertRatingRequest(new BigDecimal("4.0")));
@@ -113,7 +123,11 @@ class RatingServiceTest {
 
         future.setAirDate(null);
         when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
-        when(ratingRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ratingRepository.saveAndFlush(any())).thenAnswer(invocation -> {
+            Rating rating = invocation.getArgument(0);
+            if (rating.getId() == null) rating.setId(UUID.randomUUID());
+            return rating;
+        });
         assertThat(service.upsert(userId, mediaId,
                 new UpsertRatingRequest(new BigDecimal("5.0"))).rating()).isEqualByComparingTo("5.0");
     }

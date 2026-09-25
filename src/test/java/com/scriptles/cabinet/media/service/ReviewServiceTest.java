@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.media.service;
 
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.common.api.PageResponse;
 import com.scriptles.cabinet.media.dto.request.UpsertReviewRequest;
@@ -80,6 +81,8 @@ class ReviewServiceTest {
     private UserFeedService userFeedService;
     @Mock
     private MediaLikeService mediaLikeService;
+    @Mock
+    private DomainOutboxPublisher domainOutboxPublisher;
 
     @InjectMocks
     private ReviewService reviewService;
@@ -102,7 +105,7 @@ class ReviewServiceTest {
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId))
                 .thenReturn(Optional.empty());
         when(reviewRepository.saveAndFlush(any(Review.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> savedReview(invocation.getArgument(0)));
 
         ReviewResponse response = reviewService.upsert(
                 userId,
@@ -131,7 +134,7 @@ class ReviewServiceTest {
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
         when(reviewRepository.saveAndFlush(any(Review.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> savedReview(invocation.getArgument(0)));
 
         ReviewResponse response = reviewService.upsert(
                 userId,
@@ -182,7 +185,7 @@ class ReviewServiceTest {
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId))
                 .thenReturn(Optional.of(existing));
-        when(reviewRepository.saveAndFlush(existing)).thenReturn(existing);
+        when(reviewRepository.saveAndFlush(existing)).thenAnswer(invocation -> savedReview(invocation.getArgument(0)));
 
         ReviewResponse response = reviewService.upsert(
                 userId,
@@ -222,7 +225,7 @@ class ReviewServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(review));
-        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
+        when(reviewRepository.saveAndFlush(review)).thenAnswer(invocation -> savedReview(invocation.getArgument(0)));
 
         reviewService.upsert(userId, mediaId,
                 new UpsertReviewRequest(null, "Depois", true, Visibility.PRIVATE));
@@ -258,7 +261,7 @@ class ReviewServiceTest {
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(review));
         when(userMediaActivityRepository.findByIdAndUserId(next.getId(), userId))
                 .thenReturn(Optional.of(next));
-        when(reviewRepository.saveAndFlush(review)).thenReturn(review);
+        when(reviewRepository.saveAndFlush(review)).thenAnswer(invocation -> savedReview(invocation.getArgument(0)));
 
         reviewService.upsert(userId, mediaId,
                 new UpsertReviewRequest(null, "Nova review", false, Visibility.PUBLIC, next.getId()));
@@ -287,7 +290,7 @@ class ReviewServiceTest {
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
         when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.of(rating));
         when(reviewRepository.saveAndFlush(any(Review.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                .thenAnswer(invocation -> savedReview(invocation.getArgument(0)));
 
         ReviewResponse response = reviewService.upsert(
                 userId,
@@ -471,6 +474,7 @@ class ReviewServiceTest {
         UUID userId = UUID.randomUUID();
         UUID mediaId = UUID.randomUUID();
         Review review = new Review();
+        review.setId(UUID.randomUUID());
         when(reviewRepository.findByUserIdAndMediaId(userId, mediaId))
                 .thenReturn(Optional.of(review));
 
@@ -521,6 +525,14 @@ class ReviewServiceTest {
         user.setActive(true);
         user.setProfileVisibility(Visibility.PUBLIC);
         return user;
+    }
+
+    private Review savedReview(Review review) {
+        if (review.getId() == null) review.setId(UUID.randomUUID());
+        if (review.getRatingEntity() != null && review.getRatingEntity().getId() == null) {
+            review.getRatingEntity().setId(UUID.randomUUID());
+        }
+        return review;
     }
 
     private Media media(UUID id) {

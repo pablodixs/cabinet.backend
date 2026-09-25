@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.lists.service;
 
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.common.api.ApiException;
 import com.scriptles.cabinet.lists.dto.request.AddMediaListItemRequest;
 import com.scriptles.cabinet.lists.dto.request.CreateMediaListRequest;
@@ -75,6 +76,8 @@ class MediaListServiceTest {
     private UserMediaArtworkService userMediaArtworkService;
     @Mock
     private UserTagService userTagService;
+    @Mock
+    private DomainOutboxPublisher domainOutboxPublisher;
 
     @InjectMocks
     private MediaListService mediaListService;

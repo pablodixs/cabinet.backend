@@ -4,21 +4,19 @@ import com.scriptles.cabinet.media.dto.response.MediaSearchItemResponse;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
-import com.scriptles.cabinet.media.repository.MediaLikeRepository;
+import com.scriptles.cabinet.media.repository.MediaRankingSnapshotRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
 import com.scriptles.cabinet.user.repository.UserMediaRepository;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -35,13 +33,13 @@ class MediaRankingServiceTest {
     @Mock
     private RatingRepository ratingRepository;
     @Mock
-    private MediaLikeRepository mediaLikeRepository;
-    @Mock
     private UserMediaRepository userMediaRepository;
     @Mock
     private MediaRepository mediaRepository;
     @Mock
     private MediaSearchItemAssembler mediaSearchItemAssembler;
+    @Mock
+    private MediaRankingSnapshotRepository rankingSnapshotRepository;
 
     @InjectMocks
     private MediaRankingService mediaRankingService;
@@ -69,28 +67,20 @@ class MediaRankingServiceTest {
     }
 
     @Test
-    void weightsRecentRatingsAboveLikesAndLibraryActivity() {
+    void preservesTrendingSnapshotRepositoryOrder() {
         Media ratedMedia = media("Nota recente");
         Media likedMedia = media("Curtidas recentes");
         Media libraryMedia = media("Biblioteca recente");
         Set<String> defaultTypes = Set.of("MOVIE", "SERIES", "ALBUM", "BOOK");
-        RatingRepository.MediaActivityProjection ratingActivity = ratingActivity(ratedMedia.getId(), 2);
-        MediaLikeRepository.MediaActivityProjection likeActivity = likeActivity(likedMedia.getId(), 2);
-        UserMediaRepository.MediaActivityProjection libraryActivity = libraryActivity(libraryMedia.getId(), 3);
-
-        when(ratingRepository.findRecentActivity(eq(defaultTypes), any(), any(), any()))
-                .thenReturn(List.of(ratingActivity));
-        when(mediaLikeRepository.findRecentActivity(eq(defaultTypes), any(), any()))
-                .thenReturn(List.of(likeActivity));
-        when(userMediaRepository.findRecentPublicActivity(eq(defaultTypes), any(), any()))
-                .thenReturn(List.of(libraryActivity));
+        List<UUID> rankedIds = List.of(ratedMedia.getId(), likedMedia.getId(), libraryMedia.getId());
+        when(rankingSnapshotRepository.findTrendingMediaIds(defaultTypes, 7, 3)).thenReturn(rankedIds);
         when(mediaRepository.findAllById(any()))
-                .thenReturn(List.of(ratedMedia, likedMedia, libraryMedia));
-        when(mediaSearchItemAssembler.fromImported(any(), eq("en-US")))
+                .thenReturn(List.of(libraryMedia, ratedMedia, likedMedia));
+        when(mediaSearchItemAssembler.fromImported(List.of(ratedMedia, likedMedia, libraryMedia), "en-US"))
                 .thenReturn(List.of(
-                        item(libraryMedia, 5.0, 1),
+                        item(ratedMedia, 5.0, 1),
                         item(likedMedia, 4.5, 4),
-                        item(ratedMedia, 4.0, 8)
+                        item(libraryMedia, 4.0, 8)
                 ));
 
         var result = mediaRankingService.trending(null, 7, 3, "en-US");
@@ -99,13 +89,6 @@ class MediaRankingServiceTest {
                 .containsExactly("Nota recente", "Curtidas recentes", "Biblioteca recente");
         assertThat(result.periodDays()).isEqualTo(7);
 
-        ArgumentCaptor<Instant> since = ArgumentCaptor.forClass(Instant.class);
-        org.mockito.Mockito.verify(ratingRepository).findRecentActivity(
-                eq(defaultTypes), any(), since.capture(), any());
-        assertThat(since.getValue()).isBetween(
-                Instant.now().minusSeconds(7 * 24 * 60 * 60L + 5),
-                Instant.now().minusSeconds(7 * 24 * 60 * 60L - 5)
-        );
     }
 
     @Test
@@ -152,27 +135,6 @@ class MediaRankingServiceTest {
     private RatingRepository.RatedMediaProjection rated(Media media) {
         var projection = mock(RatingRepository.RatedMediaProjection.class);
         when(projection.getMedia()).thenReturn(media);
-        return projection;
-    }
-
-    private RatingRepository.MediaActivityProjection ratingActivity(UUID mediaId, long count) {
-        var projection = mock(RatingRepository.MediaActivityProjection.class);
-        when(projection.getMediaId()).thenReturn(mediaId);
-        when(projection.getActivityCount()).thenReturn(count);
-        return projection;
-    }
-
-    private MediaLikeRepository.MediaActivityProjection likeActivity(UUID mediaId, long count) {
-        var projection = mock(MediaLikeRepository.MediaActivityProjection.class);
-        when(projection.getMediaId()).thenReturn(mediaId);
-        when(projection.getActivityCount()).thenReturn(count);
-        return projection;
-    }
-
-    private UserMediaRepository.MediaActivityProjection libraryActivity(UUID mediaId, long count) {
-        var projection = mock(UserMediaRepository.MediaActivityProjection.class);
-        when(projection.getMediaId()).thenReturn(mediaId);
-        when(projection.getActivityCount()).thenReturn(count);
         return projection;
     }
 

@@ -5,7 +5,7 @@ import com.scriptles.cabinet.media.enums.ExternalRatingMetric;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -18,11 +18,17 @@ import java.util.Locale;
 import java.util.Optional;
 
 @Component
-@RequiredArgsConstructor
 public class OmdbClient {
     private final RestClient.Builder restClientBuilder;
     private final OmdbProperties properties;
     private final MeterRegistry meters;
+
+    @Autowired
+    public OmdbClient(RestClient.Builder restClientBuilder, OmdbProperties properties, MeterRegistry meters) {
+        this.restClientBuilder = restClientBuilder;
+        this.properties = properties;
+        this.meters = meters;
+    }
 
     public OmdbClient(RestClient.Builder restClientBuilder, OmdbProperties properties) {
         this(restClientBuilder, properties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());

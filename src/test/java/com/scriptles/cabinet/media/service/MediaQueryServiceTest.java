@@ -16,9 +16,11 @@ import com.scriptles.cabinet.media.enums.CreditRole;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.repository.AlbumDetailsRepository;
 import com.scriptles.cabinet.media.repository.AlbumTrackRepository;
+import com.scriptles.cabinet.media.repository.AlbumReleaseVersionRepository;
 import com.scriptles.cabinet.media.repository.BookDetailsRepository;
 import com.scriptles.cabinet.media.repository.ExternalReferenceRepository;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
+import com.scriptles.cabinet.media.repository.MediaCommunityStatsRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
 import com.scriptles.cabinet.media.repository.MovieDetailsRepository;
 import com.scriptles.cabinet.media.repository.RatingRepository;
@@ -41,6 +43,7 @@ import com.scriptles.cabinet.user.enums.ProfileActivityType;
 import com.scriptles.cabinet.user.enums.UserMediaStatus;
 import com.scriptles.cabinet.user.enums.Visibility;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -56,6 +59,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
@@ -76,6 +82,8 @@ class MediaQueryServiceTest {
     @Mock
     private AlbumTrackRepository albumTrackRepository;
     @Mock
+    private AlbumReleaseVersionRepository albumReleaseVersionRepository;
+    @Mock
     private SeriesSeasonRepository seriesSeasonRepository;
     @Mock
     private TrackDetailsRepository trackDetailsRepository;
@@ -87,6 +95,8 @@ class MediaQueryServiceTest {
     private SeriesEpisodeRepository seriesEpisodeRepository;
     @Mock
     private MediaLikeRepository mediaLikeRepository;
+    @Mock
+    private MediaCommunityStatsRepository mediaCommunityStatsRepository;
     @Mock
     private MediaListItemRepository mediaListItemRepository;
     @Mock
@@ -107,12 +117,30 @@ class MediaQueryServiceTest {
     private CatalogTranslationLoader catalogTranslationLoader;
     @Mock
     private MediaTranslationResolver mediaTranslationResolver;
+    @Mock
+    private MediaPublicVersionService mediaPublicVersionService;
+    @Mock
+    private AlbumMediaPageCursorCodec albumMediaPageCursorCodec;
 
     @Mock
     private GenreCatalogService genreCatalogService;
 
     @InjectMocks
     private MediaQueryService mediaQueryService;
+
+    @BeforeEach
+    void defaultCommunityAndVersionProjections() {
+        lenient().when(mediaCommunityStatsRepository.findByMediaId(any()))
+                .thenReturn(Optional.empty());
+        lenient().when(mediaCommunityStatsRepository.findDistribution(any()))
+                .thenReturn(List.of());
+        lenient().when(mediaCommunityStatsRepository.aggregateByMediaIds(anyCollection()))
+                .thenReturn(new MediaCommunityStatsRepository.CommunityAggregate(BigDecimal.ZERO, 0));
+        lenient().when(mediaCommunityStatsRepository.aggregateDistributionByMediaIds(anyCollection()))
+                .thenReturn(List.of());
+        lenient().when(mediaPublicVersionService.currentVersion(any(), any()))
+                .thenReturn(Optional.empty());
+    }
 
     @Test
     void returnsOrderedAlbumTracksWithCommunityAndPersonalRatings() {
@@ -167,22 +195,16 @@ class MediaQueryServiceTest {
         album.setId(albumId);
         album.setType(MediaType.ALBUM);
         List<UUID> trackIds = List.of(firstTrackId, secondTrackId);
-        var childStats = new RatingSummaryService.AggregateStats(
-                4.33,
-                3,
-                java.util.stream.IntStream.rangeClosed(1, 10)
-                        .mapToObj(step -> new ExternalMediaDetailsResponse.RatingDistributionBucket(
-                                step / 2.0, step == 10 ? 3 : 0))
-                        .toList()
-        );
-        RatingRepository.MediaRatingProjection direct =
-                org.mockito.Mockito.mock(RatingRepository.MediaRatingProjection.class);
-        when(direct.getAverageRating()).thenReturn(3.5);
         when(mediaRepository.findById(albumId)).thenReturn(Optional.of(album));
-        when(ratingRepository.summarizeRatings(List.of(albumId), Visibility.PUBLIC))
-                .thenReturn(List.of(direct));
         when(albumTrackRepository.findTrackMediaIdsByAlbumId(albumId)).thenReturn(trackIds);
-        when(ratingSummaryService.aggregate(trackIds)).thenReturn(childStats);
+        when(mediaCommunityStatsRepository.findByMediaId(albumId)).thenReturn(Optional.of(
+                new MediaCommunityStatsRepository.CommunityStats(
+                        3, new BigDecimal("10.5"), new BigDecimal("3.5"), 0, 0, 0)));
+        when(mediaCommunityStatsRepository.aggregateByMediaIds(trackIds))
+                .thenReturn(new MediaCommunityStatsRepository.CommunityAggregate(
+                        new BigDecimal("12.99"), 3));
+        when(mediaCommunityStatsRepository.aggregateDistributionByMediaIds(trackIds))
+                .thenReturn(List.of(new MediaCommunityStatsRepository.RatingBucket(new BigDecimal("4.5"), 3)));
 
         var community = mediaQueryService.findCommunity(albumId);
 
@@ -430,7 +452,6 @@ class MediaQueryServiceTest {
         when(mediaRepository.findById(seriesId)).thenReturn(Optional.of(series));
         when(seriesEpisodeRepository.findEligibleEpisodeMediaIdsBySeriesId(
                 seriesId, LocalDate.now())).thenReturn(episodeIds);
-        when(ratingSummaryService.aggregate(episodeIds)).thenReturn(childStats);
 
         var community = mediaQueryService.findCommunity(seriesId);
 

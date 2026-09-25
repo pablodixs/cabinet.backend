@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.media.service;
 
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.repository.MediaLikeRepository;
 import com.scriptles.cabinet.media.repository.MediaRepository;
@@ -35,6 +36,8 @@ class MediaLikeServiceTest {
     private UserFeedService userFeedService;
     @Mock
     private InterestProfileCache interestProfileCache;
+    @Mock
+    private DomainOutboxPublisher domainOutboxPublisher;
 
     @InjectMocks
     private MediaLikeService mediaLikeService;

@@ -1,5 +1,6 @@
 package com.scriptles.cabinet.user.service;
 
+import com.scriptles.cabinet.common.outbox.DomainOutboxPublisher;
 import com.scriptles.cabinet.media.entity.Media;
 import com.scriptles.cabinet.media.entity.Review;
 import com.scriptles.cabinet.media.enums.MediaType;
@@ -20,6 +21,7 @@ import com.scriptles.cabinet.user.enums.Visibility;
 import com.scriptles.cabinet.user.repository.UserMediaActivityRepository;
 import com.scriptles.cabinet.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -41,6 +43,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,7 +62,17 @@ class DiaryServiceTest {
     @Mock EpisodeTrackingService episodeTrackingService;
     @Mock UserTagService userTagService;
     @Mock UserFeedService userFeedService;
+    @Mock DomainOutboxPublisher domainOutboxPublisher;
     @InjectMocks DiaryService service;
+
+    @BeforeEach
+    void assignDatabaseGeneratedReviewIds() {
+        lenient().when(reviewRepository.saveAndFlush(any(Review.class))).thenAnswer(invocation -> {
+            Review review = invocation.getArgument(0);
+            if (review.getId() == null) review.setId(UUID.randomUUID());
+            return review;
+        });
+    }
 
     @Test
     void createsAHistoricalEntryAndCanonicalReviewWithoutRequiringARating() {
@@ -97,7 +110,7 @@ class DiaryServiceTest {
         assertThat(response.tags()).containsExactlyInAnyOrder("cinema", "com:amigos");
 
         ArgumentCaptor<Review> reviewCaptor = ArgumentCaptor.forClass(Review.class);
-        verify(reviewRepository).save(reviewCaptor.capture());
+        verify(reviewRepository).saveAndFlush(reviewCaptor.capture());
         assertThat(reviewCaptor.getValue().getRatingEntity()).isNull();
         assertThat(reviewCaptor.getValue().getActivity()).isNotNull();
         verify(userMediaService).markCompleted(user, movie, false);
@@ -185,7 +198,11 @@ class DiaryServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(book));
         when(ratingRepository.findByUserIdAndMediaId(userId, mediaId)).thenReturn(Optional.empty());
-        when(ratingRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ratingRepository.save(any())).thenAnswer(invocation -> {
+            com.scriptles.cabinet.media.entity.Rating rating = invocation.getArgument(0);
+            if (rating.getId() == null) rating.setId(UUID.randomUUID());
+            return rating;
+        });
         when(activityRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             UserMediaActivity activity = invocation.getArgument(0);
             activity.setId(UUID.randomUUID());
@@ -233,7 +250,7 @@ class DiaryServiceTest {
                 "Review da faixa ou episódio", false, Visibility.PUBLIC, Set.of()));
 
         assertThat(response.review()).isEqualTo("Review da faixa ou episódio");
-        verify(reviewRepository).save(any(Review.class));
+        verify(reviewRepository).saveAndFlush(any(Review.class));
     }
 
     @Test
@@ -275,6 +292,7 @@ class DiaryServiceTest {
         UserMediaActivity activity = new UserMediaActivity();
         activity.setId(entryId);
         activity.setType(ProfileActivityType.LOGGED);
+        activity.setMedia(media(UUID.randomUUID(), MediaType.MOVIE));
         Review review = new Review();
         review.setActivity(activity);
         when(activityRepository.findByIdAndUserId(entryId, userId)).thenReturn(Optional.of(activity));

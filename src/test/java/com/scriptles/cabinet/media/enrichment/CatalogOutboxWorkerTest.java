@@ -2,6 +2,7 @@ package com.scriptles.cabinet.media.enrichment;
 
 import com.scriptles.cabinet.media.catalog.CatalogEventPayload;
 import com.scriptles.cabinet.media.entity.CatalogOutboxEvent;
+import com.scriptles.cabinet.media.enums.CatalogEventType;
 import com.scriptles.cabinet.media.enums.ExternalSource;
 import com.scriptles.cabinet.media.enums.MediaType;
 import com.scriptles.cabinet.media.external.ExternalMedia;
@@ -68,6 +69,7 @@ class CatalogOutboxWorkerTest {
         UUID eventId = UUID.randomUUID();
         UUID mediaId = UUID.randomUUID();
         CatalogOutboxEvent event = new CatalogOutboxEvent();
+        event.setEventType(CatalogEventType.MEDIA_CORE_MATERIALIZED);
         event.setAggregateId(mediaId);
         event.setPayload(new CatalogEventPayload(
                 ExternalSource.TMDB,

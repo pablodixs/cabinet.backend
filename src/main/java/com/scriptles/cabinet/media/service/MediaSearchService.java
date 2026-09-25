@@ -21,7 +21,7 @@ import com.scriptles.cabinet.media.translation.ResolvedMediaTranslation;
 import com.scriptles.cabinet.user.enums.Visibility;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
@@ -45,7 +45,6 @@ import java.util.stream.Collectors;
 import java.util.function.Supplier;
 
 @Service
-@RequiredArgsConstructor
 public class MediaSearchService {
     private static final Set<MediaType> SEARCHABLE_TYPES = EnumSet.of(
             MediaType.MOVIE,
@@ -66,6 +65,35 @@ public class MediaSearchService {
     private final MediaTranslationResolver translationResolver;
     private final MeterRegistry meterRegistry;
     private final SearchOperationalState searchOperationalState;
+
+    @Autowired
+    public MediaSearchService(
+            ExternalMediaProviderRegistry providerRegistry,
+            ExternalReferenceRepository externalReferenceRepository,
+            MediaRepository mediaRepository,
+            MediaSearchDocumentRepository searchDocumentRepository,
+            RatingRepository ratingRepository,
+            MediaCreditService mediaCreditService,
+            MediaSearchItemAssembler mediaSearchItemAssembler,
+            UserArtworkResolver userArtworkResolver,
+            CatalogLocaleResolver localeResolver,
+            MediaTranslationResolver translationResolver,
+            MeterRegistry meterRegistry,
+            SearchOperationalState searchOperationalState
+    ) {
+        this.providerRegistry = providerRegistry;
+        this.externalReferenceRepository = externalReferenceRepository;
+        this.mediaRepository = mediaRepository;
+        this.searchDocumentRepository = searchDocumentRepository;
+        this.ratingRepository = ratingRepository;
+        this.mediaCreditService = mediaCreditService;
+        this.mediaSearchItemAssembler = mediaSearchItemAssembler;
+        this.userArtworkResolver = userArtworkResolver;
+        this.localeResolver = localeResolver;
+        this.translationResolver = translationResolver;
+        this.meterRegistry = meterRegistry;
+        this.searchOperationalState = searchOperationalState;
+    }
 
     public MediaSearchService(
             ExternalMediaProviderRegistry providerRegistry,
