@@ -130,7 +130,7 @@ catalog:
 
 app:
   cors:
-    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:https://cabinetbeta.vercel.app}
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:https://cabinetbeta.vercel.app,https://cabinet-hq.vercel.app}
   moderation:
     # Bootstrap only: these accounts can appoint the community team through the dashboard.
     admin-emails: ${ADMIN_EMAILS:}

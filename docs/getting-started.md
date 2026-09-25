@@ -38,7 +38,7 @@ The default server port is `8080`. The Docker entrypoint also accepts `PORT` and
 | `SESSION_COOKIE_SECURE` | `true` | Keep enabled behind production HTTPS. The local development script overrides it to `false`. |
 | `SESSION_COOKIE_SAME_SITE` | `none` | Supports the cross-site web client. The local development script overrides it to `lax`. |
 | `SESSION_COOKIE_PARTITIONED` | `true` | Allows the cross-site web client to retain the session when third-party cookies are restricted. The local development script overrides it to `false`. |
-| `CORS_ALLOWED_ORIGIN_PATTERNS` | `https://cabinetbeta.vercel.app` | Comma-separated patterns; credentials are enabled. The local development script allows `localhost` and `127.0.0.1`. |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | `https://cabinetbeta.vercel.app,https://cabinet-hq.vercel.app` | Comma-separated patterns; credentials are enabled. The local development script allows `localhost` and `127.0.0.1`. |
 | `ADMIN_EMAILS` | empty | Bootstrap admin emails. This overrides a persisted role at authentication time. |
 | `SSE_MAX_CONNECTIONS_PER_USER` | `3` | Per-user in-memory SSE connection limit. |
 | `SSE_MAX_TOTAL_CONNECTIONS` | `1000` | Process-wide SSE connection limit. |

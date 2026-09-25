@@ -62,7 +62,7 @@ Everything else is authenticated. A subtle consequence is that `GET /v1/users/{u
 
 CORS allows credentials, all headers, methods `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and `OPTIONS`, with a one-hour preflight cache. Allowed origin patterns come from comma-separated `CORS_ALLOWED_ORIGIN_PATTERNS`.
 
-The default allowed origin is `https://cabinetbeta.vercel.app`. The local development script instead allows local hosts on any port. Production deployments with another frontend URL must explicitly set trusted HTTPS origins. Because credentials are enabled, avoid broad wildcard patterns.
+The default allowed origins are `https://cabinetbeta.vercel.app` and `https://cabinet-hq.vercel.app`. The local development script instead allows local hosts on any port. Production deployments with another frontend URL must explicitly set trusted HTTPS origins. Because credentials are enabled, avoid broad wildcard patterns.
 
 For a browser frontend hosted on a different site, set the exact frontend origin in `CORS_ALLOWED_ORIGIN_PATTERNS`, set `SESSION_COOKIE_SAME_SITE=none` and `SESSION_COOKIE_SECURE=true`, and send requests with credentials enabled. Browsers or privacy settings that block third-party cookies can still prevent cookie-based cross-site sessions.
 

@@ -51,6 +51,7 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TMDB_ACCESS_TOKEN: ${{ secrets.TMDB_ACCESS_TOKEN }}
           ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          CORS_ALLOWED_ORIGIN_PATTERNS: https://cabinetbeta.vercel.app,https://cabinet-hq.vercel.app
         run: |
           set -euo pipefail
           bundle="$(mktemp -d)"
@@ -66,6 +67,7 @@ jobs:
             printf 'TMDB_API_KEY=%s\n' "$TMDB_API_KEY"
             printf 'TMDB_ACCESS_TOKEN=%s\n' "$TMDB_ACCESS_TOKEN"
             printf 'ADMIN_EMAILS=%s\n' "$ADMIN_EMAILS"
+            printf 'CORS_ALLOWED_ORIGIN_PATTERNS=%s\n' "$CORS_ALLOWED_ORIGIN_PATTERNS"
           } > "$bundle/.cabinet-runtime.env"
           tar -C "$bundle" -czf /tmp/cabinet-source.tar.gz .
 
